@@ -52,3 +52,8 @@ npm-debug.log*
 yarn-error.log*
 .vercel/
 .DS_Store
+
+#Woocommerce Api
+WC_BASE_URL=der-trashcontainer.de
+WC_CONSUMER_KEY=ck_e4b6810f5f368f51ddebaf645e6a3a620d483736
+WC_CONSUMER_SECRET=cs_cs_acb121343b73893fa62329a99b016824ec19d13d

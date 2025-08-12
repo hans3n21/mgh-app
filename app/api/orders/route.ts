@@ -83,6 +83,18 @@ export async function POST(request: NextRequest) {
     });
 
     console.log('Order created successfully:', order.id);
+    // Versuch, WooCommerce-Order anzulegen, ohne die lokale Erstellung zu blockieren
+    try {
+      const { createWooOrderForInternal } = await import('@/lib/woocommerce');
+      const res = await createWooOrderForInternal(order.id);
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { wcOrderId: res.wooOrderId },
+      });
+    } catch (wooError) {
+      console.error('Woo Order create failed:', wooError);
+    }
+
     return NextResponse.json(order, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {

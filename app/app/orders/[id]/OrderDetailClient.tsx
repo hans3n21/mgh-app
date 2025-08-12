@@ -15,6 +15,17 @@ const STATUS_LABEL: Record<string, string> = {
   design_review: 'Designprüfung',
 };
 
+interface OrderImageLocal {
+  id: string;
+  path: string;
+  comment?: string;
+  position: number;
+  attach: boolean;
+  scope?: string;
+  fieldKey?: string;
+  createdAt: Date;
+}
+
 interface Order {
   id: string;
   title: string;
@@ -33,7 +44,7 @@ interface Order {
     total: number;
     priceItem?: { id: string; label: string } | null;
   }>;
-  images: Array<{ id: string; path: string; comment?: string }>;
+  images: Array<OrderImageLocal>;
   messages: Array<{
     id: string;
     body: string;
@@ -41,6 +52,9 @@ interface Order {
     senderType: string;
     sender?: { id: string; name: string } | null;
   }>;
+  wcOrderId?: string | null;
+  finalAmountCents?: number | null;
+  paymentStatus?: string | null;
 }
 
 interface OrderDetailClientProps {
@@ -67,6 +81,15 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     max?: number;
   }>>([]);
   const router = useRouter();
+  const [syncing, setSyncing] = useState(false);
+  const [shopMode, setShopMode] = useState<'full' | 'deposit' | 'balance'>('full');
+  const [shopAmount, setShopAmount] = useState<string>(
+    initialOrder.finalAmountCents != null ? String(initialOrder.finalAmountCents / 100) : ''
+  ); // € optional
+  const [extraDialogOpen, setExtraDialogOpen] = useState(false);
+  const [extraAmount, setExtraAmount] = useState('');
+  const [extraLabel, setExtraLabel] = useState('');
+  const [createOrderForExtra, setCreateOrderForExtra] = useState(false);
 
   // Lade Preisliste beim Mount
   React.useEffect(() => {
@@ -74,7 +97,16 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
       .then(res => res.json())
       .then(data => setPriceItems(data))
       .catch(console.error);
-  }, []);
+
+    // Event zum Triggern aus Tabs unten
+    const handler = (e: Event) => {
+      const custom = e as CustomEvent<{ mode?: 'full' | 'deposit' | 'balance' }>;
+      const forcedMode = custom.detail?.mode;
+      void syncToShop(forcedMode);
+    };
+    document.addEventListener('sync-to-woo', handler as EventListener);
+    return () => document.removeEventListener('sync-to-woo', handler as EventListener);
+  }, [shopMode, shopAmount]);
 
   const handleStatusChange = async (newStatus: string) => {
     try {
@@ -112,7 +144,7 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     }
   };
 
-  const handleImagesChange = (newImages: typeof order.images) => {
+  const handleImagesChange = (newImages: OrderImageLocal[]) => {
     setOrder({ ...order, images: newImages });
   };
 
@@ -122,10 +154,49 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     setOrder({ ...order, messages: newMessages });
   };
 
+  const syncToShop = async (forcedMode?: 'full' | 'deposit' | 'balance') => {
+    setSyncing(true);
+    try {
+      // Betrag optional wandeln -> Cents
+      let amountCents: number | undefined = undefined;
+      if (shopAmount.trim()) {
+        const normalized = shopAmount.replace(',', '.');
+        const parsed = parseFloat(normalized);
+        if (!isNaN(parsed) && isFinite(parsed)) {
+          amountCents = Math.max(0, Math.round(parsed * 100));
+        }
+      }
+
+      const res = await fetch(`/api/orders/${order.id}/woocommerce`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: forcedMode ?? shopMode, amountCents }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setOrder(updated);
+        router.refresh();
+      } else {
+        const err = await res.json().catch(() => ({}) as Record<string, unknown>);
+        alert(`Shop-Sync fehlgeschlagen: ${err.details || err.error || res.status}`);
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const progress = statusToProgress(order.status);
 
   return (
     <div className="w-full space-y-4">
+      {/* Obere Infozeile ohne Zahnrad */}
+      <div className="text-xs text-slate-400">
+        {order.wcOrderId ? (
+          <span>Im Shop angelegt: Woo ID #{order.wcOrderId}</span>
+        ) : (
+          <span>Noch nicht im Shop angelegt</span>
+        )}
+      </div>
       {/* Progress Bar */}
       <div>
         <div className="text-xs text-slate-400">Status</div>
@@ -155,6 +226,13 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         onAssigneeChange={handleAssigneeChange}
         onImagesChange={handleImagesChange}
         onMessagesChange={handleMessagesChange}
+        shopMode={shopMode}
+        shopAmount={shopAmount}
+        amountLocked={order.finalAmountCents != null}
+        onShopOptionsChange={(mode, amount) => {
+          setShopMode(mode);
+          setShopAmount(amount);
+        }}
       />
     </div>
   );

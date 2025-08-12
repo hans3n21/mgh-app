@@ -344,7 +344,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
       )}
 
       {/* Items Liste */}
-      <div className="bg-slate-800/30 rounded-lg overflow-hidden">
+      <div className="bg-slate-800/10 sm:bg-slate-800/30 rounded-lg overflow-hidden">
         {loading && (
           <div className="text-center py-4">
             <div className="inline-flex items-center gap-2 text-slate-400">
@@ -370,10 +370,10 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                   <th className="py-3 px-4">Produkt</th>
                   <th className="py-3 px-4">Menge</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Erstellt von</th>
-                  <th className="py-3 px-4">Auftrag</th>
-                  <th className="py-3 px-4">Notiz</th>
-                  <th className="py-3 px-4">Erstellt</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Erstellt von</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Auftrag</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Notiz</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Erstellt</th>
                   {isAdmin && <th className="py-3 px-4">Aktionen</th>}
                 </tr>
               </thead>
@@ -410,10 +410,10 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                         {statusLabels[item.status as keyof typeof statusLabels]?.label || item.status}
                       </span>
                     </td>
-                    <td className="py-3 px-4 text-slate-400">
+                    <td className="py-3 px-4 text-slate-400 hidden sm:table-cell">
                       {item.creator?.name || 'Unbekannt'}
                     </td>
-                    <td className="py-3 px-4 text-slate-400">
+                    <td className="py-3 px-4 text-slate-400 hidden sm:table-cell">
                       {editingItem === item.id ? (
                         <input
                           type="text"
@@ -426,7 +426,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                         item.orderId || '—'
                       )}
                     </td>
-                    <td className="py-3 px-4 text-slate-400 max-w-xs">
+                    <td className="py-3 px-4 text-slate-400 max-w-xs hidden sm:table-cell">
                       {editingItem === item.id ? (
                         <input
                           type="text"
@@ -439,7 +439,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                         <span className="truncate">{item.note || '—'}</span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-slate-400">
+                    <td className="py-3 px-4 text-slate-400 hidden sm:table-cell">
                       {new Date(item.createdAt).toLocaleDateString('de-DE')}
                     </td>
                     {isAdmin && (
@@ -479,7 +479,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                               {item.status !== 'offen' && (
                                 <button
                                   onClick={() => handleStatusChange(item.id, 'offen')}
-                                  className="text-yellow-400 hover:text-yellow-300 p-1 rounded hover:bg-slate-700"
+                                  className="hidden sm:inline-flex text-yellow-400 hover:text-yellow-300 p-1 rounded hover:bg-slate-700"
                                   title="Auf Offen setzen"
                                 >
                                   ⭕
@@ -489,7 +489,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                               {item.status !== 'bestellt' && (
                                 <button
                                   onClick={() => handleStatusChange(item.id, 'bestellt')}
-                                  className="text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-slate-700"
+                                  className="hidden sm:inline-flex text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-slate-700"
                                   title="Als bestellt markieren"
                                 >
                                   🚚
@@ -499,7 +499,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                               {(item.status === 'bestellt' || item.status === 'offen') && (
                                 <button
                                   onClick={() => handleStatusChange(item.id, 'archiviert')}
-                                  className="text-green-400 hover:text-green-300 p-1 rounded hover:bg-slate-700"
+                                  className="hidden sm:inline-flex text-green-400 hover:text-green-300 p-1 rounded hover:bg-slate-700"
                                   title="Als eingetroffen markieren (wird archiviert)"
                                 >
                                   ✅

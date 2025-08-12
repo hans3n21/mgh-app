@@ -173,6 +173,10 @@ interface OrderDetailTabsNewProps {
   onAssigneeChange: (assigneeId: string) => void;
   onImagesChange: (images: OrderImage[]) => void;
   onMessagesChange: (messages: Message[]) => void;
+  shopMode?: 'full' | 'deposit' | 'balance';
+  shopAmount?: string;
+  onShopOptionsChange?: (mode: 'full' | 'deposit' | 'balance', amount: string) => void;
+  amountLocked?: boolean;
 }
 
 export default function OrderDetailTabsNew({
@@ -190,6 +194,10 @@ export default function OrderDetailTabsNew({
   onAssigneeChange,
   onImagesChange,
   onMessagesChange,
+  shopMode = 'full',
+  shopAmount = '',
+  onShopOptionsChange,
+  amountLocked = false,
 }: OrderDetailTabsNewProps) {
   const [activeTab, setActiveTab] = useState('spec');
   const [activeCategories, setActiveCategories] = useState<Set<CategoryKey>>(() => {
@@ -197,6 +205,21 @@ export default function OrderDetailTabsNew({
     const categories = getCategoriesForOrderType(orderType);
     return new Set(categories);
   });
+  const [splitPayment, setSplitPayment] = useState<boolean>(false);
+  const [extrasOpen, setExtrasOpen] = useState<boolean>(false);
+  const [isLocked, setIsLocked] = useState<boolean>(amountLocked);
+  const isGuitar = orderType === 'GUITAR';
+
+  // Anzeigeformat für Betrag: ohne überflüssige Nachkommastellen, mit € in einer Zeile
+  const formattedAmount = (() => {
+    const raw = (shopAmount || '').replace(',', '.').trim();
+    const n = Number(raw);
+    if (Number.isFinite(n)) {
+      // de-DE, aber ohne erzwungene 2 Nachkommastellen
+      return new Intl.NumberFormat('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n) + ' €';
+    }
+    return (shopAmount || '') + ' €';
+  })();
   const [specValues, setSpecValues] = useState<Record<string, string>>(() => {
     const defaultValues = getDefaultValues(orderType);
     const currentValues = specs.reduce((acc, spec) => ({ ...acc, [spec.key]: spec.value }), {});
@@ -570,6 +593,139 @@ export default function OrderDetailTabsNew({
                 </ul>
               </div>
             )}
+
+            {/* Zahlungs-Optionen (Shop) */}
+            <div className="rounded-xl border border-slate-800 p-3">
+              {/* Kopfzeile: nur Titel + Stift */}
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">Endbetrag</span>
+                  <button
+                    id="endbetrag-edit"
+                    className={`${isLocked ? '' : 'hidden'} rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800`}
+                    title="Endbetrag bearbeiten"
+                    onClick={() => {
+                      setIsLocked(false);
+                    }}
+                  >✏️</button>
+                </div>
+                <div className="flex items-center gap-3">
+                  {isGuitar && (
+                    <label className="flex items-center gap-2 text-slate-300 text-xs">
+                      <input type="checkbox" className="h-3.5 w-3.5" onChange={(e) => setSplitPayment(e.target.checked)} checked={splitPayment} />
+                      In Raten zahlen
+                    </label>
+                  )}
+                  <button
+                    className="text-xs text-emerald-400 hover:text-emerald-300"
+                    title="Extrakosten hinzufügen"
+                    onClick={() => setExtrasOpen(v => !v)}
+                  >{extrasOpen ? '− Extrakosten' : '＋ Extrakosten'}</button>
+                </div>
+              </div>
+              {/* Zeile 2: links Summe/Input, rechts Buttons + Checkbox */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span id="endbetrag-display" className={`text-slate-200 font-bold underline text-lg whitespace-nowrap ${isLocked ? '' : 'hidden'}`}>{formattedAmount}</span>
+                  <div className={`${isLocked ? 'hidden' : 'flex'} items-center gap-2`}>
+                    <input
+                      id="endbetrag-input"
+                      value={shopAmount}
+                      onChange={(e) => onShopOptionsChange?.(shopMode, e.target.value)}
+                      placeholder="z.B. 3000"
+                      className={`w-32 rounded bg-slate-950 border border-slate-700 px-2 py-1`}
+                    />
+                    <button
+                      id="endbetrag-ok"
+                      className={`rounded bg-emerald-600 hover:bg-emerald-500 px-2 py-1 text-xs`}
+                      title="Endbetrag speichern"
+                      onClick={async () => {
+                        const inputEl = document.getElementById('endbetrag-input') as HTMLInputElement | null;
+                        const input = inputEl?.value || '';
+                        const normalized = input.replace(',', '.');
+                        const parsed = parseFloat(normalized);
+                        if (isNaN(parsed) || parsed <= 0) { alert('Bitte gültigen Endbetrag eingeben.'); return; }
+                        const amountCents = Math.round(parsed * 100);
+                        const res = await fetch(`/api/orders/${orderId}`, {
+                          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ finalAmountCents: amountCents })
+                        });
+                        if (!res.ok) { alert('Konnte Endbetrag nicht speichern'); return; }
+                        onShopOptionsChange?.(shopMode, String(parsed));
+                        setIsLocked(true);
+                      }}
+                    >OK</button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 justify-end w-full">
+                  {!(isGuitar && splitPayment) && (
+                    <button
+                      onClick={() => {
+                        const value = isLocked ? shopAmount : (document.getElementById('endbetrag-input') as HTMLInputElement | null)?.value || '';
+                        const isEmpty = !value || !value.trim();
+                        if (isEmpty) { alert('Bitte Endbetrag eintragen.'); return; }
+                        if (!confirm('Möchten Sie den Auftrag jetzt an WooCommerce übertragen?')) return;
+                        document.dispatchEvent(new CustomEvent('sync-to-woo', { detail: { mode: 'full' } } as CustomEventInit));
+                      }}
+                      className="rounded bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium"
+                    >Auftrag in Shop</button>
+                  )}
+                  {isGuitar && splitPayment && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        title="1. Zahlung (Anzahlung)"
+                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs"
+                        onClick={() => {
+                          const value = shopAmount;
+                          if (!value || !value.trim()) { alert('Bitte Endbetrag eintragen.'); return; }
+                          if (!confirm('Anzahlung jetzt in WooCommerce anlegen?')) return;
+                          document.dispatchEvent(new CustomEvent('sync-to-woo', { detail: { mode: 'deposit' } } as CustomEventInit));
+                        }}
+                      >Zahlung 1</button>
+                      <button
+                        title="2. Zahlung (Rest)"
+                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs"
+                        onClick={() => {
+                          const value = shopAmount;
+                          if (!value || !value.trim()) { alert('Bitte Endbetrag eintragen.'); return; }
+                          if (!confirm('Restzahlung jetzt in WooCommerce anlegen?')) return;
+                          document.dispatchEvent(new CustomEvent('sync-to-woo', { detail: { mode: 'balance' } } as CustomEventInit));
+                        }}
+                      >Zahlung 2</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Extrakosten (ein-/ausklappbar) */}
+              {extrasOpen && (
+              <div className="mt-3 rounded border border-slate-800 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold">Extrakosten</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <input id="extra-amount" placeholder="Betrag (€)" className="w-28 rounded bg-slate-950 border border-slate-700 px-2 py-1" />
+                  <input id="extra-label" placeholder="Begründung" className="min-w-52 flex-1 rounded bg-slate-950 border border-slate-700 px-2 py-1" />
+                  <button
+                    className="ml-auto rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-medium"
+                    onClick={async () => {
+                      const amountStr = (document.getElementById('extra-amount') as HTMLInputElement | null)?.value || '';
+                      const label = (document.getElementById('extra-label') as HTMLInputElement | null)?.value || '';
+                      const normalized = amountStr.replace(',', '.');
+                      const parsed = parseFloat(normalized);
+                      if (!label.trim() || isNaN(parsed) || parsed <= 0) { alert('Bitte Betrag und Begründung angeben.'); return; }
+                      const amountCents = Math.round(parsed * 100);
+                      // Speichern
+                      await fetch(`/api/orders/${orderId}/extras`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, amountCents }) });
+                      // Bestellung mit Produkt/Preis erzeugen (nutzt WC_PRODUCT_ID_WORKORDER, sonst Fee)
+                      await fetch(`/api/orders/${orderId}/woocommerce`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'full', amountCents, customLabel: `Extra: ${label}` }) });
+                      alert('Extrakosten-Bestellung angelegt');
+                    }}
+                  >Bestellung erzeugen</button>
+                </div>
+              </div>
+              )}
+            </div>
           </div>
         )}
 

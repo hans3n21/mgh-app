@@ -76,6 +76,11 @@ model Order {
   images     OrderImage[]
   items      OrderItem[]
   messages   Message[]
+  wcOrderId  String?
+  // Abrechnung
+  finalAmountCents Int?
+  paymentStatus    String   @default("open") // open | deposit | paid
+  extras           OrderExtra[]
 }
 
 model OrderSpecKV {
@@ -140,6 +145,17 @@ model OrderItem {
   notes       String?
   order       Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   priceItem   PriceItem? @relation(fields: [priceItemId], references: [id])
+
+  @@index([orderId])
+}
+
+model OrderExtra {
+  id           String   @id @default(cuid())
+  orderId      String
+  label        String
+  amountCents  Int
+  createdAt    DateTime @default(now())
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
 }

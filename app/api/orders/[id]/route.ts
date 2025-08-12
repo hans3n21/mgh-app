@@ -6,6 +6,8 @@ const updateOrderSchema = z.object({
   status: z.enum(['intake', 'quote', 'in_progress', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
   assigneeId: z.string().nullable().optional(),
   title: z.string().optional(),
+  finalAmountCents: z.number().int().nonnegative().nullable().optional(),
+  paymentStatus: z.enum(['open','deposit','paid']).optional(),
 });
 
 interface RouteParams {
