@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import Navigation from '@/components/Navigation';
 import SessionProvider from '@/components/SessionProvider';
+import GlobalMobileNav from '@/components/GlobalMobileNav';
 
 export default async function AppLayout({
   children,
@@ -35,6 +36,7 @@ export default async function AppLayout({
         <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
           {children}
         </main>
+        <GlobalMobileNav />
       </div>
     </SessionProvider>
   );

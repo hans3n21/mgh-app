@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import OrderDetailTabs from '@/components/OrderDetailTabs';
+import OrderDetailTabsNew from '@/components/OrderDetailTabsNew';
 
 const STATUS_LABEL: Record<string, string> = {
   intake: 'Eingang',
@@ -116,9 +116,7 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     setOrder({ ...order, images: newImages });
   };
 
-  const handleItemsChange = (newItems: typeof order.items) => {
-    setOrder({ ...order, items: newItems });
-  };
+
 
   const handleMessagesChange = (newMessages: typeof order.messages) => {
     setOrder({ ...order, messages: newMessages });
@@ -127,83 +125,37 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
   const progress = statusToProgress(order.status);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
-      {/* Left Column */}
-      <div className="space-y-4">
-        {/* Progress Bar */}
-        <div>
-          <div className="text-xs text-slate-400">Status</div>
-          <div className="mt-1 h-2 w-full rounded-full bg-slate-800">
-            <div 
-              className="h-2 rounded-full bg-sky-500 transition-all duration-300" 
-              style={{ width: `${progress}%` }} 
-            />
-          </div>
-          <div className="mt-1 text-xs text-slate-300">{STATUS_LABEL[order.status]}</div>
+    <div className="w-full space-y-4">
+      {/* Progress Bar */}
+      <div>
+        <div className="text-xs text-slate-400">Status</div>
+        <div className="mt-1 h-2 w-full rounded-full bg-slate-800">
+          <div 
+            className="h-2 rounded-full bg-sky-500 transition-all duration-300" 
+            style={{ width: `${progress}%` }} 
+          />
         </div>
-
-        {/* Tabs */}
-        <OrderDetailTabs
-          orderId={order.id}
-          specs={order.specs}
-          images={order.images}
-          items={order.items}
-          messages={order.messages}
-          priceItems={priceItems}
-          status={order.status}
-          assigneeId={order.assigneeId}
-          users={users}
-          currentUserId={currentUserId}
-          onStatusChange={handleStatusChange}
-          onAssigneeChange={handleAssigneeChange}
-          onImagesChange={handleImagesChange}
-          onItemsChange={handleItemsChange}
-          onMessagesChange={handleMessagesChange}
-        />
+        <div className="mt-1 text-xs text-slate-300">{STATUS_LABEL[order.status]}</div>
       </div>
 
-      {/* Right Column */}
-      <div className="space-y-3">
-        <div className="rounded-xl border border-slate-800 p-3">
-          <div className="font-semibold">Kunde</div>
-          <div className="mt-1 text-sm text-slate-300">{order.customer?.name || 'Unbekannt'}</div>
-          <div className="text-xs text-slate-400">
-            {order.customer?.email} {order.customer?.phone && `· ${order.customer.phone}`}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 p-3">
-          <div className="font-semibold">Allgemein</div>
-          <div className="mt-2 grid text-sm gap-2">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Zuständig</span>
-              <span>{order.assignee?.name || '—'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Erstellt</span>
-              <span>{new Date(order.createdAt).toLocaleDateString('de-DE')}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Specs</span>
-              <span>{order.specs.length}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Items</span>
-              <span>{order.items.length}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 p-3">
-          <div className="font-semibold">Checkliste</div>
-          <ul className="mt-2 text-sm space-y-1 text-slate-400">
-            <li>• Material verfügbar</li>
-            <li>• Maße bestätigt</li>
-            <li>• Kundenfreigabe</li>
-            <li>• Qualitätsprüfung</li>
-          </ul>
-        </div>
-      </div>
+      {/* Tabs - Vollbreite */}
+      <OrderDetailTabsNew
+        orderId={order.id}
+        orderType={order.type}
+        specs={order.specs}
+        images={order.images}
+        messages={order.messages}
+        priceItems={priceItems}
+        status={order.status}
+        assigneeId={order.assigneeId}
+        users={users}
+        currentUserId={currentUserId}
+        order={order}
+        onStatusChange={handleStatusChange}
+        onAssigneeChange={handleAssigneeChange}
+        onImagesChange={handleImagesChange}
+        onMessagesChange={handleMessagesChange}
+      />
     </div>
   );
 }

@@ -2,14 +2,16 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createPortal } from 'react-dom';
 
 const TYPE_LABEL = {
-  guitar: 'Gitarrenbau',
-  body: 'Body',
-  pickguard: 'Pickguard',
-  pickup: 'Tonabnehmer',
-  repair: 'Reparatur',
-  laser: 'Laser/Druck',
+  GUITAR: 'Gitarrenbau',
+  BODY: 'Body',
+  NECK: 'Hals',
+  REPAIR: 'Reparatur',
+  PICKGUARD: 'Pickguard',
+  PICKUPS: 'Tonabnehmer',
+  FINISH_ONLY: 'Oberflächenbehandlung',
 } as const;
 
 interface Customer {
@@ -32,7 +34,7 @@ interface CreateOrderButtonProps {
 export default function CreateOrderButton({ customers, users }: CreateOrderButtonProps) {
   const [modal, setModal] = useState(false);
   const [title, setTitle] = useState('');
-  const [type, setType] = useState<keyof typeof TYPE_LABEL>('guitar');
+  const [type, setType] = useState<keyof typeof TYPE_LABEL>('GUITAR');
   const [assigneeId, setAssigneeId] = useState(users[0]?.id || '');
   const [mode, setMode] = useState<'new' | 'existing'>('existing');
   const [customerId, setCustomerId] = useState(customers[0]?.id || '');
@@ -76,19 +78,25 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
       }
 
       // Auftrag erstellen
+      const orderData = {
+        title: title.trim(),
+        type,
+        customerId: finalCustomerId,
+        assigneeId,
+      };
+      
+      console.log('Creating order with data:', orderData);
+      
       const orderRes = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: title.trim(),
-          type,
-          customerId: finalCustomerId,
-          assigneeId,
-        }),
+        body: JSON.stringify(orderData),
       });
 
       if (!orderRes.ok) {
-        throw new Error('Auftrag konnte nicht erstellt werden');
+        const errorData = await orderRes.json().catch(() => ({}));
+        console.error('Order creation failed:', orderRes.status, errorData);
+        throw new Error(`Auftrag konnte nicht erstellt werden (${orderRes.status}): ${errorData.error || 'Unbekannter Fehler'}`);
       }
 
       const newOrder = await orderRes.json();
@@ -107,14 +115,15 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
     <>
       <button
         onClick={() => setModal(true)}
-        className="rounded-lg bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-sm font-semibold"
+        className="rounded-lg bg-slate-700 hover:bg-slate-600 px-3 py-1.5 text-sm font-semibold text-slate-200"
       >
         + Auftrag
       </button>
 
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      {modal && typeof window !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 bg-black/60">
+            <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div className="text-lg font-semibold">+ Auftrag anlegen</div>
               <button
@@ -226,7 +235,7 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                   Abbrechen
                 </button>
                 <button
-                  className="rounded-lg bg-sky-600 hover:bg-sky-500 px-3 py-2 font-semibold disabled:opacity-50"
+                  className="rounded-lg bg-slate-700 hover:bg-slate-600 px-3 py-2 font-semibold disabled:opacity-50 text-slate-200"
                   onClick={submit}
                   disabled={loading}
                 >
@@ -234,8 +243,10 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                 </button>
               </div>
             </div>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

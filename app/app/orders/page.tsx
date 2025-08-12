@@ -13,12 +13,13 @@ const STATUS_LABEL = {
 } as const;
 
 const TYPE_LABEL = {
-  guitar: 'Gitarrenbau',
-  body: 'Body',
-  pickguard: 'Pickguard',
-  pickup: 'Tonabnehmer',
-  repair: 'Reparatur',
-  laser: 'Laser/Druck',
+  GUITAR: 'Gitarrenbau',
+  BODY: 'Body',
+  NECK: 'Hals',
+  REPAIR: 'Reparatur',
+  PICKGUARD: 'Pickguard',
+  PICKUPS: 'Tonabnehmer',
+  FINISH_ONLY: 'Oberflächenbehandlung',
 } as const;
 
 function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string }) {

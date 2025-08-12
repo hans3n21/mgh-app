@@ -228,26 +228,26 @@ async function main() {
       update: {
         category: item.category,
         label: item.label,
-        description: item.description ?? null,
-        unit: item.unit ?? null,
-        price: item.price ?? null,
-        min: item.min ?? null,
-        max: item.max ?? null,
-        priceText: item.priceText ?? null,
-        mainCategory: item.mainCategory ?? null,
+        description: item.description || null,
+        unit: item.unit || null,
+        price: item.price || null,
+        min: null, // Vereinfacht: setze immer null
+        max: null, // Vereinfacht: setze immer null
+        priceText: item.priceText || null,
+        mainCategory: item.mainCategory || null,
         active: true,
       },
       create: {
         id: `price-${slug}`,
         category: item.category,
         label: item.label,
-        description: item.description ?? null,
-        unit: item.unit ?? null,
-        price: item.price ?? null,
-        min: item.min ?? null,
-        max: item.max ?? null,
-        priceText: item.priceText ?? null,
-        mainCategory: item.mainCategory ?? null,
+        description: item.description || null,
+        unit: item.unit || null,
+        price: item.price || null,
+        min: null,
+        max: null,
+        priceText: item.priceText || null,
+        mainCategory: item.mainCategory || null,
         active: true,
       },
     });
@@ -258,7 +258,7 @@ async function main() {
     {
       id: 'ORD-2025-001',
       title: 'Custom T-Style',
-      type: 'guitar',
+      type: 'GUITAR',
       customerId: marcoD.id,
       assigneeId: johannes.id,
       status: 'in_progress',
@@ -267,7 +267,7 @@ async function main() {
     {
       id: 'ORD-2025-002',
       title: 'P-Bass Pickguard',
-      type: 'pickguard',
+      type: 'PICKGUARD',
       customerId: bjoern.id,
       assigneeId: lenny.id,
       status: 'awaiting_customer',
@@ -276,7 +276,7 @@ async function main() {
     {
       id: 'ORD-2025-003',
       title: 'Luke Body HH + Floyd',
-      type: 'body',
+      type: 'BODY',
       customerId: erik.id,
       assigneeId: patrick.id,
       status: 'quote',
@@ -285,7 +285,7 @@ async function main() {
     {
       id: 'ORD-2025-004',
       title: 'Setup Plus (Floyd)',
-      type: 'repair',
+      type: 'REPAIR',
       customerId: bjoern.id,
       assigneeId: matze.id,
       status: 'intake',
@@ -294,7 +294,7 @@ async function main() {
     {
       id: 'ORD-2025-005',
       title: 'HB Set Black',
-      type: 'pickup',
+      type: 'PICKUPS',
       customerId: sara.id,
       assigneeId: johannes.id,
       status: 'in_progress',
@@ -303,11 +303,29 @@ async function main() {
     {
       id: 'ORD-2025-006',
       title: 'Inlay 12. Bund (Wolf)',
-      type: 'laser',
+      type: 'ENGRAVING',
       customerId: erik.id,
       assigneeId: lenny.id,
       status: 'design_review',
       createdAt: new Date('2025-08-06'),
+    },
+    {
+      id: 'ORD-2025-007',
+      title: 'Neck Mahagoni 24 Fret',
+      type: 'NECK',
+      customerId: marcoD.id,
+      assigneeId: patrick.id,
+      status: 'quote',
+      createdAt: new Date('2025-08-10'),
+    },
+    {
+      id: 'ORD-2025-008',
+      title: 'Burst Lackierung',
+      type: 'FINISH_ONLY',
+      customerId: sara.id,
+      assigneeId: lenny.id,
+      status: 'intake',
+      createdAt: new Date('2025-08-12'),
     },
   ];
 
@@ -409,12 +427,55 @@ async function main() {
     });
   }
 
+  // Beispielbilder für Demo-Zwecke hinzufügen
+  const sampleImages = [
+    {
+      orderId: 'ORD-2025-001',
+      path: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400',
+      comment: 'Referenzbild für Custom T-Style',
+      position: 0,
+      attach: false,
+      scope: 'body',
+    },
+    {
+      orderId: 'ORD-2025-001', 
+      path: 'https://images.unsplash.com/photo-1516924962500-2b4b3b99ea02?w=400',
+      comment: 'Hals-Design Inspiration',
+      position: 1,
+      attach: false,
+      scope: 'neck',
+    },
+    {
+      orderId: 'ORD-2025-003',
+      path: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400',
+      comment: 'Luke Body Referenz',
+      position: 0,
+      attach: false,
+      scope: 'body',
+    },
+    {
+      orderId: 'ORD-2025-005',
+      path: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400',
+      comment: 'Humbucker Pickup Design',
+      position: 0,
+      attach: false,
+      scope: 'pickups',
+    }
+  ];
+
+  for (const imageData of sampleImages) {
+    await prisma.orderImage.create({
+      data: imageData,
+    });
+  }
+
   console.log('✅ Database seeded successfully');
   console.log(`👤 Admin: admin@mgh.local / mgh123`);
   console.log(`👥 Staff: johannes@mgh.local / staff123`);
   console.log(`📦 Created ${orders.length} orders`);
   console.log(`🏷️ Created ${priceItems.length} price items`);
   console.log(`🛒 Created ${procurementItems.length} procurement items`);
+  console.log(`🖼️ Created ${sampleImages.length} sample images`);
 }
 
 main()

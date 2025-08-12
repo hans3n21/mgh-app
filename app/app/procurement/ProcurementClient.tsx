@@ -45,13 +45,23 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState<string | null>(null);
+  const [editData, setEditData] = useState<{
+    name: string;
+    qty: number;
+    note: string;
+    orderId: string;
+  }>({
+    name: '',
+    qty: 1,
+    note: '',
+    orderId: ''
+  });
   const [loading, setLoading] = useState(false);
 
   // Form state für neues Item
   const [newItem, setNewItem] = useState({
     name: '',
     qty: 1,
-    neededBy: '',
     note: '',
     orderId: ''
   });
@@ -98,7 +108,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
         const item = await res.json();
         console.log('✅ Item created successfully:', item);
         setItems(prev => [item, ...prev]);
-        setNewItem({ name: '', qty: 1, neededBy: '', note: '', orderId: '' });
+        setNewItem({ name: '', qty: 1, note: '', orderId: '' });
         setShowAddForm(false);
         alert('✅ Item erfolgreich erstellt!');
       } else {
@@ -141,6 +151,51 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
     } catch (error) {
       console.error('Fehler beim Status-Update:', error);
       alert('Fehler beim Aktualisieren des Status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Item bearbeiten starten
+  const startEditItem = (item: ProcurementItem) => {
+    setEditingItem(item.id);
+    setEditData({
+      name: item.name,
+      qty: item.qty,
+      note: item.note || '',
+      orderId: item.orderId || ''
+    });
+  };
+
+  // Item bearbeiten speichern
+  const handleUpdateItem = async (itemId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/procurement', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          id: itemId, 
+          name: editData.name,
+          qty: editData.qty,
+          note: editData.note,
+          orderId: editData.orderId
+        }),
+      });
+
+      if (res.ok) {
+        const updatedItem = await res.json();
+        setItems(prev => prev.map(item => 
+          item.id === itemId ? updatedItem : item
+        ));
+        setEditingItem(null);
+      } else {
+        const error = await res.json();
+        alert(`Fehler: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Fehler beim Update:', error);
+      alert('Fehler beim Aktualisieren des Items');
     } finally {
       setLoading(false);
     }
@@ -223,7 +278,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
         <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
           <h3 className="text-lg font-semibold mb-3">Neues Procurement Item</h3>
           <form onSubmit={handleAddItem} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Produkt *</label>
                 <input
@@ -246,15 +301,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                   className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Benötigt bis</label>
-                <input
-                  type="date"
-                  value={newItem.neededBy}
-                  onChange={(e) => setNewItem(prev => ({ ...prev, neededBy: e.target.value }))}
-                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                />
-              </div>
+
               <div>
                 <label className="block text-sm font-medium mb-1">Auftrag ID</label>
                 <input
@@ -333,8 +380,31 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
               <tbody>
                 {filteredItems.map((item, index) => (
                   <tr key={item.id} className={`border-t border-slate-700 hover:bg-slate-800/30 ${index % 2 === 0 ? 'bg-slate-800/10' : ''}`}>
-                    <td className="py-3 px-4 font-medium">{item.name}</td>
-                    <td className="py-3 px-4">{item.qty} Stk</td>
+                    <td className="py-3 px-4 font-medium">
+                      {editingItem === item.id ? (
+                        <input
+                          type="text"
+                          value={editData.name}
+                          onChange={(e) => setEditData(prev => ({ ...prev, name: e.target.value }))}
+                          className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm"
+                        />
+                      ) : (
+                        item.name
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      {editingItem === item.id ? (
+                        <input
+                          type="number"
+                          min="1"
+                          value={editData.qty}
+                          onChange={(e) => setEditData(prev => ({ ...prev, qty: parseInt(e.target.value) }))}
+                          className="w-20 rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm"
+                        />
+                      ) : (
+                        `${item.qty} Stk`
+                      )}
+                    </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusLabels[item.status as keyof typeof statusLabels]?.color || 'bg-slate-500/20 text-slate-400'}`}>
                         {statusLabels[item.status as keyof typeof statusLabels]?.label || item.status}
@@ -344,10 +414,30 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                       {item.creator?.name || 'Unbekannt'}
                     </td>
                     <td className="py-3 px-4 text-slate-400">
-                      {item.orderId || '—'}
+                      {editingItem === item.id ? (
+                        <input
+                          type="text"
+                          value={editData.orderId}
+                          onChange={(e) => setEditData(prev => ({ ...prev, orderId: e.target.value }))}
+                          className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm"
+                          placeholder="ORD-2025-001"
+                        />
+                      ) : (
+                        item.orderId || '—'
+                      )}
                     </td>
-                    <td className="py-3 px-4 text-slate-400 max-w-xs truncate">
-                      {item.note || '—'}
+                    <td className="py-3 px-4 text-slate-400 max-w-xs">
+                      {editingItem === item.id ? (
+                        <input
+                          type="text"
+                          value={editData.note}
+                          onChange={(e) => setEditData(prev => ({ ...prev, note: e.target.value }))}
+                          className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm"
+                          placeholder="Notiz..."
+                        />
+                      ) : (
+                        <span className="truncate">{item.note || '—'}</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-slate-400">
                       {new Date(item.createdAt).toLocaleDateString('de-DE')}
@@ -355,45 +445,77 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                     {isAdmin && (
                       <td className="py-3 px-4">
                         <div className="flex gap-1">
-                          {/* Status Icon Buttons */}
-                          {item.status !== 'offen' && (
-                            <button
-                              onClick={() => handleStatusChange(item.id, 'offen')}
-                              className="text-yellow-400 hover:text-yellow-300 p-1 rounded hover:bg-slate-700"
-                              title="Auf Offen setzen"
-                            >
-                              ⭕
-                            </button>
+                          {editingItem === item.id ? (
+                            <>
+                              {/* Save Button */}
+                              <button
+                                onClick={() => handleUpdateItem(item.id)}
+                                className="text-green-400 hover:text-green-300 p-1 rounded hover:bg-slate-700"
+                                title="Speichern"
+                              >
+                                ✅
+                              </button>
+                              {/* Cancel Button */}
+                              <button
+                                onClick={() => setEditingItem(null)}
+                                className="text-slate-400 hover:text-slate-300 p-1 rounded hover:bg-slate-700"
+                                title="Abbrechen"
+                              >
+                                ❌
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {/* Edit Button */}
+                              <button
+                                onClick={() => startEditItem(item)}
+                                className="text-slate-400 hover:text-slate-300 p-1 rounded hover:bg-slate-700"
+                                title="Bearbeiten"
+                              >
+                                ✏️
+                              </button>
+                              
+                              {/* Status Icon Buttons */}
+                              {item.status !== 'offen' && (
+                                <button
+                                  onClick={() => handleStatusChange(item.id, 'offen')}
+                                  className="text-yellow-400 hover:text-yellow-300 p-1 rounded hover:bg-slate-700"
+                                  title="Auf Offen setzen"
+                                >
+                                  ⭕
+                                </button>
+                              )}
+                              
+                              {item.status !== 'bestellt' && (
+                                <button
+                                  onClick={() => handleStatusChange(item.id, 'bestellt')}
+                                  className="text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-slate-700"
+                                  title="Als bestellt markieren"
+                                >
+                                  🚚
+                                </button>
+                              )}
+                              
+                              {(item.status === 'bestellt' || item.status === 'offen') && (
+                                <button
+                                  onClick={() => handleStatusChange(item.id, 'archiviert')}
+                                  className="text-green-400 hover:text-green-300 p-1 rounded hover:bg-slate-700"
+                                  title="Als eingetroffen markieren (wird archiviert)"
+                                >
+                                  ✅
+                                </button>
+                              )}
+                              
+                              {/* Delete Button */}
+                              <button
+                                onClick={() => handleDeleteItem(item.id)}
+                                className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-slate-700"
+                                title="Löschen"
+                              >
+                                🗑️
+                              </button>
+                            </>
                           )}
-                          
-                          {item.status !== 'bestellt' && (
-                            <button
-                              onClick={() => handleStatusChange(item.id, 'bestellt')}
-                              className="text-blue-400 hover:text-blue-300 p-1 rounded hover:bg-slate-700"
-                              title="Als bestellt markieren"
-                            >
-                              🚚
-                            </button>
-                          )}
-                          
-                          {(item.status === 'bestellt' || item.status === 'offen') && (
-                            <button
-                              onClick={() => handleStatusChange(item.id, 'archiviert')}
-                              className="text-green-400 hover:text-green-300 p-1 rounded hover:bg-slate-700"
-                              title="Als eingetroffen markieren (wird archiviert)"
-                            >
-                              ✅
-                            </button>
-                          )}
-                          
-                          {/* Delete Button */}
-                          <button
-                            onClick={() => handleDeleteItem(item.id)}
-                            className="text-red-400 hover:text-red-300 p-1 rounded hover:bg-slate-700"
-                            title="Löschen"
-                          >
-                            🗑️
-                          </button>
                         </div>
                       </td>
                     )}

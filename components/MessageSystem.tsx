@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useImperativeHandle, forwardRef } from 'react';
+import DatasheetPDFGenerator from './DatasheetPDFGenerator';
 
 interface Message {
   id: string;
@@ -15,27 +16,74 @@ interface MessageSystemProps {
   messages: Message[];
   currentUserId: string;
   onMessagesChange: (messages: Message[]) => void;
+  images?: { id: string; path: string; comment?: string }[];
+  onPDFAttachment?: (pdfBlob: Blob, filename: string) => void;
+  // Für PDF-Generierung
+  orderTitle?: string;
+  orderType?: string;
+  customerName?: string;
+  specs?: { id: string; key: string; value: string }[];
+  activeCategories?: Set<string>;
 }
 
-export default function MessageSystem({ 
+const MessageSystem = forwardRef<
+  { attachPDF: (blob: Blob, filename: string) => void },
+  MessageSystemProps
+>(function MessageSystem({ 
   orderId, 
   messages, 
   currentUserId, 
-  onMessagesChange 
-}: MessageSystemProps) {
+  onMessagesChange,
+  images,
+  onPDFAttachment,
+  orderTitle,
+  orderType,
+  customerName,
+  specs,
+  activeCategories,
+}, ref) {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [attachedPDF, setAttachedPDF] = useState<{ blob: Blob; filename: string } | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    attachPDF: (blob: Blob, filename: string) => {
+      setAttachedPDF({ blob, filename });
+    }
+  }));
 
   const sendMessage = async () => {
     if (!newMessage.trim() || sending) return;
 
     setSending(true);
     try {
+      // Nachricht mit ausgewählten Bildern und PDFs zusammenstellen
+      let messageBody = newMessage.trim();
+      const attachments: string[] = [];
+      
+      if (selectedImages.length > 0) {
+        const imageUrls = selectedImages.map(id => {
+          const img = images?.find(i => i.id === id);
+          return img?.path;
+        }).filter(Boolean);
+        
+        attachments.push(...imageUrls.map(url => `🖼️ ${url}`));
+      }
+      
+      if (attachedPDF) {
+        attachments.push(`📄 ${attachedPDF.filename}`);
+      }
+      
+      if (attachments.length > 0) {
+        messageBody += '\n\n📎 Anhänge:\n' + attachments.join('\n');
+      }
+
       const response = await fetch(`/api/orders/${orderId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          body: newMessage.trim(),
+          body: messageBody,
           senderType: 'staff',
           senderId: currentUserId,
         }),
@@ -45,6 +93,8 @@ export default function MessageSystem({
         const createdMessage = await response.json();
         onMessagesChange([...messages, createdMessage]);
         setNewMessage('');
+        setSelectedImages([]);
+        setAttachedPDF(null);
       }
     } catch (error) {
       console.error('Fehler beim Senden:', error);
@@ -126,18 +176,108 @@ export default function MessageSystem({
           rows={3}
         />
         <div className="flex justify-between items-center">
-          <div className="text-xs text-slate-500">
-            {newMessage.length}/500 Zeichen
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-slate-500">
+              {newMessage.length}/500 Zeichen
+            </div>
+            {selectedImages.length > 0 && (
+              <div className="text-xs bg-sky-600 text-white px-2 py-0.5 rounded">
+                {selectedImages.length} Bild(er) ausgewählt
+              </div>
+            )}
+            {attachedPDF && (
+              <div className="flex items-center gap-2 text-xs bg-green-600 text-white px-2 py-0.5 rounded">
+                <span>📄 {attachedPDF.filename}</span>
+                <button
+                  onClick={() => setAttachedPDF(null)}
+                  className="hover:bg-green-700 px-1 rounded"
+                  title="PDF entfernen"
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </div>
           <button
             onClick={sendMessage}
             disabled={sending || !newMessage.trim() || newMessage.length > 500}
-            className="rounded bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            className="rounded bg-slate-700 hover:bg-slate-600 px-3 py-1.5 text-sm font-medium disabled:opacity-50 text-slate-200"
           >
             {sending ? 'Sendet...' : 'Senden'}
           </button>
         </div>
       </div>
+
+      {/* Dateien als Anhang Panel - unter "Neue Nachricht" */}
+      {(images && images.length > 0) || (specs && specs.length > 0) ? (
+        <div className="rounded-lg border border-slate-700 p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium">📎 Dateien als Anhang hinzufügen</div>
+            {selectedImages.length > 0 && (
+              <button
+                onClick={() => setSelectedImages([])}
+                className="text-xs text-slate-400 hover:text-slate-300"
+              >
+                Auswahl zurücksetzen
+              </button>
+            )}
+          </div>
+          {images && images.length > 0 && (
+            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-40 overflow-y-auto">
+              {images.map((img) => (
+              <div key={img.id} className="relative group">
+                <img
+                  src={img.path}
+                  className={`w-full h-16 object-cover rounded cursor-pointer border-2 transition-colors ${
+                    selectedImages.includes(img.id)
+                      ? 'border-sky-500 shadow-lg shadow-sky-500/25'
+                      : 'border-slate-600 hover:border-slate-400'
+                  }`}
+                  title={img.comment || 'Bild als Anhang auswählen'}
+                  onClick={() => {
+                    setSelectedImages(prev => 
+                      prev.includes(img.id) 
+                        ? prev.filter(id => id !== img.id)
+                        : [...prev, img.id]
+                    );
+                  }}
+                />
+                {selectedImages.includes(img.id) && (
+                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-sky-600 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">✓</span>
+                  </div>
+                )}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* PDF-Datenblatt Sektion */}
+          {specs && specs.length > 0 && orderTitle && orderType && customerName && activeCategories && (
+            <div className="border-t border-slate-600 pt-3">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm font-medium">📄 Datenblatt-PDF</div>
+              </div>
+              <DatasheetPDFGenerator
+                orderId={orderId}
+                orderTitle={orderTitle}
+                orderType={orderType}
+                customerName={customerName}
+                specs={specs}
+                activeCategories={activeCategories}
+                buttonText="📧 Datenblatt-PDF anhängen"
+                onPDFGenerated={(pdfBlob, filename) => {
+                  setAttachedPDF({ blob: pdfBlob, filename });
+                }}
+              />
+            </div>
+          )}
+          
+          <div className="text-xs text-slate-500">
+            💡 Klicke auf Bilder, um sie als Anhang auszuwählen. PDFs werden automatisch angehängt.
+          </div>
+        </div>
+      ) : null}
 
       {/* Customer Message Simulation */}
       <div className="rounded-lg border border-slate-600/50 bg-slate-800/30 p-3">
@@ -173,4 +313,6 @@ export default function MessageSystem({
       </div>
     </div>
   );
-}
+});
+
+export default MessageSystem;

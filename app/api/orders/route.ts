@@ -4,10 +4,21 @@ import { z } from 'zod';
 
 const createOrderSchema = z.object({
   title: z.string().min(1),
-  type: z.enum(['guitar', 'body', 'pickguard', 'pickup', 'repair', 'laser']),
+  type: z.enum(['GUITAR', 'BODY', 'NECK', 'REPAIR', 'PICKGUARD', 'PICKUPS', 'FINISH_ONLY']),
   customerId: z.string(),
   assigneeId: z.string().optional(),
 });
+
+// Mapping von Frontend-Werten zu Prisma-Enum-Werten (nicht mehr nötig, da direkt Enum-Werte verwendet werden)
+const TYPE_MAPPING: Record<string, string> = {
+  'GUITAR': 'GUITAR',
+  'BODY': 'BODY',
+  'NECK': 'NECK', 
+  'REPAIR': 'REPAIR',
+  'PICKGUARD': 'PICKGUARD',
+  'PICKUPS': 'PICKUPS',
+  'FINISH_ONLY': 'FINISH_ONLY',
+};
 
 export async function GET() {
   try {
@@ -34,7 +45,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    console.log('Creating order with body:', body);
     const validatedData = createOrderSchema.parse(body);
+    console.log('Validated data:', validatedData);
 
     // Generate order ID
     const lastOrder = await prisma.order.findFirst({
@@ -52,10 +65,16 @@ export async function POST(request: NextRequest) {
     const currentYear = new Date().getFullYear();
     const orderId = `ORD-${currentYear}-${orderNumber.toString().padStart(3, '0')}`;
 
+    console.log('Creating order with ID:', orderId, 'and data:', validatedData);
+    
+    // Map frontend type to Prisma enum
+    const mappedType = TYPE_MAPPING[validatedData.type] || validatedData.type.toUpperCase();
+    
     const order = await prisma.order.create({
       data: {
         id: orderId,
         ...validatedData,
+        type: mappedType,
       },
       include: {
         customer: true,
@@ -63,6 +82,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log('Order created successfully:', order.id);
     return NextResponse.json(order, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {

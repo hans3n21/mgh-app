@@ -13,12 +13,13 @@ const STATUS_LABEL = {
 } as const;
 
 const TYPE_LABEL = {
-  guitar: 'Gitarrenbau',
-  body: 'Body',
-  pickguard: 'Pickguard',
-  pickup: 'Tonabnehmer',
-  repair: 'Reparatur',
-  laser: 'Laser/Druck',
+  GUITAR: 'Gitarrenbau',
+  BODY: 'Body',
+  NECK: 'Hals',
+  REPAIR: 'Reparatur',
+  PICKGUARD: 'Pickguard',
+  PICKUPS: 'Tonabnehmer',
+  FINISH_ONLY: 'Oberflächenbehandlung',
 } as const;
 
 function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string }) {
@@ -42,7 +43,7 @@ function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string })
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-center sm:text-left">
       <div className="text-slate-300 text-sm">{label}</div>
       <div className="text-2xl font-bold">{value}</div>
     </div>
@@ -86,34 +87,38 @@ export default async function Dashboard() {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Aktivste Aufträge</h2>
           <Link href="/app/orders" className="text-sm text-sky-400 hover:text-sky-300">
-            Alle anzeigen
+            Alle Aufträge
           </Link>
         </div>
         
         <ul className="mt-3 divide-y divide-slate-800">
           {orders.map((order) => (
-            <li key={order.id} className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{order.title}</span>
-                  <span className="text-xs rounded-full border border-slate-700 px-2 py-0.5 text-slate-300">
-                    {TYPE_LABEL[order.type]}
-                  </span>
+            <li key={order.id} className="py-3">
+              <Link 
+                href={`/app/orders/${order.id}`}
+                className="block hover:bg-slate-800/30 rounded-lg p-2 -m-2 transition-colors"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="text-center sm:text-left">
+                    <div className="flex items-center justify-center sm:justify-start gap-2">
+                      <span className="font-medium">{order.title}</span>
+                      <span className="text-xs rounded-full border border-slate-700 px-2 py-0.5 text-slate-300">
+                        {TYPE_LABEL[order.type]}
+                      </span>
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {order.id} · {order.customer?.name || 'Unbekannt'}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-center sm:justify-end gap-3">
+                    <StatusBadge status={order.status} />
+                    <span className="hidden sm:inline text-sm rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800">
+                      Öffnen
+                    </span>
+                  </div>
                 </div>
-                <div className="text-sm text-slate-400">
-                  {order.id} · {order.customer?.name || 'Unbekannt'}
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <StatusBadge status={order.status} />
-                <Link
-                  href={`/app/orders/${order.id}`}
-                  className="text-sm rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-                >
-                  Öffnen
-                </Link>
-              </div>
+              </Link>
             </li>
           ))}
         </ul>

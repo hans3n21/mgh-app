@@ -7,6 +7,8 @@ const createImageSchema = z.object({
   comment: z.string().optional(),
   position: z.number().default(0),
   attach: z.boolean().default(false),
+  scope: z.string().optional(),
+  fieldKey: z.string().optional(),
 });
 
 interface RouteParams {
@@ -15,8 +17,9 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    const { id } = await params;
     const images = await prisma.orderImage.findMany({
-      where: { orderId: params.id },
+      where: { orderId: id },
       orderBy: { position: 'asc' },
     });
 
@@ -32,12 +35,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const validatedData = createImageSchema.parse(body);
 
     const image = await prisma.orderImage.create({
       data: {
-        orderId: params.id,
+        orderId: id,
         ...validatedData,
       },
     });
@@ -61,6 +65,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    const { id } = await params;
     const { searchParams } = new URL(request.url);
     const imageId = searchParams.get('imageId');
 
@@ -74,7 +79,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await prisma.orderImage.delete({
       where: {
         id: imageId,
-        orderId: params.id, // Ensure image belongs to this order
+        orderId: id, // Ensure image belongs to this order
       },
     });
 
@@ -85,5 +90,54 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       { error: 'Failed to delete image' },
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: orderId } = await params as unknown as { id: string };
+
+    const updateSchema = z.object({
+      id: z.string(),
+      comment: z.string().optional(),
+      position: z.number().int().optional(),
+      attach: z.boolean().optional(),
+      scope: z.string().nullable().optional(),
+      fieldKey: z.string().nullable().optional(),
+    });
+
+    const body = await request.json();
+    const validated = updateSchema.parse(body);
+
+    // Sicherstellen, dass das Bild zu diesem Auftrag gehört
+    const existing = await prisma.orderImage.findFirst({
+      where: { id: validated.id, orderId },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
+    }
+
+    const image = await prisma.orderImage.update({
+      where: { id: validated.id },
+      data: {
+        comment: validated.comment ?? undefined,
+        position: validated.position,
+        attach: validated.attach,
+        scope: (validated.scope ?? undefined) as string | undefined,
+        fieldKey: (validated.fieldKey ?? undefined) as string | undefined,
+      },
+    });
+
+    return NextResponse.json(image);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid data', details: error.issues },
+        { status: 400 }
+      );
+    }
+    console.error('Error updating image:', error);
+    return NextResponse.json({ error: 'Failed to update image' }, { status: 500 });
   }
 }

@@ -11,12 +11,14 @@ datasource db {
 }
 
 enum OrderType {
-  guitar
-  body
-  pickguard
-  pickup
-  repair
-  laser
+  GUITAR
+  BODY
+  NECK
+  REPAIR
+  PICKGUARD
+  PICKUPS
+  ENGRAVING
+  FINISH_ONLY
 }
 
 enum OrderStatus {
@@ -93,6 +95,8 @@ model OrderImage {
   comment   String?
   position  Int      @default(0)
   attach    Boolean  @default(false)
+  scope     String?  // categorization: body, neck, finish, repair, pickguard, pickups, engraving
+  fieldKey  String?  // optional link to specific field
   createdAt DateTime @default(now())
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 

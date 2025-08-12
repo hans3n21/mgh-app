@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import ImageCarouselModal, { type CarouselImage } from './ImageCarouselModal';
 
 interface OrderImage {
   id: string;
@@ -8,20 +9,47 @@ interface OrderImage {
   comment?: string;
   position: number;
   attach: boolean;
+  scope?: string;
+  fieldKey?: string;
   createdAt: Date;
 }
 
 interface ImageUploaderProps {
   orderId: string;
   images: OrderImage[];
+  allowedScopes?: string[];
   onImagesChange: (images: OrderImage[]) => void;
 }
 
-export default function ImageUploader({ orderId, images, onImagesChange }: ImageUploaderProps) {
+export default function ImageUploader({ orderId, images, allowedScopes, onImagesChange }: ImageUploaderProps) {
   const [uploading, setUploading] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState('');
   const [newImageComment, setNewImageComment] = useState('');
+  const [selectedScope, setSelectedScope] = useState<string>('');
+  const [selectedFieldKey, setSelectedFieldKey] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showUpload, setShowUpload] = useState(true);
+  const [lightbox, setLightbox] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
+  const carouselImages: CarouselImage[] = images.map((img) => ({
+    id: img.id,
+    path: img.path,
+    comment: img.comment,
+    scope: img.scope,
+    attach: img.attach,
+    position: img.position,
+  }));
+
+  const updateImage = async (id: string, patch: Partial<OrderImage>) => {
+    const res = await fetch(`/api/orders/${orderId}/images`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...patch }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      onImagesChange(images.map((img) => (img.id === id ? updated : img)));
+    }
+  };
 
   const addImageByUrl = async () => {
     if (!newImageUrl.trim()) return;
@@ -35,6 +63,8 @@ export default function ImageUploader({ orderId, images, onImagesChange }: Image
           path: newImageUrl.trim(),
           comment: newImageComment.trim() || undefined,
           position: images.length,
+          scope: selectedScope || undefined,
+          fieldKey: selectedFieldKey || undefined,
         }),
       });
 
@@ -43,6 +73,8 @@ export default function ImageUploader({ orderId, images, onImagesChange }: Image
         onImagesChange([...images, newImage]);
         setNewImageUrl('');
         setNewImageComment('');
+        setSelectedScope('');
+        setSelectedFieldKey('');
       }
     } catch (error) {
       console.error('Fehler beim Hinzufügen:', error);
@@ -71,53 +103,75 @@ export default function ImageUploader({ orderId, images, onImagesChange }: Image
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    // In einer echten App würden wir hier die Dateien zu einem Server/Cloud-Storage hochladen
-    // Für diese Demo simulieren wir das mit einem lokalen URL
-    const file = files[0];
-    const url = URL.createObjectURL(file);
-    
-    // Simuliere Upload-Verzögerung
     setUploading(true);
-    setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/orders/${orderId}/images`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            path: `uploads/${file.name}`, // In Realität: echte Upload-URL
-            comment: `Hochgeladen: ${file.name}`,
-            position: images.length,
-          }),
-        });
+    
+    // Mehrere Dateien parallel verarbeiten
+    const createdImages: OrderImage[] = [];
+    const uploadPromises = Array.from(files).map((file, index) => {
+      return new Promise<void>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const dataUrl = e.target?.result as string;
+            const response = await fetch(`/api/orders/${orderId}/images`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                path: dataUrl,
+                comment: `Hochgeladen: ${file.name}`,
+                position: images.length + index,
+                scope: selectedScope || undefined,
+                fieldKey: selectedFieldKey || undefined,
+              }),
+            });
 
-        if (response.ok) {
-          const newImage = await response.json();
-          onImagesChange([...images, newImage]);
-        }
-      } catch (error) {
-        console.error('Fehler beim Upload:', error);
-        alert('Fehler beim Hochladen des Bildes');
-      } finally {
-        setUploading(false);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
+            if (response.ok) {
+              const newImage: OrderImage = await response.json();
+              createdImages.push(newImage);
+            }
+            resolve();
+          } catch (error) {
+            console.error(`Fehler beim Upload von ${file.name}:`, error);
+            reject(error);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    // Warte auf alle Uploads
+    Promise.allSettled(uploadPromises).then((results) => {
+      const failed = results.filter(r => r.status === 'rejected').length;
+      if (failed > 0) {
+        alert(`${failed} von ${files.length} Bildern konnten nicht hochgeladen werden.`);
       }
-    }, 1000);
+      
+      setUploading(false);
+      // Wichtig: onImagesChange mit neuem Array aufrufen
+      if (createdImages.length > 0) {
+        onImagesChange([...images, ...createdImages]);
+      }
+      setSelectedScope('');
+      setSelectedFieldKey('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    });
   };
 
   return (
     <div className="space-y-4">
-      {/* Add Image Section */}
+              <div className="flex items-center justify-between">
+          <div className="font-medium text-sm">Bilder</div>
+        </div>
+
       <div className="rounded-lg border border-slate-700 p-3 space-y-3">
-        <div className="font-medium text-sm">Bild hinzufügen</div>
-        
-        {/* File Upload */}
-        <div>
+          {/* Nur noch einfacher Upload */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -126,93 +180,53 @@ export default function ImageUploader({ orderId, images, onImagesChange }: Image
             disabled={uploading}
             className="w-full rounded-lg border-2 border-dashed border-slate-600 p-4 text-sm text-slate-400 hover:border-slate-500 hover:text-slate-300 disabled:opacity-50"
           >
-            {uploading ? 'Lädt hoch...' : '📁 Datei auswählen oder hier ablegen'}
+            {uploading ? 'Lädt hoch...' : '📁 Bild(er) hinzufügen'}
           </button>
         </div>
-
-        {/* URL Input */}
-        <div className="text-xs text-slate-500 text-center">oder</div>
-        <div className="flex gap-2">
-          <input
-            placeholder="Bild-URL eingeben..."
-            value={newImageUrl}
-            onChange={(e) => setNewImageUrl(e.target.value)}
-            className="flex-1 rounded bg-slate-950 border border-slate-700 px-2 py-1.5 text-sm"
-          />
-          <input
-            placeholder="Kommentar (optional)"
-            value={newImageComment}
-            onChange={(e) => setNewImageComment(e.target.value)}
-            className="flex-1 rounded bg-slate-950 border border-slate-700 px-2 py-1.5 text-sm"
-          />
-          <button
-            onClick={addImageByUrl}
-            disabled={uploading || !newImageUrl.trim()}
-            className="rounded bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-          >
-            +
-          </button>
-        </div>
-      </div>
 
       {/* Images Grid */}
-      <div className="space-y-3">
+      <div>
         {images.length === 0 ? (
-          <div className="text-slate-500 text-sm text-center py-4">
-            Noch keine Bilder hochgeladen
-          </div>
+          <div className="text-slate-500 text-sm text-center py-4">Noch keine Bilder hochgeladen</div>
         ) : (
-          images.map((image, index) => (
-            <div key={image.id} className="rounded-lg border border-slate-700 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">#{index + 1}</span>
-                    <div className="text-sm font-mono text-slate-300 truncate">
-                      {image.path}
-                    </div>
-                    {image.attach && (
-                      <span className="text-xs bg-sky-500/20 text-sky-400 px-1.5 py-0.5 rounded">
-                        Anhang
-                      </span>
-                    )}
-                  </div>
-                  {image.comment && (
-                    <div className="text-sm text-slate-400 mt-1">{image.comment}</div>
-                  )}
-                  <div className="text-xs text-slate-500 mt-1">
-                    {new Date(image.createdAt).toLocaleString('de-DE')}
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-1">
-                  {/* Preview Button (falls es eine echte URL ist) */}
-                  {(image.path.startsWith('http') || image.path.startsWith('data:')) && (
-                    <button
-                      onClick={() => window.open(image.path, '_blank')}
-                      className="text-xs rounded border border-slate-600 px-2 py-1 hover:bg-slate-800"
-                    >
-                      👁 Anzeigen
-                    </button>
-                  )}
-                  
-                  <button
-                    onClick={() => deleteImage(image.id)}
-                    className="text-xs rounded border border-red-600 text-red-400 px-2 py-1 hover:bg-red-600/20"
-                  >
-                    🗑 Löschen
-                  </button>
-                </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+            {images.map((image, idx) => (
+              <div key={image.id} className="relative group">
+                <img
+                  src={image.path}
+                  alt={image.comment || 'Bild'}
+                  className="h-24 w-full object-cover rounded border border-slate-700 cursor-pointer"
+                  onClick={() => setLightbox({ open: true, index: idx })}
+                />
+                {image.scope && (
+                  <span className="absolute bottom-1 left-1 text-[10px] px-1 rounded bg-black/60 text-white">
+                    {image.scope}
+                  </span>
+                )}
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
 
       {/* Info */}
       <div className="text-xs text-slate-500">
-        💡 <strong>Demo-Hinweis:</strong> Datei-Uploads werden simuliert. In der Produktion würden echte Dateien zu einem Cloud-Storage hochgeladen.
+        💡 <strong>Demo-Hinweis:</strong> Datei-Uploads werden simuliert. Du kannst mehrere Bilder gleichzeitig auswählen. In der Produktion würden echte Dateien zu einem Cloud-Storage hochgeladen.
       </div>
+
+      {lightbox.open && (
+        <ImageCarouselModal
+          images={carouselImages}
+          index={lightbox.index}
+          scopes={allowedScopes}
+          onClose={() => setLightbox({ open: false, index: 0 })}
+          onUpdate={updateImage}
+          onDelete={async (id) => {
+            await deleteImage(id);
+            setLightbox({ open: false, index: 0 });
+          }}
+        />
+      )}
     </div>
   );
 }

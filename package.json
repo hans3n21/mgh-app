@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:reset": "prisma migrate reset --force --skip-generate --skip-seed && prisma generate && ts-node prisma/seed.ts",
-    "db:seed": "ts-node prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force --skip-generate --skip-seed && prisma generate && tsx prisma/seed.ts",
+    "db:seed": "tsx prisma/seed.ts",
     "smoke": "ts-node scripts/smoke.ts"
   },
   "dependencies": {
@@ -16,6 +16,8 @@
     "@prisma/client": "^6.13.0",
     "@types/minimatch": "^6.0.0",
     "bcrypt": "^6.0.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.1",
     "next": "15.4.6",
     "next-auth": "^4.24.11",
     "node-fetch": "^3.3.2",
@@ -27,6 +29,7 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",
+    "@types/jspdf": "^2.0.0",
     "@types/node": "^20.19.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -36,6 +39,7 @@
     "prisma": "^6.13.0",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
     "typescript": "^5"
   }
 }
