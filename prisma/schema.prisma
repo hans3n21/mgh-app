@@ -7,7 +7,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 enum OrderType {
@@ -38,14 +38,14 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(staff)
-  createdAt    DateTime @default(now())
-  orders       Order[]  @relation("UserOrders")
-  messages     Message[]
+  id               String            @id @default(cuid())
+  name             String
+  email            String            @unique
+  passwordHash     String
+  role             Role              @default(staff)
+  createdAt        DateTime          @default(now())
+  orders           Order[]           @relation("UserOrders")
+  messages         Message[]
   procurementItems ProcurementItem[]
 
   // NextAuth
@@ -54,33 +54,40 @@ model User {
 }
 
 model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  email     String?
-  phone     String?
-  createdAt DateTime @default(now())
-  orders    Order[]
+  id           String   @id @default(cuid())
+  name         String
+  email        String?
+  phone        String?
+  // Address fields
+  addressLine1 String?
+  postalCode   String?
+  city         String?
+  country      String?  @default("DE")
+  createdAt    DateTime @default(now())
+  orders       Order[]
 }
 
 model Order {
-  id         String      @id // we use human IDs like ORD-2025-001
-  title      String
-  type       OrderType
-  status     OrderStatus @default(intake)
-  createdAt  DateTime    @default(now())
-  customerId String
-  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  assigneeId String?
-  assignee   User?       @relation("UserOrders", fields: [assigneeId], references: [id])
-  specs      OrderSpecKV[]
-  images     OrderImage[]
-  items      OrderItem[]
-  messages   Message[]
-  wcOrderId  String?
+  id               String        @id // we use human IDs like ORD-2025-001
+  title            String
+  type             OrderType
+  status           OrderStatus   @default(intake)
+  createdAt        DateTime      @default(now())
+  customerId       String
+  customer         Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  assigneeId       String?
+  assignee         User?         @relation("UserOrders", fields: [assigneeId], references: [id])
+  specs            OrderSpecKV[]
+  images           OrderImage[]
+  items            OrderItem[]
+  messages         Message[]
+  wcOrderId        String?
   // Abrechnung
   finalAmountCents Int?
-  paymentStatus    String   @default("open") // open | deposit | paid
+  paymentStatus    String        @default("open") // open | deposit | paid
   extras           OrderExtra[]
+  mails            Mail[]
+  datasheets       Datasheet[]
 }
 
 model OrderSpecKV {
@@ -100,8 +107,8 @@ model OrderImage {
   comment   String?
   position  Int      @default(0)
   attach    Boolean  @default(false)
-  scope     String?  // categorization: body, neck, finish, repair, pickguard, pickups, engraving
-  fieldKey  String?  // optional link to specific field
+  scope     String? // categorization: body, neck, finish, repair, pickguard, pickups, engraving
+  fieldKey  String? // optional link to specific field
   createdAt DateTime @default(now())
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -120,7 +127,7 @@ model Message {
 }
 
 model PriceItem {
-  id           String  @id @default(cuid())
+  id           String      @id @default(cuid())
   category     String
   label        String
   description  String?
@@ -130,7 +137,7 @@ model PriceItem {
   max          Int?
   priceText    String?
   mainCategory String?
-  active       Boolean @default(true)
+  active       Boolean     @default(true)
   orderItems   OrderItem[]
 }
 
@@ -150,30 +157,31 @@ model OrderItem {
 }
 
 model OrderExtra {
-  id           String   @id @default(cuid())
-  orderId      String
-  label        String
-  amountCents  Int
-  createdAt    DateTime @default(now())
-  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  orderId     String
+  label       String
+  amountCents Int
+  createdAt   DateTime @default(now())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
 }
 
 model ProcurementItem {
-  id          String    @id @default(cuid())
-  name        String
-  qty         Int       @default(1)
-  unit        String?   @default("Stk")
-  status      String    @default("offen") // offen|bestellt|archiviert
-  neededBy    DateTime?
-  note        String?
-  orderId     String?
-  createdBy   String?   // User ID who created this item
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  archivedAt  DateTime? // When item was archived
-  creator     User?     @relation(fields: [createdBy], references: [id])
+  id         String    @id @default(cuid())
+  name       String
+  qty        Int       @default(1)
+  unit       String?   @default("Stk")
+  status     String    @default("offen") // offen|bestellt|archiviert
+  neededBy   DateTime?
+  note       String?
+  link       String?
+  orderId    String?
+  createdBy  String? // User ID who created this item
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime? // When item was archived
+  creator    User?     @relation(fields: [createdBy], references: [id])
 }
 
 /// NextAuth models (Prisma Adapter)
@@ -209,4 +217,87 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model Mail {
+  id             String       @id @default(cuid())
+  messageId      String       @unique
+  fromName       String?
+  fromEmail      String?
+  to             Json?
+  cc             Json?
+  bcc            Json?
+  subject        String?
+  text           String?
+  html           String?
+  date           DateTime?
+  inReplyTo      String?
+  references     Json?
+  hasAttachments Boolean      @default(false)
+  parsedData     Json?
+  order          Order?       @relation(fields: [orderId], references: [id])
+  orderId        String?
+  attachments    Attachment[]
+  unread         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([orderId])
+  @@index([unread])
+}
+
+model Attachment {
+  id          String   @id @default(cuid())
+  mail        Mail     @relation(fields: [mailId], references: [id])
+  mailId      String
+  filename    String
+  mimeType    String?
+  size        Int?
+  storagePath String
+  createdAt   DateTime @default(now())
+
+  @@index([mailId])
+}
+
+model Datasheet {
+  id        String   @id @default(cuid())
+  orderId   String
+  type      String
+  fields    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  version   Int      @default(1)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  message   String
+  page      String
+  url       String
+  timestamp DateTime
+  userAgent String?
+  resolved  Boolean  @default(false)
+  resolvedBy String?
+  resolvedAt DateTime?
+  createdAt DateTime @default(now())
+  
+  @@index([resolved])
+  @@index([createdAt])
+}
+
+model ReplyTemplate {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  lang      String   @default("de")
+  subject   String?
+  body      String
+  variables Json?    // Array von Variablen-Namen für Template-Platzhalter
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([lang])
+  @@index([key])
 }
