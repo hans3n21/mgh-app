@@ -6,8 +6,6 @@ const nextConfig: NextConfig = {
   turbopack: {
     // Reduce file watching sensitivity
     resolveAlias: {},
-    // Optimize hot reload
-    memoryLimit: 4096,
   },
   
   // Reduce unnecessary rebuilds

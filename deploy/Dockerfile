@@ -1,14 +1,13 @@
-# Multi-stage Dockerfile für MGH App - ARM64 (QNAP TS-453)
-# Explizit für linux/arm64 Architektur optimiert
+# Multi-stage Dockerfile für MGH App
+# Unterstützt ARM (QNAP) und x86_64
 # Optimiert für Production
 
 # ============================================
-# Stage 1: Base Image (ARM64)
+# Stage 1: Base Image (ARM & x86 kompatibel)
 # ============================================
-FROM --platform=linux/arm64 node:18-alpine AS base
+FROM node:18-alpine AS base
 
-# Installiere notwendige System-Dependencies für ARM64
-# Alle Pakete werden automatisch für die Ziel-Architektur (linux/arm64) installiert
+# Installiere notwendige System-Dependencies
 RUN apk add --no-cache \
     libc6-compat \
     openssl \
@@ -20,12 +19,12 @@ WORKDIR /app
 # ============================================
 # Stage 2: Dependencies
 # ============================================
-FROM --platform=linux/arm64 base AS deps
+FROM base AS deps
 
 # Kopiere Package-Dateien
 COPY package.json package-lock.json ./
 
-# Installiere Dependencies (ARM64-kompatibel)
+# Installiere Dependencies
 # Nutze npm ci wenn package-lock.json existiert, sonst npm install
 RUN if [ -f package-lock.json ]; then \
       npm ci --omit=dev --legacy-peer-deps; \
@@ -36,13 +35,12 @@ RUN if [ -f package-lock.json ]; then \
 # ============================================
 # Stage 3: Builder (mit Dev-Dependencies)
 # ============================================
-FROM --platform=linux/arm64 base AS builder
+FROM base AS builder
 
 # Kopiere Package-Dateien
 COPY package.json package-lock.json ./
 
 # Installiere ALLE Dependencies (inkl. Dev) für Build
-# Alle npm-Pakete werden für ARM64 installiert
 RUN if [ -f package-lock.json ]; then \
       npm ci --legacy-peer-deps; \
     else \
@@ -52,7 +50,7 @@ RUN if [ -f package-lock.json ]; then \
 # Kopiere Prisma Schema
 COPY prisma ./prisma
 
-# Generiere Prisma Client für ARM64
+# Generiere Prisma Client
 # (DATABASE_URL wird zur Build-Zeit nicht benötigt für generate)
 RUN npx prisma generate
 
@@ -63,13 +61,13 @@ COPY . .
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Baue die Next.js App (ARM64-kompatibel)
+# Baue die Next.js App
 RUN npm run build
 
 # ============================================
 # Stage 4: Runner (Production)
 # ============================================
-FROM --platform=linux/arm64 base AS runner
+FROM base AS runner
 
 WORKDIR /app
 

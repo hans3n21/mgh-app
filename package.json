@@ -2,6 +2,9 @@
   "name": "mgh-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -9,18 +12,23 @@
     "lint": "next lint",
     "db:reset": "prisma migrate reset --force --skip-generate --skip-seed && prisma generate && tsx prisma/seed.ts",
     "db:seed": "tsx prisma/seed.ts",
-    "smoke": "ts-node scripts/smoke.ts"
+    "smoke": "ts-node scripts/smoke.ts",
+    "imap:check": "tsx scripts/imap-check.ts",
+    "mail:sync": "tsx scripts/manual-sync.ts"
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",
     "@prisma/client": "^6.13.0",
-    "@types/minimatch": "^6.0.0",
     "bcrypt": "^6.0.0",
+    "dotenv": "^16.4.5",
     "html2canvas": "^1.4.1",
+    "imapflow": "^1.0.164",
     "jspdf": "^3.0.1",
+    "mailparser": "^3.7.1",
     "next": "15.4.6",
     "next-auth": "^4.24.11",
     "node-fetch": "^3.3.2",
+    "pg": "^8.16.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "zod": "^4.0.17"
@@ -30,7 +38,10 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",
     "@types/jspdf": "^2.0.0",
+    "@types/mailparser": "^3.4.6",
+    "@types/minimatch": "^5.1.2",
     "@types/node": "^20.19.10",
+    "@types/nodemailer": "^7.0.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

@@ -18,11 +18,11 @@ const STATUS_LABEL: Record<string, string> = {
 interface OrderImageLocal {
   id: string;
   path: string;
-  comment?: string;
+  comment: string | null;
   position: number;
   attach: boolean;
-  scope?: string;
-  fieldKey?: string;
+  scope: string | null;
+  fieldKey: string | null;
   createdAt: Date;
 }
 
@@ -33,7 +33,7 @@ interface Order {
   status: string;
   createdAt: Date;
   assigneeId: string | null;
-  customer: { id: string; name: string; email?: string; phone?: string } | null;
+  customer: { id: string; name: string; email: string | null; phone: string | null } | null;
   assignee: { id: string; name: string } | null;
   specs: Array<{ id: string; key: string; value: string }>;
   items: Array<{
@@ -154,6 +154,24 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     setOrder({ ...order, messages: newMessages });
   };
 
+  const handlePaymentStatusChange = async (newPaymentStatus: string) => {
+    try {
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentStatus: newPaymentStatus }),
+      });
+
+      if (response.ok) {
+        const updatedOrder = await response.json();
+        setOrder(updatedOrder);
+        router.refresh();
+      }
+    } catch (error) {
+      console.error('Fehler beim PaymentStatus-Update:', error);
+    }
+  };
+
   const syncToShop = async (forcedMode?: 'full' | 'deposit' | 'balance') => {
     setSyncing(true);
     try {
@@ -214,18 +232,39 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         orderId={order.id}
         orderType={order.type}
         specs={order.specs}
-        images={order.images}
+        images={order.images.map(img => ({
+          ...img,
+          comment: img.comment ?? undefined,
+          scope: img.scope ?? undefined,
+          fieldKey: img.fieldKey ?? undefined,
+        }))}
         messages={order.messages}
         priceItems={priceItems}
         status={order.status}
         assigneeId={order.assigneeId}
         users={users}
         currentUserId={currentUserId}
-        order={order}
+        order={{
+          ...order,
+          customer: order.customer ? {
+            ...order.customer,
+            email: order.customer.email ?? undefined,
+            phone: order.customer.phone ?? undefined,
+          } : null,
+        }}
+        paymentStatus={order.paymentStatus}
         onStatusChange={handleStatusChange}
         onAssigneeChange={handleAssigneeChange}
-        onImagesChange={handleImagesChange}
+        onImagesChange={(images) => {
+          handleImagesChange(images.map(img => ({
+            ...img,
+            comment: img.comment ?? null,
+            scope: img.scope ?? null,
+            fieldKey: img.fieldKey ?? null,
+          })));
+        }}
         onMessagesChange={handleMessagesChange}
+        onPaymentStatusChange={handlePaymentStatusChange}
         shopMode={shopMode}
         shopAmount={shopAmount}
         amountLocked={order.finalAmountCents != null}

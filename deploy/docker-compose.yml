@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  mgh-app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: mgh-app
+    restart: always
+    ports:
+      - "3010:3000"  # Host:3010 → Container:3000
+    volumes:
+      # Optional: Code-Mount für Development (auskommentiert für Production)
+      # - ../:/app
+      # - /app/node_modules  # Verhindert Override von node_modules
+      
+      # Uploads-Verzeichnis (persistent)
+      - ./uploads:/app/uploads
+      
+      # Logs-Verzeichnis (persistent)
+      - ./logs:/app/logs
+    environment:
+      # Node Environment
+      - NODE_ENV=production
+      
+      # Database (PostgreSQL auf NAS)
+      - DATABASE_URL=${DATABASE_URL:-postgresql://mgh:MGHPWD@192.168.178.100:32778/mghdb}
+      
+      # NextAuth
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://192.168.178.100:3010}
+      
+      # IMAP (E-Mail)
+      - IMAP_HOST=${IMAP_HOST}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_USER=${IMAP_USER}
+      - IMAP_PASSWORD=${IMAP_PASSWORD}
+      - IMAP_SECURE=${IMAP_SECURE:-true}
+      - IMAP_TLS_REJECT_UNAUTHORIZED=${IMAP_TLS_REJECT_UNAUTHORIZED:-false}
+      
+      # SMTP (E-Mail senden)
+      - MAIL_HOST=${MAIL_HOST}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USER=${MAIL_USER}
+      - MAIL_PASS=${MAIL_PASS}
+      - MAIL_FROM=${MAIL_FROM}
+      
+      # WooCommerce Integration
+      - WC_CONSUMER_KEY=${WC_CONSUMER_KEY}
+      - WC_CONSUMER_SECRET=${WC_CONSUMER_SECRET}
+      - WC_BASE_URL=${WC_BASE_URL}
+      
+      # Whisper (Voice-to-Text) - optional
+      - WHISPER_API_URL=${WHISPER_API_URL:-http://192.168.178.100:9000}
+    networks:
+      - mgh-network
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mgh-network:
+    driver: bridge
+
+
+
+
+
+
+
+
+

@@ -8,3 +8,12 @@ uploads/*
 data/*
 !data/.gitkeep
 prisma/dev*.db
+
+
+
+
+
+
+
+
+

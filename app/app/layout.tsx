@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma';
 import Navigation from '@/components/Navigation';
 import SessionProvider from '@/components/SessionProvider';
 import GlobalMobileNav from '@/components/GlobalMobileNav';
+import FeedbackButton from '@/components/FeedbackButton';
 
 export default async function AppLayout({
   children,
@@ -18,7 +19,7 @@ export default async function AppLayout({
   }
 
   // Daten für CreateOrderButton laden
-  const [customers, users] = await Promise.all([
+  const [customersRaw, users] = await Promise.all([
     prisma.customer.findMany({
       select: { id: true, name: true, email: true, phone: true },
       orderBy: { name: 'asc' },
@@ -28,6 +29,14 @@ export default async function AppLayout({
       orderBy: { name: 'asc' },
     }),
   ]);
+  
+  // Transformiere null zu undefined für Navigation-Komponente
+  const customers = customersRaw.map(c => ({
+    id: c.id,
+    name: c.name,
+    email: c.email ?? undefined,
+    phone: c.phone ?? undefined,
+  }));
 
   return (
     <SessionProvider session={session}>
@@ -37,6 +46,7 @@ export default async function AppLayout({
           {children}
         </main>
         <GlobalMobileNav />
+        <FeedbackButton />
       </div>
     </SessionProvider>
   );

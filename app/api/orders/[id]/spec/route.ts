@@ -2,19 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getPresetForOrderType, getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
 
-interface RouteParams {
-  params: { id: string };
-}
-
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
-    const specs = await prisma.orderSpecKV.findMany({
+    const { id } = await params;
+    const allSpecs = await prisma.orderSpecKV.findMany({
       where: { orderId: id },
       orderBy: { key: 'asc' },
     });
 
-    return NextResponse.json(specs);
+    // Entferne Duplikate: behalte den "besten" Wert pro Key
+    // Strategie: längerer Wert bevorzugt (vollständiger), sonst neuerer (spätere CUID)
+    const uniqueSpecsMap = new Map<string, typeof allSpecs[0]>();
+    for (const spec of allSpecs) {
+      const existing = uniqueSpecsMap.get(spec.key);
+      if (!existing) {
+        uniqueSpecsMap.set(spec.key, spec);
+      } else {
+        // Bevorzuge längeren Wert (vollständiger), sonst neueren (spätere CUID)
+        const existingLength = existing.value.length;
+        const currentLength = spec.value.length;
+        if (currentLength > existingLength) {
+          uniqueSpecsMap.set(spec.key, spec);
+        } else if (currentLength === existingLength && spec.id > existing.id) {
+          // Gleiche Länge: neuerer Eintrag (spätere CUID)
+          uniqueSpecsMap.set(spec.key, spec);
+        }
+      }
+    }
+
+    return NextResponse.json(Array.from(uniqueSpecsMap.values()));
   } catch (error) {
     console.error('Error fetching specs:', error);
     return NextResponse.json(
@@ -24,9 +40,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // Robust body parsing
     let body: unknown;
@@ -73,18 +89,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Upsert specs
+    // Upsert specs - entferne Duplikate für jeden Key, bevor der neue Wert gespeichert wird
     const updates = await Promise.all(
       Object.entries(candidate).map(async ([key, value]) => {
-        const existingSpec = await prisma.orderSpecKV.findFirst({
+        // Finde alle Duplikate für diesen Key
+        const duplicates = await prisma.orderSpecKV.findMany({
           where: { orderId: id, key },
         });
-        if (existingSpec) {
-          return prisma.orderSpecKV.update({
-            where: { id: existingSpec.id },
-            data: { value: value as string },
+        
+        if (duplicates.length > 0) {
+          // Lösche alle Duplikate für diesen Key
+          await prisma.orderSpecKV.deleteMany({
+            where: { orderId: id, key },
           });
         }
+        
+        // Erstelle einen neuen Eintrag mit dem neuen Wert
         return prisma.orderSpecKV.create({
           data: {
             orderId: id,

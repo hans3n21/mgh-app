@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import Link from 'next/link';
+import DeleteOrderButton from '@/components/DeleteOrderButton';
 
 const STATUS_LABEL = {
   intake: 'Eingang',
@@ -12,15 +13,16 @@ const STATUS_LABEL = {
   design_review: 'Designprüfung',
 } as const;
 
-const TYPE_LABEL = {
+const TYPE_LABEL: Record<string, string> = {
   GUITAR: 'Gitarrenbau',
   BODY: 'Body',
   NECK: 'Hals',
   REPAIR: 'Reparatur',
   PICKGUARD: 'Pickguard',
   PICKUPS: 'Tonabnehmer',
+  ENGRAVING: 'Gravur',
   FINISH_ONLY: 'Oberflächenbehandlung',
-} as const;
+};
 
 function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string }) {
   const map: Record<string, string> = {
@@ -84,18 +86,21 @@ export default async function OrdersPage() {
                   <div className="text-xs text-slate-500 font-mono">{order.id}</div>
                 </td>
                 <td className="py-2 pr-4">{order.customer?.name || 'Unbekannt'}</td>
-                <td className="py-2 pr-4">{TYPE_LABEL[order.type]}</td>
+                <td className="py-2 pr-4">{TYPE_LABEL[order.type] || order.type}</td>
                 <td className="py-2 pr-4">
                   <StatusBadge status={order.status} />
                 </td>
                 <td className="py-2 pr-4">{order.assignee?.name || '—'}</td>
                 <td className="py-2 pr-4 text-right">
-                  <Link
-                    href={`/app/orders/${order.id}`}
-                    className="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
-                  >
-                    Öffnen
-                  </Link>
+                  <div className="flex items-center gap-2 justify-end">
+                    <Link
+                      href={`/app/orders/${order.id}`}
+                      className="rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800"
+                    >
+                      Öffnen
+                    </Link>
+                    <DeleteOrderButton orderId={order.id} />
+                  </div>
                 </td>
               </tr>
             ))}

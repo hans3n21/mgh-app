@@ -11,6 +11,12 @@ const navItems = [
     icon: '🏠'
   },
   { 
+    id: 'inbox', 
+    label: 'Posteingang', 
+    href: '/app/posteingang', 
+    icon: '📬'
+  },
+  { 
     id: 'customers', 
     label: 'Kunden', 
     href: '/app/customers', 

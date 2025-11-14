@@ -29,10 +29,18 @@ export default function ImageCarouselModal({
   onDelete,
 }: ImageCarouselModalProps) {
   const [currentIndex, setCurrentIndex] = useState(index);
+  const [currentComment, setCurrentComment] = useState<string>('');
   const touchStartXRef = useRef<number | null>(null);
   const mouseStartXRef = useRef<number | null>(null);
 
   const image = images[currentIndex];
+
+  // Synchronisiere lokalen Kommentar-State beim Bildwechsel
+  useEffect(() => {
+    if (image) {
+      setCurrentComment(image.comment || '');
+    }
+  }, [currentIndex, image?.id, image?.comment]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -44,10 +52,33 @@ export default function ImageCarouselModal({
     return () => window.removeEventListener('keydown', handler);
   }, [images.length, onClose]);
 
+  useEffect(() => {
+    // Browser-Zurück-Integration: Öffnen pusht State; Zurück schließt
+    const popHandler = () => onClose();
+    const hasHistory = typeof window !== 'undefined' && window.history && window.history.pushState;
+    if (hasHistory) {
+      window.history.pushState({ modal: 'image' }, '');
+      window.addEventListener('popstate', popHandler);
+    }
+    return () => {
+      if (hasHistory) {
+        window.removeEventListener('popstate', popHandler);
+        // Beim Schließen vorwärts gehen, um den zusätzlichen History-Eintrag zu kompensieren
+        try { window.history.forward(); } catch {}
+      }
+    };
+  }, [onClose]);
+
   if (!image) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 text-white">
+    <div
+      className="fixed inset-0 z-50 bg-black/90 text-white"
+      onClick={(e) => {
+        // Backdrop-Klick schließt Modal
+        if (e.currentTarget === e.target) onClose();
+      }}
+    >
       {/* Close */}
       <button
         aria-label="Schließen"
@@ -79,6 +110,10 @@ export default function ImageCarouselModal({
       >
         <div
           className="flex-1 flex items-center justify-center select-none relative"
+          onClick={(e) => {
+            // Schließen bei Klick in die "Leere" (nicht auf das Bild)
+            if (e.currentTarget === e.target) onClose();
+          }}
           onTouchStart={(e) => (touchStartXRef.current = e.touches[0].clientX)}
           onTouchEnd={(e) => {
             if (touchStartXRef.current == null) return;
@@ -125,7 +160,7 @@ export default function ImageCarouselModal({
                   </button>
                 ))}
                 <button
-                  className="px-2.5 py-1 rounded-full text-xs bg-white/10 border border-white/10 hover:bg-white/15"
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${!image.scope ? 'bg-sky-600 border-sky-500' : 'bg-white/10 border-white/10 hover:bg-white/15'}`}
                   onClick={() => onUpdate(image.id, { scope: undefined })}
                 >
                   ohne
@@ -134,7 +169,7 @@ export default function ImageCarouselModal({
               <label className="inline-flex items-center gap-2 text-xs text-slate-300">
                 <input
                   type="checkbox"
-                  defaultChecked={image.attach}
+                  checked={!!image.attach}
                   onChange={(e) => onUpdate(image.id, { attach: e.target.checked })}
                 />
                 Als Anhang markieren
@@ -145,9 +180,10 @@ export default function ImageCarouselModal({
             <div className="space-y-1">
               <div className="text-xs text-slate-300">Notiz</div>
               <textarea
-                defaultValue={image.comment || ''}
+                value={currentComment}
                 placeholder="Kurze Notiz zum Bild ..."
-                onBlur={(e) => onUpdate(image.id, { comment: e.target.value })}
+                onChange={(e) => setCurrentComment(e.target.value)}
+                onBlur={() => onUpdate(image.id, { comment: currentComment })}
                 className="w-full rounded-lg bg-white/5 border border-white/10 p-2 text-sm max-h-28 min-h-20 focus:outline-none focus:ring-2 focus:ring-sky-600/40"
               />
             </div>

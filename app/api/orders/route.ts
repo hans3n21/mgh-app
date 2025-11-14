@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import ensureOrderFromMail from '@/lib/mail/ensureOrderFromMail';
 
 const createOrderSchema = z.object({
   title: z.string().min(1),
@@ -67,14 +68,11 @@ export async function POST(request: NextRequest) {
 
     console.log('Creating order with ID:', orderId, 'and data:', validatedData);
     
-    // Map frontend type to Prisma enum
-    const mappedType = TYPE_MAPPING[validatedData.type] || validatedData.type.toUpperCase();
-    
     const order = await prisma.order.create({
       data: {
         id: orderId,
         ...validatedData,
-        type: mappedType,
+        type: validatedData.type as any,
       },
       include: {
         customer: true,
@@ -83,17 +81,9 @@ export async function POST(request: NextRequest) {
     });
 
     console.log('Order created successfully:', order.id);
-    // Versuch, WooCommerce-Order anzulegen, ohne die lokale Erstellung zu blockieren
-    try {
-      const { createWooOrderForInternal } = await import('@/lib/woocommerce');
-      const res = await createWooOrderForInternal(order.id);
-      await prisma.order.update({
-        where: { id: order.id },
-        data: { wcOrderId: res.wooOrderId },
-      });
-    } catch (wooError) {
-      console.error('Woo Order create failed:', wooError);
-    }
+    // WICHTIG: Keine automatische WooCommerce-Bestellung mehr hier.
+    // Die Anlage im Shop erfolgt nur noch manuell über
+    // POST /api/orders/[id]/woocommerce (Buttons im UI)
 
     return NextResponse.json(order, { status: 201 });
   } catch (error) {
@@ -109,5 +99,20 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to create order' },
       { status: 500 }
     );
+  }
+}
+
+// Optionaler Helfer: aus Mail heraus neuen Auftrag anlegen und Mail verknüpfen
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const mailId = body?.mailId as string | undefined;
+    if (!mailId) {
+      return NextResponse.json({ error: 'mailId required' }, { status: 400 });
+    }
+    const { order } = await ensureOrderFromMail(mailId);
+    return NextResponse.json(order, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to create order from mail' }, { status: 500 });
   }
 }

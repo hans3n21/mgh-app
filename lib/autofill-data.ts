@@ -1,5 +1,5 @@
 export const AUTO_FIELDS = new Set<string>([
-  'body_shape','body_material','body_thickness','neck_construction','body_top_thickness',
+  'body_shape','body_material','body_thickness','neck_construction','body_top','body_top_thickness',
   'body_shaping','bridge_type','pickups_routes','body_electronics_layout','body_surface_treatment',
   'headstock_type','neck_wood','neck_shape','fretboard_scale','fretboard_radius','fretboard_material',
   'inlays','frets','nut','side_dots','action_12th','tuners','finish_neck',
@@ -13,6 +13,7 @@ export const AUTOFILL_OPTIONS: Record<string,string[]> = {
   body_material: ['Mahagoni','Esche','Erle','Swamp Ash','Walnuss','Ahorn','Bubinga','Korina','Ovangkol','Basswood','Zeder','Wenge','Koa','Poplar'],
   body_thickness: ['38 mm','40 mm','42 mm','45 mm','47 mm','50 mm','52 mm','55 mm'],
   neck_construction: ['Bolt-On','Set-Neck','Neck-Through','Long Tenon','Scarf Joint'],
+  body_top: ['Flamed Maple','Quilted Maple','Spalted Maple','Birdseye Maple','Curly Maple','Figured Walnut','Burl Walnut','Buckeye Burl','Redwood Burl','Poplar Burl','Koa','Ziricote','Wenge','Padauk','Purpleheart','Keine Top'],
   body_top_thickness: ['6 mm','8 mm','10 mm','12 mm','14 mm','16 mm','18 mm','Solid'],
   body_shaping: ['Bauchfräsung','Armkontur','Beides','Standard','Custom Contouring'],
   bridge_type: ['Hardtail','TOM','Floyd Rose','Hipshot','Vintage Trem 2-Point','Kluson 3D4','Schaller Hannes','Bigsby','Kahler','Wilkinson'],

@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get('q')?.trim();
     const category = searchParams.get('category')?.trim();
 
-    const where = {
+    const where: any = {
       AND: [
         q
           ? {
@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
           : {},
         category ? { category: { equals: category } } : {},
         { active: { equals: true } },
-      ],
-    } as const;
+      ].filter(condition => Object.keys(condition).length > 0),
+    };
 
     const items = await prisma.priceItem.findMany({
       where,

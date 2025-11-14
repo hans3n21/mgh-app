@@ -11,11 +11,8 @@ const createImageSchema = z.object({
   fieldKey: z.string().optional(),
 });
 
-interface RouteParams {
-  params: { id: string };
-}
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const images = await prisma.orderImage.findMany({
@@ -33,7 +30,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const body = await request.json();
@@ -62,6 +59,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     );
   }
 }
+
+interface RouteParams { params: Promise<{ id: string }> }
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
@@ -95,7 +94,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
-    const { id: orderId } = await params as unknown as { id: string };
+    const { id: orderId } = await params;
 
     const updateSchema = z.object({
       id: z.string(),
@@ -124,7 +123,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         comment: validated.comment ?? undefined,
         position: validated.position,
         attach: validated.attach,
-        scope: (validated.scope ?? undefined) as string | undefined,
+        scope: validated.scope === null ? null : validated.scope,
         fieldKey: (validated.fieldKey ?? undefined) as string | undefined,
       },
     });

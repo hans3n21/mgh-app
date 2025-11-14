@@ -2,6 +2,7 @@
 
 import { useState, useImperativeHandle, forwardRef } from 'react';
 import DatasheetPDFGenerator from './DatasheetPDFGenerator';
+import VoiceInputButton from './VoiceInputButton';
 
 interface Message {
   id: string;
@@ -46,6 +47,7 @@ const MessageSystem = forwardRef<
   const [sending, setSending] = useState(false);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [attachedPDF, setAttachedPDF] = useState<{ blob: Blob; filename: string } | null>(null);
+  const [optimizing, setOptimizing] = useState(false);
 
   useImperativeHandle(ref, () => ({
     attachPDF: (blob: Blob, filename: string) => {
@@ -101,6 +103,40 @@ const MessageSystem = forwardRef<
       alert('Fehler beim Senden der Nachricht');
     } finally {
       setSending(false);
+    }
+  };
+
+  // Text optimieren via N8N
+  const optimizeText = async () => {
+    if (!newMessage.trim() || optimizing) return;
+    
+    setOptimizing(true);
+    try {
+      const res = await fetch('/api/compose-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: newMessage,
+          customerName: customerName,
+          orderTitle: orderTitle,
+          language: 'de'
+        }),
+      });
+      
+      const data = await res.json();
+      
+      if (data.text && !data.fallback) {
+        setNewMessage(data.text);
+      } else if (data.fallback) {
+        alert('N8N nicht konfiguriert. Text bleibt unverändert.');
+      } else {
+        alert('Fehler bei der Text-Optimierung.');
+      }
+    } catch (error) {
+      console.error('Text optimization error:', error);
+      alert('Fehler bei der Text-Optimierung.');
+    } finally {
+      setOptimizing(false);
     }
   };
 
@@ -177,6 +213,35 @@ const MessageSystem = forwardRef<
         />
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
+            {/* Voice Input Button */}
+            <VoiceInputButton
+              onTranscript={(text) => {
+                setNewMessage((prev) => {
+                  const separator = prev.trim() ? '\n' : '';
+                  return prev + separator + text;
+                });
+              }}
+              language="de"
+              disabled={sending}
+            />
+            <button
+              onClick={optimizeText}
+              disabled={!newMessage.trim() || optimizing || sending}
+              className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-all bg-purple-700 hover:bg-purple-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Text via N8N optimieren"
+            >
+              {optimizing ? (
+                <>
+                  <span className="text-lg">⏳</span>
+                  <span>Optimiere...</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-lg">✨</span>
+                  <span>Optimieren</span>
+                </>
+              )}
+            </button>
             <div className="text-xs text-slate-500">
               {newMessage.length}/500 Zeichen
             </div>
@@ -265,7 +330,10 @@ const MessageSystem = forwardRef<
                 customerName={customerName}
                 specs={specs}
                 activeCategories={activeCategories}
+                assigneeName={undefined} // TODO: Assignee-Daten in MessageSystem verfügbar machen
+                finalAmount={undefined} // TODO: Preis-Daten in MessageSystem verfügbar machen
                 buttonText="📧 Datenblatt-PDF anhängen"
+                stringCount={specs.find(s => s.key === 'string_count')?.value || '–'}
                 onPDFGenerated={(pdfBlob, filename) => {
                   setAttachedPDF({ blob: pdfBlob, filename });
                 }}

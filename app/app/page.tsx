@@ -1,45 +1,11 @@
 import { prisma } from '@/lib/prisma';
 import Link from 'next/link';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import FeedbackDashboard from '@/components/FeedbackDashboard';
+import DashboardClient from './DashboardClient';
 
-const STATUS_LABEL = {
-  intake: 'Eingang',
-  quote: 'Angebot',
-  in_progress: 'In Arbeit',
-  finishing: 'Finish',
-  setup: 'Setup',
-  awaiting_customer: 'Warten auf Kunde',
-  complete: 'Fertig',
-  design_review: 'Designprüfung',
-} as const;
 
-const TYPE_LABEL = {
-  GUITAR: 'Gitarrenbau',
-  BODY: 'Body',
-  NECK: 'Hals',
-  REPAIR: 'Reparatur',
-  PICKGUARD: 'Pickguard',
-  PICKUPS: 'Tonabnehmer',
-  FINISH_ONLY: 'Oberflächenbehandlung',
-} as const;
-
-function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string }) {
-  const map: Record<string, string> = {
-    intake: 'bg-slate-800 text-slate-300 border-slate-700',
-    quote: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
-    in_progress: 'bg-blue-900/30 text-blue-300 border-blue-700/50',
-    finishing: 'bg-purple-900/30 text-purple-300 border-purple-700/50',
-    setup: 'bg-cyan-900/30 text-cyan-300 border-cyan-700/50',
-    awaiting_customer: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
-    complete: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
-    design_review: 'bg-fuchsia-900/30 text-fuchsia-300 border-fuchsia-700/50',
-  };
-  
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border ${map[String(status)] || 'bg-slate-800 text-slate-300 border-slate-700'}`}>
-      {STATUS_LABEL[String(status) as keyof typeof STATUS_LABEL] || String(status)}
-    </span>
-  );
-}
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
@@ -51,7 +17,15 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 }
 
 export default async function Dashboard() {
+  const session = await getServerSession(authOptions);
+  const isAdmin = session?.user?.role === 'admin';
+  const currentUserId = session?.user?.id;
+
+  // Für Staff: Nur eigene zugewiesene Aufträge, für Admin: alle Aufträge
   const orders = await prisma.order.findMany({
+    where: isAdmin ? {} : {
+      assigneeId: currentUserId,
+    },
     include: {
       customer: true,
       assignee: true,
@@ -62,8 +36,24 @@ export default async function Dashboard() {
     take: 5,
   });
 
+  // Offene Aufträge (ohne Assignee)
   const openOrders = await prisma.order.count({
     where: {
+      assigneeId: null,
+      status: {
+        not: 'complete',
+      },
+    },
+  });
+
+  // Alle offenen Aufträge für Admin, eigene für Staff
+  const totalOpenOrders = await prisma.order.count({
+    where: isAdmin ? {
+      status: {
+        not: 'complete',
+      },
+    } : {
+      assigneeId: currentUserId,
       status: {
         not: 'complete',
       },
@@ -76,57 +66,51 @@ export default async function Dashboard() {
     },
   });
 
+  // Feedback-Statistiken für Admins
+  let feedbackStats = null;
+  if (isAdmin) {
+    try {
+      feedbackStats = {
+        open: await prisma.feedback.count({ where: { resolved: false } }),
+        total: await prisma.feedback.count(),
+      };
+    } catch (error) {
+      console.warn('Feedback-Modell noch nicht verfügbar:', error);
+      feedbackStats = {
+        open: 0,
+        total: 0,
+      };
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Stat label="Offene Aufträge" value={openOrders} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Stat label={isAdmin ? "Alle offenen" : "Meine Aufträge"} value={totalOpenOrders} />
         <Stat label="In Arbeit" value={inProgressOrders} />
+        {openOrders > 0 && (
+          <Stat label="Unzugewiesen" value={openOrders} />
+        )}
+        {isAdmin && feedbackStats && (
+          <>
+            <Stat label="Offenes Feedback" value={feedbackStats.open} />
+            <Stat label="Feedback gesamt" value={feedbackStats.total} />
+          </>
+        )}
       </div>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Aktivste Aufträge</h2>
-          <Link href="/app/orders" className="text-sm text-sky-400 hover:text-sky-300">
-            Alle Aufträge
-          </Link>
-        </div>
-        
-        <ul className="mt-3 divide-y divide-slate-800">
-          {orders.map((order) => (
-            <li key={order.id} className="py-3">
-              <Link 
-                href={`/app/orders/${order.id}`}
-                className="block hover:bg-slate-800/30 rounded-lg p-2 -m-2 transition-colors"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="text-center sm:text-left">
-                    <div className="flex items-center justify-center sm:justify-start gap-2">
-                      <span className="font-medium">{order.title}</span>
-                      <span className="text-xs rounded-full border border-slate-700 px-2 py-0.5 text-slate-300">
-                        {TYPE_LABEL[order.type]}
-                      </span>
-                    </div>
-                    <div className="text-sm text-slate-400">
-                      {order.id} · {order.customer?.name || 'Unbekannt'}
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-center sm:justify-end gap-3">
-                    <StatusBadge status={order.status} />
-                    <span className="hidden sm:inline text-sm rounded-lg border border-slate-700 px-3 py-1.5 hover:bg-slate-800">
-                      Öffnen
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-        
-        {orders.length === 0 && (
-          <div className="text-slate-500 text-sm mt-3">Keine Aufträge vorhanden.</div>
-        )}
-      </section>
+      <DashboardClient 
+        orders={orders}
+        openOrdersCount={openOrders}
+        isAdmin={isAdmin}
+      />
+
+      {/* Feedback Dashboard nur für Admins */}
+      {isAdmin && (
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+          <FeedbackDashboard />
+        </section>
+      )}
     </div>
   );
 }

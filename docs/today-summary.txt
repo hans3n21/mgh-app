@@ -1,0 +1,50 @@
+Stand heute – Mail → Auftrag/Datenblatt Inline-Flow (ohne Overlay)
+
+Änderungen
+- Neue Detailseite: app/app/posteingang/[id]/page.tsx
+  - Zwei-Spalten-Layout: links Mail (Text, Anhänge, Reply), rechts Datenblatt-Editor
+  - Serverseitig: Kandidaten (offene Aufträge des Kunden) + einfache Vorschläge (suggestOrderTypes, buildSuggestions)
+- Inbox-Liste: app/app/posteingang/InboxClient.tsx
+  - Overlay entfernt
+  - Klick auf eine Mail navigiert jetzt zu /app/posteingang/[id]
+- Neuer Client-Baustein: app/app/posteingang/components/OrderChooseAndEdit.tsx
+  - Auswahl „Neu“ oder bestehender Auftrag
+  - Bindet InlineSpecEditor ein (lädt Preset/Spec je nach Auswahl)
+- Drag&Drop in Felder: components/spec/SpecFormCompact.tsx
+  - Inputs akzeptieren Text-Drops (z. B. markierten Text aus der Mail rechts ins Feld ziehen)
+- Server/Client Fix
+  - In der Server-Seite keine Event-Handler an Client-Komponenten übergeben (AttachmentsPanel ohne onLinked)
+  - params-Signatur für [id]/page.tsx korrigiert
+
+Komponenten/Dateien
+- app/app/posteingang/[id]/page.tsx (NEU)
+- app/app/posteingang/components/OrderChooseAndEdit.tsx (NEU)
+- app/app/posteingang/InboxClient.tsx (Overlay entfernt; Row → Navigation)
+- components/spec/SpecFormCompact.tsx (Drop-Handler)
+
+Relevante vorhandene Endpoints/Helper (bereits implementiert)
+- POST /api/mails/[id]/reply (ReplyComposer)
+- POST /api/mails/[id]/create-order (Neuen Auftrag aus Mail)
+- POST /api/orders/[id]/spec/autofill-from-mail (Vorschläge + Extra in KV)
+- POST /api/orders/[id]/images/link (Mail-Anhänge spiegeln)
+- GET /api/mails/[id]/context (parsedContact, Kandidaten, Vorschläge)
+- lib/mail/suggestOrderType.ts, lib/mail/buildSuggestions.ts
+
+Offene Punkte / Nächste Schritte
+- Zod-Imports im Altcode auditieren (import * as z from 'zod' vs. { z })
+- Globale TS-Fehler (.next/types, TYPE_LABEL für zusätzliche Typen) bereinigen
+- Kleine Toast-UX (Auswahl/Übernahme bestätigt)
+- Option: Kandidaten und Vorschläge in der Detailseite clientseitig aus /api/mails/[id]/context laden
+
+Start/Tests
+- npm run dev
+- /app/posteingang öffnen, Mail anklicken → Detailseite
+- Drag&Drop: Text links markieren, ins Feld rechts fallen lassen
+
+Commits (kurz)
+- feat(mail): Reply-Composer + /api/mails/[id]/reply + AttachmentsPanel
+- feat(orders): SideSheet → später ersetzt, create-order, autofill, images/link
+- feat(api): mail context + sendMail wrapper
+- feat(inbox): eigene Mail-Detailseite ohne Overlay; rechts Editor; Drag&Drop
+
+

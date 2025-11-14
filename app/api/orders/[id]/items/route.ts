@@ -11,14 +11,12 @@ const createItemSchema = z.object({
   notes: z.string().optional(),
 });
 
-interface RouteParams {
-  params: { id: string };
-}
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const items = await prisma.orderItem.findMany({
-      where: { orderId: params.id },
+      where: { orderId: id },
       include: { priceItem: true },
       orderBy: { id: 'asc' },
     });
@@ -33,14 +31,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const validatedData = createItemSchema.parse(body);
 
     const item = await prisma.orderItem.create({
       data: {
-        orderId: params.id,
+        orderId: id,
         ...validatedData,
       },
       include: { priceItem: true },

@@ -30,14 +30,19 @@ export async function createWooOrderForInternal(orderId: string, options: Create
   if (!base) throw new Error('WC_BASE_URL fehlt');
   if (!key || !secret) throw new Error('WC_CONSUMER_KEY/SECRET fehlen');
 
-  const order = await prisma.order.findUnique({
+  const orderRaw = await prisma.order.findUnique({
     where: { id: orderId },
     include: { customer: true, specs: true, items: true },
   });
-  if (!order) throw new Error('Order nicht gefunden');
+  if (!orderRaw) throw new Error('Order nicht gefunden');
+  const order = orderRaw; // Type narrowing
 
   const [firstName, ...rest] = (order.customer?.name || '').split(' ');
   const lastName = rest.join(' ');
+  const addressLine1 = (order.customer as any)?.addressLine1 || '';
+  const postalCode   = (order.customer as any)?.postalCode || '';
+  const city         = (order.customer as any)?.city || '';
+  const country      = (order.customer as any)?.country || 'DE';
 
   const typeLabel: Record<string, string> = {
     GUITAR: 'Gitarrenbau', BODY: 'Body', NECK: 'Hals', REPAIR: 'Reparatur', PICKGUARD: 'Pickguard', PICKUPS: 'Tonabnehmer', ENGRAVING: 'Gravur', FINISH_ONLY: 'Oberfläche',
@@ -102,18 +107,18 @@ export async function createWooOrderForInternal(orderId: string, options: Create
       last_name: lastName || '',
       email: order.customer?.email || '',
       phone: order.customer?.phone || '',
-      address_1: '',
-      city: '',
-      postcode: '',
-      country: 'DE',
+      address_1: addressLine1,
+      city,
+      postcode: postalCode,
+      country,
     },
     shipping: {
       first_name: firstName || order.customer?.name || 'Kunde',
       last_name: lastName || '',
-      address_1: '',
-      city: '',
-      postcode: '',
-      country: 'DE',
+      address_1: addressLine1,
+      city,
+      postcode: postalCode,
+      country,
     },
     fee_lines: [{ name: composedName, total: totalCents != null ? (totalCents / 100).toFixed(2) : '0' }],
     meta_data: [{ key: 'internal_order_id', value: order.id }],
