@@ -26,7 +26,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default async function OrderDetailPage({ params }: PageProps) {

@@ -50,11 +50,13 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
     qty: number;
     note: string;
     orderId: string;
+    link?: string;
   }>({
     name: '',
     qty: 1,
     note: '',
-    orderId: ''
+    orderId: '',
+    link: ''
   });
   const [loading, setLoading] = useState(false);
 
@@ -63,7 +65,8 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
     name: '',
     qty: 1,
     note: '',
-    orderId: ''
+    orderId: '',
+    link: ''
   });
 
   const isAdmin = currentUser.role === 'admin';
@@ -108,7 +111,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
         const item = await res.json();
         console.log('✅ Item created successfully:', item);
         setItems(prev => [item, ...prev]);
-        setNewItem({ name: '', qty: 1, note: '', orderId: '' });
+        setNewItem({ name: '', qty: 1, note: '', orderId: '', link: '' });
         setShowAddForm(false);
         alert('✅ Item erfolgreich erstellt!');
       } else {
@@ -163,7 +166,8 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
       name: item.name,
       qty: item.qty,
       note: item.note || '',
-      orderId: item.orderId || ''
+      orderId: item.orderId || '',
+      link: (item as any).link || ''
     });
   };
 
@@ -179,7 +183,8 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
           name: editData.name,
           qty: editData.qty,
           note: editData.note,
-          orderId: editData.orderId
+          orderId: editData.orderId,
+          link: editData.link
         }),
       });
 
@@ -313,6 +318,16 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium mb-1">Link (URL)</label>
+                <input
+                  type="url"
+                  value={newItem.link}
+                  onChange={(e) => setNewItem(prev => ({ ...prev, link: e.target.value }))}
+                  className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+                  placeholder="https://shop.example.com/artikel"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium mb-1">Notiz</label>
                 <input
                   type="text"
@@ -373,6 +388,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                   <th className="py-3 px-4 hidden sm:table-cell">Erstellt von</th>
                   <th className="py-3 px-4 hidden sm:table-cell">Auftrag</th>
                   <th className="py-3 px-4 hidden sm:table-cell">Notiz</th>
+                  <th className="py-3 px-4 hidden sm:table-cell">Link</th>
                   <th className="py-3 px-4 hidden sm:table-cell">Erstellt</th>
                   {isAdmin && <th className="py-3 px-4">Aktionen</th>}
                 </tr>
@@ -437,6 +453,21 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                         />
                       ) : (
                         <span className="truncate">{item.note || '—'}</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-slate-400 max-w-xs hidden sm:table-cell">
+                      {editingItem === item.id ? (
+                        <input
+                          type="url"
+                          value={editData.link || ''}
+                          onChange={(e) => setEditData(prev => ({ ...prev, link: e.target.value }))}
+                          className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm"
+                          placeholder="https://..."
+                        />
+                      ) : (
+                        (item as any).link ? (
+                          <a href={(item as any).link} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:text-sky-300 underline">Link</a>
+                        ) : '—'
                       )}
                     </td>
                     <td className="py-3 px-4 text-slate-400 hidden sm:table-cell">

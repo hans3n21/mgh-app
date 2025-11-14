@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   getPresetForOrderType, 
   getCategoriesForOrderType,
@@ -10,6 +11,7 @@ import {
   isFieldRequired,
   shouldShowField,
   getDefaultValues,
+  sortSpecsByDefinedOrder,
   FIELD_LABELS,
   CATEGORY_LABELS,
   CategoryKey,
@@ -21,6 +23,10 @@ import MessageSystem from './MessageSystem';
 import ImageCarouselModal, { type CarouselImage } from './ImageCarouselModal';
 import AutoFillInput from '@/components/AutoFillInput';
 import BindingInput from '@/components/BindingInput';
+import PickguardInput from '@/components/PickguardInput';
+import BatteryCompartmentInput from '@/components/BatteryCompartmentInput';
+import SpokewheelInput from '@/components/SpokewheelInput';
+import NeckBindingInput from '@/components/NeckBindingInput';
 import DatasheetPDFGenerator from '@/components/DatasheetPDFGenerator';
 import { AUTO_FIELDS } from '@/lib/autofill-data';
 import { useRef } from 'react';
@@ -168,11 +174,14 @@ interface OrderDetailTabsNewProps {
     createdAt: Date;
     customer: { id: string; name: string; email?: string; phone?: string } | null;
     assignee: { id: string; name: string } | null;
+    latestDatasheet?: { version: string; updatedAt: string };
   };
+  paymentStatus?: string | null;
   onStatusChange: (status: string) => void;
   onAssigneeChange: (assigneeId: string) => void;
   onImagesChange: (images: OrderImage[]) => void;
   onMessagesChange: (messages: Message[]) => void;
+  onPaymentStatusChange?: (paymentStatus: string) => void;
   shopMode?: 'full' | 'deposit' | 'balance';
   shopAmount?: string;
   onShopOptionsChange?: (mode: 'full' | 'deposit' | 'balance', amount: string) => void;
@@ -190,10 +199,12 @@ export default function OrderDetailTabsNew({
   users,
   currentUserId,
   order,
+  paymentStatus,
   onStatusChange,
   onAssigneeChange,
   onImagesChange,
   onMessagesChange,
+  onPaymentStatusChange,
   shopMode = 'full',
   shopAmount = '',
   onShopOptionsChange,
@@ -209,6 +220,8 @@ export default function OrderDetailTabsNew({
   const [extrasOpen, setExtrasOpen] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState<boolean>(amountLocked);
   const isGuitar = orderType === 'GUITAR';
+  const [datasheetVersion, setDatasheetVersion] = useState<number | undefined>(undefined);
+  const [datasheetUpdatedAt, setDatasheetUpdatedAt] = useState<string | undefined>(undefined);
 
   // Anzeigeformat für Betrag: ohne überflüssige Nachkommastellen, mit € in einer Zeile
   const formattedAmount = (() => {
@@ -222,7 +235,32 @@ export default function OrderDetailTabsNew({
   })();
   const [specValues, setSpecValues] = useState<Record<string, string>>(() => {
     const defaultValues = getDefaultValues(orderType);
-    const currentValues = specs.reduce((acc, spec) => ({ ...acc, [spec.key]: spec.value }), {});
+    // Sortiere Specs nach der definierten Reihenfolge
+    const sortedSpecs = sortSpecsByDefinedOrder(specs, orderType);
+    
+    // Entferne Duplikate: behalte den "besten" Wert pro Key
+    // Strategie: längerer Wert bevorzugt (vollständiger), sonst neuerer (spätere CUID)
+    const uniqueSpecsMap = new Map<string, any>();
+    for (const spec of sortedSpecs) {
+      const existing = uniqueSpecsMap.get(spec.key);
+      if (!existing) {
+        uniqueSpecsMap.set(spec.key, spec as any);
+      } else {
+        const existingLength = existing.value.length;
+        const currentLength = spec.value.length;
+        if (currentLength > existingLength) {
+          uniqueSpecsMap.set(spec.key, spec as any);
+        } else if (currentLength === existingLength && (spec as any).id > existing.id) {
+          // Gleiche Länge: neuerer Eintrag (spätere CUID)
+          uniqueSpecsMap.set(spec.key, spec as any);
+        }
+      }
+    }
+    
+    const currentValues = Array.from(uniqueSpecsMap.values()).reduce(
+      (acc, spec) => ({ ...acc, [spec.key]: spec.value }), 
+      {}
+    );
     return { ...defaultValues, ...currentValues };
   });
   const [saving, setSaving] = useState(false);
@@ -230,6 +268,49 @@ export default function OrderDetailTabsNew({
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [lightbox, setLightbox] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const messageSystemRef = useRef<{ attachPDF: (blob: Blob, filename: string) => void }>(null);
+	const router = useRouter();
+
+	// Kunde bearbeiten (Inline-Form)
+	const [editingCustomer, setEditingCustomer] = useState(false);
+	const [customerDraft, setCustomerDraft] = useState(() => ({
+		name: order.customer?.name || '',
+		email: order.customer?.email || '',
+		phone: order.customer?.phone || '',
+		addressLine1: (order.customer as any)?.addressLine1 || '',
+		postalCode: (order.customer as any)?.postalCode || '',
+		city: (order.customer as any)?.city || '',
+		country: (order.customer as any)?.country || 'DE',
+	}));
+
+	const startEditCustomer = () => {
+		setCustomerDraft({
+			name: order.customer?.name || '',
+			email: order.customer?.email || '',
+			phone: order.customer?.phone || '',
+			addressLine1: (order.customer as any)?.addressLine1 || '',
+			postalCode: (order.customer as any)?.postalCode || '',
+			city: (order.customer as any)?.city || '',
+			country: (order.customer as any)?.country || 'DE',
+		});
+		setEditingCustomer(true);
+	};
+
+	const saveCustomer = async () => {
+		if (!order.customer) return;
+		const payload = { id: order.customer.id, ...customerDraft } as any;
+		const res = await fetch('/api/customers', {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload),
+		});
+		if (!res.ok) { alert('Kundendaten konnten nicht aktualisiert werden'); return; }
+    const upd = await res.json();
+    // Sofort im UI anzeigen
+    (order as any).customer = upd;
+		setEditingCustomer(false);
+		// Seite aktualisieren, damit alle Konsumenten (z. B. Shop-Export) die neuen Daten sehen
+		router.refresh();
+	};
 
   // Get preset configuration for this order type
   const preset = useMemo(() => getPresetForOrderType(orderType), [orderType]);
@@ -282,6 +363,34 @@ export default function OrderDetailTabsNew({
       }
     }, 500);
   };
+
+  // Lade neueste Datenblatt-Version (pro Auftrag + Typ)
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/datasheet/latest?type=${encodeURIComponent(orderType)}`);
+        if (!active) return;
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.ok && json?.datasheet) {
+            setDatasheetVersion(json.datasheet.version);
+            setDatasheetUpdatedAt(json.datasheet.updatedAt);
+          } else {
+            setDatasheetVersion(undefined);
+            setDatasheetUpdatedAt(undefined);
+          }
+        } else {
+          setDatasheetVersion(undefined);
+          setDatasheetUpdatedAt(undefined);
+        }
+      } catch {
+        setDatasheetVersion(undefined);
+        setDatasheetUpdatedAt(undefined);
+      }
+    })();
+    return () => { active = false; };
+  }, [orderId, orderType]);
 
   const validateRequiredFields = (): boolean => {
     const errors: Record<string, string> = {};
@@ -423,6 +532,18 @@ export default function OrderDetailTabsNew({
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Datenblatt - {TYPE_LABEL[orderType] || orderType}</h3>
               <div className="flex items-center gap-3">
+                {/* Datenblatt aktualisieren Button */}
+                <button
+                  onClick={() => {
+                    // Seite neu laden um aktuellste Daten zu bekommen
+                    window.location.reload();
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-lg text-slate-200"
+                  title="Datenblatt mit neuesten Änderungen aktualisieren"
+                >
+                  🔄 Aktualisieren
+                </button>
+                
                 {/* Direkter PDF-Download */}
                 <DatasheetPDFGenerator
                   orderId={orderId}
@@ -431,36 +552,44 @@ export default function OrderDetailTabsNew({
                   customerName={order.customer?.name || 'Unbekannt'}
                   specs={specs}
                   activeCategories={activeCategories}
+                  assigneeName={assigneeId ? users.find(u => u.id === assigneeId)?.name : undefined}
+                  finalAmount={shopAmount}
+                  paymentStatus={paymentStatus || undefined}
                   buttonText="📄 PDF"
                   // Kein onPDFGenerated = direkter Download
+                  datasheetVersion={datasheetVersion}
+                  datasheetUpdatedAt={datasheetUpdatedAt}
+                  stringCount={specValues['string_count'] || '–'}
                 />
               </div>
             </div>
             
-            {/* Category Chips */}
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setActiveCategories(new Set(categories))}
-                className={`rounded-full px-3 py-1.5 text-sm ${
-                  activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                Alle
-              </button>
-              {categories.map((category) => (
+            {/* Category Chips - nur anzeigen wenn mehr als eine Kategorie */}
+            {categories.length > 1 && (
+              <div className="flex flex-wrap gap-2">
                 <button
-                  key={category}
-                  onClick={() => setActiveCategories(new Set([category]))}
+                  onClick={() => setActiveCategories(new Set(categories))}
                   className={`rounded-full px-3 py-1.5 text-sm ${
-                    activeCategories.has(category) && activeCategories.size === 1
-                      ? 'bg-slate-600 text-white'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
-                  {CATEGORY_LABELS[category]}
+                  Alle
                 </button>
-              ))}
-            </div>
+                {categories.map((category) => (
+                  <button
+                    key={category}
+                    onClick={() => setActiveCategories(new Set([category]))}
+                    className={`rounded-full px-3 py-1.5 text-sm ${
+                      activeCategories.has(category) && activeCategories.size === 1
+                        ? 'bg-slate-600 text-white'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {CATEGORY_LABELS[category]}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Dynamic Form Fields by Category */}
             <div className="space-y-6">
@@ -515,9 +644,18 @@ export default function OrderDetailTabsNew({
                       </div>
                     )}
 
-                    {/* Category Fields */}
+                    {/* Category Fields - Word-Style Layout: erste Hälfte links, zweite Hälfte rechts */}
                     <div className="grid sm:grid-cols-2 gap-3 text-sm">
-                      {categoryFields.map((fieldKey) => {
+                      {(() => {
+                        const halfLength = Math.ceil(categoryFields.length / 2);
+                        const leftFields = categoryFields.slice(0, halfLength);
+                        const rightFields = categoryFields.slice(halfLength);
+                        
+                        return (
+                          <>
+                            {/* Linke Spalte */}
+                            <div className="space-y-3">
+                              {leftFields.map((fieldKey) => {
                         const isRequired = isFieldRequired(orderType, category, fieldKey);
                         const hasError = validationErrors[fieldKey];
                         const label = FIELD_LABELS[fieldKey] || fieldKey;
@@ -530,42 +668,148 @@ export default function OrderDetailTabsNew({
                           }
                         }
 
-                        return (
-                          <label key={fieldKey} className="block">
-                            <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
-                              {label}
-                              {isRequired && (
-                                <span className="text-red-400">*</span>
-                              )}
+
+                                return (
+                                  <label key={fieldKey} className="block">
+                                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
+                                      {label}
+                                      {isRequired && (
+                                        <span className="text-red-400">*</span>
+                                      )}
+                                    </div>
+
+                                    {fieldKey === 'pickguard' ? (
+                                      <PickguardInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'battery_compartment' ? (
+                                      <BatteryCompartmentInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'spokewheel' ? (
+                                      <SpokewheelInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'neck_binding' ? (
+                                      <NeckBindingInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'body_binding' ? (
+                                      <BindingInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : AUTO_FIELDS.has(fieldKey) ? (
+                                      <AutoFillInput
+                                        fieldKey={fieldKey}
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : (
+                                      <input
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(e) => updateSpec(fieldKey, e.target.value)}
+                                        className={`w-full rounded bg-slate-950 border px-2 py-1.5 ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600'}`}
+                                        placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
+                                      />
+                                    )}
+
+                                    {hasError && <div className="text-xs text-red-400 mt-1">{hasError}</div>}
+                                  </label>
+                                );
+                              })}
                             </div>
+                            
+                            {/* Rechte Spalte */}
+                            <div className="space-y-3">
+                              {rightFields.map((fieldKey) => {
+                                const isRequired = isFieldRequired(orderType, category, fieldKey);
+                                const hasError = validationErrors[fieldKey];
+                                const label = FIELD_LABELS[fieldKey] || fieldKey;
 
-                            {fieldKey === 'body_binding' ? (
-                              <BindingInput
-                                value={specValues[fieldKey] || ''}
-                                onChange={(v) => updateSpec(fieldKey, v)}
-                                hasError={!!hasError}
-                              />
-                            ) : AUTO_FIELDS.has(fieldKey) ? (
-                              <AutoFillInput
-                                fieldKey={fieldKey}
-                                value={specValues[fieldKey] || ''}
-                                onChange={(v) => updateSpec(fieldKey, v)}
-                                placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
-                                hasError={!!hasError}
-                              />
-                            ) : (
-                              <input
-                                value={specValues[fieldKey] || ''}
-                                onChange={(e) => updateSpec(fieldKey, e.target.value)}
-                                className={`w-full rounded bg-slate-950 border px-2 py-1.5 ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600'}`}
-                                placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
-                              />
-                            )}
+                                // Bedingte Feldanzeige für Oberflächenbehandlung
+                                if (category === 'oberflaeche' && orderType === 'FINISH_ONLY') {
+                                  const oberflaeche_typ = specValues['oberflaeche_typ'] || '';
+                                  if (!shouldShowField(fieldKey, oberflaeche_typ)) {
+                                    return null;
+                                  }
+                                }
 
-                            {hasError && <div className="text-xs text-red-400 mt-1">{hasError}</div>}
-                          </label>
+                                return (
+                                  <label key={fieldKey} className="block">
+                                    <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
+                                      {label}
+                                      {isRequired && (
+                                        <span className="text-red-400">*</span>
+                                      )}
+                                    </div>
+
+                                    {fieldKey === 'pickguard' ? (
+                                      <PickguardInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'battery_compartment' ? (
+                                      <BatteryCompartmentInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'spokewheel' ? (
+                                      <SpokewheelInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'neck_binding' ? (
+                                      <NeckBindingInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : fieldKey === 'body_binding' ? (
+                                      <BindingInput
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : AUTO_FIELDS.has(fieldKey) ? (
+                                      <AutoFillInput
+                                        fieldKey={fieldKey}
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(v) => updateSpec(fieldKey, v)}
+                                        placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
+                                        hasError={!!hasError}
+                                      />
+                                    ) : (
+                                      <input
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(e) => updateSpec(fieldKey, e.target.value)}
+                                        className={`w-full rounded bg-slate-950 border px-2 py-1.5 ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600'}`}
+                                        placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
+                                      />
+                                    )}
+
+                                    {hasError && <div className="text-xs text-red-400 mt-1">{hasError}</div>}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </>
                         );
-                      })}
+                      })()}
                     </div>
                   </div>
                 );
@@ -655,6 +899,34 @@ export default function OrderDetailTabsNew({
                         setIsLocked(true);
                       }}
                     >OK</button>
+                  </div>
+                  {/* Zahlungsstatus Checkboxen */}
+                  <div className="flex items-center gap-4 ml-4">
+                    <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={paymentStatus === 'deposit'}
+                        disabled={paymentStatus === 'paid'}
+                        onChange={async (e) => {
+                          const newStatus = e.target.checked ? 'deposit' : 'open';
+                          onPaymentStatusChange?.(newStatus);
+                        }}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <span className={paymentStatus === 'paid' ? 'opacity-50' : ''}>Angezahlt</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={paymentStatus === 'paid'}
+                        onChange={async (e) => {
+                          const newStatus = e.target.checked ? 'paid' : 'open';
+                          onPaymentStatusChange?.(newStatus);
+                        }}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500"
+                      />
+                      <span>Bezahlt</span>
+                    </label>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 justify-end w-full">
@@ -770,21 +1042,41 @@ export default function OrderDetailTabsNew({
 
 
 
-        {activeTab === 'details' && (
+			{activeTab === 'details' && (
           <div className="space-y-4">
             <h3 className="font-semibold">Details</h3>
             
             <div className="grid sm:grid-cols-2 gap-4">
               {/* Kunde */}
               <div className="rounded-xl border border-slate-800 p-3">
-                <div className="font-semibold mb-2">Kunde</div>
-                <div className="text-sm text-slate-300 mb-2">{order.customer?.name || 'Unbekannt'}</div>
-                <div className="space-y-2">
-                  {order.customer?.email && (
-                    <div className="flex items-center gap-2">
-                      <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
+							<div className="flex items-center justify-between mb-2">
+                  <div className="font-semibold">Kunde</div>
+								{order.customer && (
+									<button
+										className="text-xs text-slate-400 hover:text-sky-400 flex items-center gap-1"
+										title={editingCustomer ? "Änderungen speichern" : "Kundendaten bearbeiten"}
+										onClick={editingCustomer ? saveCustomer : startEditCustomer}
+									>
+										{editingCustomer ? "💾 Speichern" : "✏️ Bearbeiten"}
+									</button>
+								)}
+                </div>
+                <div className="space-y-1">
+                  {!editingCustomer && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 flex items-center justify-center">
+                        <span className="text-slate-400 text-sm">👤</span>
+                      </div>
+                      <span className="text-sm text-slate-300 font-medium">
+                        {order.customer?.name || 'Unbekannt'}
+                      </span>
+                    </div>
+                  )}
+                  {!editingCustomer && order.customer?.email && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 flex items-center justify-center">
+                        <span className="text-slate-400 text-sm">✉️</span>
+                      </div>
                       <a
                         href={`mailto:${order.customer.email}`}
                         className="text-xs text-slate-400 hover:text-sky-400 transition-colors"
@@ -793,11 +1085,11 @@ export default function OrderDetailTabsNew({
                       </a>
                     </div>
                   )}
-                  {order.customer?.phone && (
-                    <div className="flex items-center gap-2">
-                      <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
+                  {!editingCustomer && order.customer?.phone && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 flex items-center justify-center">
+                        <span className="text-slate-400 text-sm">📞</span>
+                      </div>
                       <a
                         href={`tel:${order.customer.phone}`}
                         className="text-xs text-slate-400 hover:text-green-400 transition-colors"
@@ -806,6 +1098,48 @@ export default function OrderDetailTabsNew({
                       </a>
                     </div>
                   )}
+							{order.customer && !editingCustomer && (
+								<div>
+									{((order.customer as any).addressLine1 || (order.customer as any).city || (order.customer as any).postalCode) ? (
+										<div className="flex items-start gap-3">
+											<div className="w-4 h-4 flex items-center justify-center mt-0.5">
+												<span className="text-slate-400 text-sm">🏠</span>
+											</div>
+											<div className="text-xs text-slate-400 leading-relaxed">
+												{(order.customer as any).addressLine1 && <div>{(order.customer as any).addressLine1}</div>}
+												{(((order.customer as any).postalCode || (order.customer as any).city || (order.customer as any).country)) && (
+													<div>
+														{`${(order.customer as any).postalCode || ''} ${(order.customer as any).city || ''}${((order.customer as any).country && (order.customer as any).country !== 'DE') ? `, ${(order.customer as any).country}` : ''}`}
+													</div>
+												)}
+											</div>
+										</div>
+									) : (
+										<div className="flex items-center gap-3">
+											<div className="w-4 h-4 flex items-center justify-center">
+												<span className="text-slate-500 text-sm">🏠</span>
+											</div>
+											<span className="text-xs text-slate-500">Keine Adresse hinterlegt</span>
+										</div>
+									)}
+								</div>
+							)}
+							{order.customer && editingCustomer && (
+								<div className="mt-2 space-y-2 text-sm">
+									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Name" value={customerDraft.name} onChange={(e)=>setCustomerDraft({ ...customerDraft, name: e.target.value })} />
+									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="E-Mail" value={customerDraft.email} onChange={(e)=>setCustomerDraft({ ...customerDraft, email: e.target.value })} />
+									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Telefon" value={customerDraft.phone} onChange={(e)=>setCustomerDraft({ ...customerDraft, phone: e.target.value })} />
+									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Adresse (Zeile 1)" value={customerDraft.addressLine1} onChange={(e)=>setCustomerDraft({ ...customerDraft, addressLine1: e.target.value })} />
+									<div className="grid grid-cols-3 gap-2">
+										<input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="PLZ" value={customerDraft.postalCode} onChange={(e)=>setCustomerDraft({ ...customerDraft, postalCode: e.target.value })} />
+										<input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Ort" value={customerDraft.city} onChange={(e)=>setCustomerDraft({ ...customerDraft, city: e.target.value })} />
+										<input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Land" value={customerDraft.country} onChange={(e)=>setCustomerDraft({ ...customerDraft, country: e.target.value })} />
+									</div>
+									<div className="flex justify-end">
+										<button className="rounded border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800" onClick={()=>setEditingCustomer(false)}>Abbrechen</button>
+									</div>
+								</div>
+							)}
                 </div>
               </div>
 

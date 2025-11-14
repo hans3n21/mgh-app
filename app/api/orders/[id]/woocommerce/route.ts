@@ -3,13 +3,11 @@ import { prisma } from '@/lib/prisma';
 import { createWooOrderForInternal } from '@/lib/woocommerce';
 import { z } from 'zod';
 
-interface RouteParams { params: { id: string } }
-
 const BodySchema = z.object({ mode: z.enum(['full','deposit','balance']).optional(), amountCents: z.number().int().positive().optional(), customLabel: z.string().optional() });
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const order = await prisma.order.findUnique({ where: { id } });
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 

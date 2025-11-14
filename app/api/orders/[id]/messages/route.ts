@@ -8,14 +8,11 @@ const createMessageSchema = z.object({
   senderId: z.string().nullable(),
 });
 
-interface RouteParams {
-  params: { id: string };
-}
-
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const messages = await prisma.message.findMany({
-      where: { orderId: params.id },
+      where: { orderId: id },
       include: { sender: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -30,14 +27,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const validatedData = createMessageSchema.parse(body);
 
     const message = await prisma.message.create({
       data: {
-        orderId: params.id,
+        orderId: id,
         ...validatedData,
       },
       include: { sender: true },

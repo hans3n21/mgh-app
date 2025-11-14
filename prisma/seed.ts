@@ -215,10 +215,19 @@ async function main() {
     { category: 'Custom Pickups', label: 'Pickup-Reparatur', description: 'Defekte Wicklung, Magnettausch, schwache Magnete aufladen – inkl. neuer Wachsimprägnierung', priceText: '40–50 €', mainCategory: 'Guitar Parts' },
     { category: 'Custom Pickups', label: 'Custom Oberflächenbehandlung', description: 'z. B. „Bare Knuckle Style", Gravur, geprägtes Cover, Spezial-Lack etc.', priceText: '+20–50 € (Aufpreis)', mainCategory: 'Guitar Parts' },
 
-    // Pickguards
-    { category: 'Pickguards', label: 'Custom Pickguard', description: 'Kopie deines Schlagbrettes in verschiedensten Materialien', priceText: 'ab 28 €', mainCategory: 'Guitar Parts' },
-    { category: 'Pickguards', label: 'Trussrodcover', description: 'Abdeckplatte', priceText: 'ab 5 €', mainCategory: 'Guitar Parts' },
-    { category: 'Pickguards', label: 'Backplates', description: 'Abdeckplatten der Elektronik', priceText: 'ab 5 €', mainCategory: 'Guitar Parts' }
+    // Pickguards (Service/Preise)
+    { category: 'Pickguards', label: 'XL Pickguard', description: 'Bsp.: Tele Deluxe, Precision Bass, Jazzmaster, Flying V 67er', priceText: 'Standard 149 € | Sparkle 169 € | Tortoise/Pearl/Special 189 €', mainCategory: 'Pickguards' },
+    { category: 'Pickguards', label: 'L Pickguard', description: 'Bsp.: Stratocaster, Jaguar, Telecaster Standard, Jazz Bass, Duo Sonic', priceText: 'Standard 89 € | Sparkle 95 € | Tortoise/Pearl/Special 129 €', mainCategory: 'Pickguards' },
+    { category: 'Pickguards', label: 'M Pickguard', description: 'Bsp.: Firebird, SG klein, Explorer, Flying V 58er', priceText: 'Standard 49 € | Sparkle 55 € | Tortoise/Pearl/Special 69 €', mainCategory: 'Pickguards' },
+    { category: 'Pickguards', label: 'S Pickguard', description: 'Bsp.: Les Paul, ES 335, Gretsch', priceText: 'Standard 28 € | Sparkle 30 € | Tortoise/Pearl/Special 39 €', mainCategory: 'Pickguards' },
+
+    // Trussrodcover
+    { category: 'Trussrodcover', label: 'Trussrodcover', description: 'Unbedruckt / Bedruckt', priceText: 'Unbedruckt 5 € | Bedruckt 20 €', mainCategory: 'Pickguards' },
+
+    // Backplates & Rahmen
+    { category: 'Backplates & Rahmen', label: 'Backplate (groß)', description: 'Bsp.: Tremolodeckel, PRS E-Fach', unit: '€', price: 15, mainCategory: 'Pickguards' },
+    { category: 'Backplates & Rahmen', label: 'Backplate (klein)', description: 'Bsp.: Les Paul Toggle', unit: '€', price: 5, mainCategory: 'Pickguards' },
+    { category: 'Backplates & Rahmen', label: 'Pickuprahmen', description: 'Bsp.: Humbucker, Singlecoil, Minihumbucker', priceText: 'ab 5 €', mainCategory: 'Pickguards' }
   ];
 
   for (const item of priceItems) {

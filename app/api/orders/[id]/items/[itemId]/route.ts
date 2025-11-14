@@ -10,19 +10,17 @@ const updateItemSchema = z.object({
   notes: z.string().optional(),
 });
 
-interface RouteParams {
-  params: { id: string; itemId: string };
-}
 
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   try {
+    const { id, itemId } = await params;
     const body = await request.json();
     const validatedData = updateItemSchema.parse(body);
 
     const item = await prisma.orderItem.update({
       where: {
-        id: params.itemId,
-        orderId: params.id, // Ensure item belongs to this order
+        id: itemId,
+        orderId: id, // Ensure item belongs to this order
       },
       data: validatedData,
       include: { priceItem: true },
@@ -45,12 +43,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   try {
+    const { id, itemId } = await params;
     await prisma.orderItem.delete({
       where: {
-        id: params.itemId,
-        orderId: params.id, // Ensure item belongs to this order
+        id: itemId,
+        orderId: id, // Ensure item belongs to this order
       },
     });
 

@@ -28,9 +28,9 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
   GUITAR: {
     categories: ["body","neck","finish"],
     fields: {
-      body: ["body_shape","body_material","body_thickness","neck_construction","body_binding","body_top_thickness","body_shaping","bridge_type","pickups_routes","body_electronics_layout","body_surface_treatment","body_extras"],
-      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","finish_neck","neck_extras"],
-      finish: ["finish_body","electronics","hardware_color","strap_pins","strings","notes"],
+      body: ["body_shape","string_count","body_material","body_thickness","neck_construction","body_top","body_binding","body_top_thickness","body_shaping","bridge_type","pickups_routes","body_electronics_layout","body_surface_treatment","pickguard","battery_compartment","body_extras"],
+      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","finish_neck","neck_extras"],
+      finish: ["finish_body","electronics","pickups","elektronikparts","hardware_color","strap_pins","strings","notes"],
       oberflaeche: [],
       repair: [],
       pickguard: [],
@@ -47,7 +47,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
   BODY: {
     categories: ["body","finish"],
     fields: {
-      body: ["body_shape","body_material","body_thickness","neck_construction","body_binding","body_top_thickness","body_shaping","bridge_type","pickups_routes","body_electronics_layout","body_surface_treatment","body_extras"],
+      body: ["body_shape","string_count","body_material","body_thickness","neck_construction","body_top","body_binding","body_top_thickness","body_shaping","bridge_type","pickups_routes","body_electronics_layout","body_surface_treatment","pickguard_checkbox","pickguard_material","battery_compartment_checkbox","battery_compartment_details","body_extras"],
       neck: [],
       finish: ["finish_body","hardware_color","notes"],
       oberflaeche: [],
@@ -63,7 +63,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
     categories: ["neck","finish"],
     fields: {
       body: [],
-      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","finish_neck","neck_extras"],
+      neck: ["string_count","headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","finish_neck","neck_extras"],
       finish: ["finish_body","notes"],
       oberflaeche: [],
       repair: [],
@@ -155,6 +155,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
 export const FIELD_LABELS: Record<string, string> = {
   // Body fields
   body_shape: "Korpusform",
+  string_count: "Saitenzahl",
   body_material: "Korpusmaterial",
   body_binding: "Korpus Binding",
   body_top_thickness: "Decken-Dicke",
@@ -165,11 +166,14 @@ export const FIELD_LABELS: Record<string, string> = {
   body_electronics_switch: "Elektronik-Schalter",
   body_electronics_layout: "Elektronik-Layout",
   body_surface_treatment: "Oberflächenbehandlung",
+  pickguard: "Pickguard",
+  battery_compartment: "Batteriefach",
   body_extras: "Korpus-Extras",
 
   // Neck fields
   headstock_type: "Headstock-Typ",
   neck_construction: "Hals-Konstruktion",
+  body_top: "Top",
   neck_wood: "Hals-Holz",
   fretboard_scale: "Mensur",
   fretboard_radius: "Griffbrett-Radius",
@@ -181,12 +185,16 @@ export const FIELD_LABELS: Record<string, string> = {
   neck_shape: "Halsform",
   action_12th: "Saitenlage 12. Bund",
   tuners: "Mechaniken",
+  neck_binding: "Hals Binding",
+  spokewheel: "Spokewheel",
   finish_neck: "Hals-Finish",
   neck_extras: "Hals-Extras",
 
   // Finish fields
   finish_body: "Korpus-Finish",
   electronics: "Elektronik",
+  pickups: "Pickups",
+  elektronikparts: "Elektronikparts",
   hardware_color: "Hardware-Farbe",
   strap_pins: "Gurtpins",
   strings: "Saiten",
@@ -233,7 +241,6 @@ export const FIELD_LABELS: Record<string, string> = {
   farbe: "Farbe/Farbton",
   aged: "Aged/Relic",
   speziallack: "Speziallack",
-  notes: "Notizen",
 };
 
 // Category labels for UI display (German)
@@ -315,4 +322,18 @@ export function getDefaultValues(orderType: string): Record<string, string> {
 export function shouldShowField(fieldKey: string, oberflaeche_typ: string): boolean {
   const conditionalFields = getConditionalFields(oberflaeche_typ);
   return conditionalFields.includes(fieldKey);
+}
+
+// Helper-Funktion um Specs nach der definierten Reihenfolge zu sortieren
+export function sortSpecsByDefinedOrder(specs: Array<{key: string; value: string}>, orderType: string): Array<{key: string; value: string}> {
+  const categories = getCategoriesForOrderType(orderType);
+  const orderedKeys = categories.flatMap(cat => getFieldsForCategory(orderType, cat));
+  
+  return specs.sort((a, b) => {
+    const indexA = orderedKeys.indexOf(a.key);
+    const indexB = orderedKeys.indexOf(b.key);
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
 }

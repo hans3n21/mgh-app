@@ -12,18 +12,9 @@ declare module 'next-pwa' {
   export default withPWA;
 }
 
-declare module 'minimatch' {
-  function minimatch(target: string, pattern: string, options?: any): boolean;
-  export = minimatch;
-}
-
 declare module 'bcrypt' {
   export function hash(data: string, saltRounds: number): Promise<string>;
   export function compare(data: string, encrypted: string): Promise<boolean>;
-}
-
-declare module 'zod' {
-  export * from 'zod/lib';
 }
 
 declare module '@prisma/client' {

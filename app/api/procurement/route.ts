@@ -10,6 +10,7 @@ const CreateProcurementItemSchema = z.object({
   neededBy: z.string().optional().transform(val => val ? new Date(val) : undefined),
   note: z.string().optional(),
   orderId: z.string().optional(),
+  link: z.string().url().optional(),
 });
 
 const UpdateProcurementItemSchema = z.object({
@@ -21,6 +22,7 @@ const UpdateProcurementItemSchema = z.object({
   neededBy: z.string().optional().transform(val => val ? new Date(val) : undefined),
   note: z.string().optional(),
   orderId: z.string().optional(),
+  link: z.string().url().optional(),
 });
 
 // GET /api/procurement - Liste aller Procurement Items
@@ -118,6 +120,7 @@ export async function POST(request: NextRequest) {
         ...data,
         unit: 'Stk', // Immer Stück
         createdBy,
+        link: (data as any).link ?? undefined,
       },
       include: {
         creator: {
@@ -130,7 +133,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(item, { status: 201 });
   } catch (error) {
     console.error('❌ POST /api/procurement error:', error);
-    return NextResponse.json({ error: 'Server-Fehler', details: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Server-Fehler', 
+      details: error instanceof Error ? error.message : String(error) 
+    }, { status: 500 });
   }
 }
 

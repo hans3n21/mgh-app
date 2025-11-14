@@ -29,6 +29,62 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Docker Deployment auf QNAP NAS
+
+### Voraussetzungen
+- QNAP NAS mit Container Station
+- Git-Zugriff auf das Repository
+
+### Schnellstart
+
+1. **Projekt auf QNAP klonen**:
+   ```bash
+   cd /share/Container
+   git clone https://github.com/your-repo/mgh-app.git
+   cd mgh-app
+   ```
+
+2. **Umgebungsvariablen setzen**:
+   ```bash
+   cp .env.example .env
+   nano .env  # Anpassen
+   ```
+
+3. **NEXTAUTH_SECRET generieren**:
+   ```bash
+   openssl rand -base64 32
+   ```
+
+4. **Volumes vorbereiten**:
+   ```bash
+   mkdir -p data uploads
+   chmod 777 data uploads
+   ```
+
+5. **Container bauen und starten**:
+   ```bash
+   docker-compose up -d
+   ```
+
+6. **Erste Migration und Seed**:
+   ```bash
+   docker-compose exec mgh-app npx prisma migrate deploy
+   docker-compose exec mgh-app npx prisma db seed
+   ```
+
+7. **Zugriff testen**:
+   - App: `http://qnap-ip:4000`
+   - Login mit Seed-User aus `prisma/seed.ts`
+
+### Updates
+Siehe [UPDATE.md](./UPDATE.md) für detaillierte Update-Anleitung.
+
+### Wichtige Hinweise
+- **Port 4000** ist frei wählbar (in docker-compose.yml anpassen)
+- **Volumes** unter `./data` und `./uploads` bleiben bei Updates erhalten
+- **Backups** sollten regelmäßig von `./data/production.db` erstellt werden
+- **Logs** mit `docker-compose logs -f` überwachen
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.

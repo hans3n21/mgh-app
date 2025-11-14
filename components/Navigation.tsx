@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
+import { useEffect, useState } from 'react';
 import CreateOrderButton from './CreateOrderButton';
 
 interface NavigationProps {
@@ -18,9 +19,49 @@ interface NavigationProps {
 
 export default function Navigation({ user, customers = [], users = [] }: NavigationProps) {
   const pathname = usePathname();
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Fetch unread mail count
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const res = await fetch('/api/mails/unread-count');
+        if (res.ok) {
+          const data = await res.json();
+          setUnreadCount(data.count || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching unread count:', error);
+      }
+    };
+
+    fetchUnreadCount();
+    
+    // Refresh unread count every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000);
+    
+    // Listen for custom events to update unread count immediately
+    const handleUnreadUpdate = () => {
+      fetchUnreadCount();
+    };
+    
+    window.addEventListener('mail-assigned', handleUnreadUpdate);
+    window.addEventListener('mail-synced', handleUnreadUpdate);
+    window.addEventListener('mail-read', handleUnreadUpdate);
+    window.addEventListener('mail-unread', handleUnreadUpdate);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('mail-assigned', handleUnreadUpdate);
+      window.removeEventListener('mail-synced', handleUnreadUpdate);
+      window.removeEventListener('mail-read', handleUnreadUpdate);
+      window.removeEventListener('mail-unread', handleUnreadUpdate);
+    };
+  }, []);
 
   const navItems = [
     { href: '/app', label: 'Dashboard' },
+    { href: '/app/posteingang', label: 'Posteingang', badge: unreadCount > 0 ? unreadCount : undefined },
     { href: '/app/orders', label: 'Aufträge' },
     { href: '/app/customers', label: 'Kunden' },
     { href: '/app/prices', label: 'Preise' },
@@ -41,11 +82,16 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
               {index > 0 && <span>·</span>}
               <Link
                 href={item.href}
-                className={`hover:text-white ${
+                className={`hover:text-white relative ${
                   pathname === item.href ? 'text-white font-semibold' : ''
                 }`}
               >
                 {item.label}
+                {item.badge && (
+                  <span className="absolute -top-2 -right-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full">
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </span>
+                )}
               </Link>
             </div>
           ))}

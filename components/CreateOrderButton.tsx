@@ -123,11 +123,11 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
       {modal && typeof window !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[9999] overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4 bg-black/60">
-            <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-4 max-h-[90vh] overflow-y-auto">
+            <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-4 max-h-[90vh] overflow-y-auto text-slate-100">
             <div className="flex items-center justify-between">
-              <div className="text-lg font-semibold">+ Auftrag anlegen</div>
+              <div className="text-lg font-semibold text-slate-100">+ Auftrag anlegen</div>
               <button
-                className="h-8 w-8 rounded-lg border border-slate-700"
+                className="h-8 w-8 rounded-lg border border-slate-700 text-slate-300 hover:text-slate-100 hover:bg-slate-800"
                 onClick={() => setModal(false)}
               >
                 ×
@@ -136,50 +136,52 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
 
             <div className="mt-3 grid grid-cols-1 gap-3 text-sm">
               <input
-                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
                 placeholder="Titel"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
 
               <select
-                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
                 value={type}
                 onChange={(e) => setType(e.target.value as keyof typeof TYPE_LABEL)}
               >
                 {Object.entries(TYPE_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>
+                  <option key={k} value={k} className="bg-slate-950 text-slate-100">
                     {v}
                   </option>
                 ))}
               </select>
 
               <select
-                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
                 value={assigneeId}
                 onChange={(e) => setAssigneeId(e.target.value)}
               >
                 {users.map((e) => (
-                  <option key={e.id} value={e.id}>
+                  <option key={e.id} value={e.id} className="bg-slate-950 text-slate-100">
                     {e.name}
                   </option>
                 ))}
               </select>
 
               <div className="flex gap-3 text-sm">
-                <label className="inline-flex items-center gap-2">
+                <label className="inline-flex items-center gap-2 text-slate-200">
                   <input
                     type="radio"
                     checked={mode === 'existing'}
                     onChange={() => setMode('existing')}
+                    className="text-blue-500"
                   />
                   Bestandskunde
                 </label>
-                <label className="inline-flex items-center gap-2">
+                <label className="inline-flex items-center gap-2 text-slate-200">
                   <input
                     type="radio"
                     checked={mode === 'new'}
                     onChange={() => setMode('new')}
+                    className="text-blue-500"
                   />
                   Neuer Kunde
                 </label>
@@ -187,12 +189,12 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
 
               {mode === 'existing' ? (
                 <select
-                  className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+                  className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
                   value={customerId}
                   onChange={(e) => setCustomerId(e.target.value)}
                 >
                   {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <option key={c.id} value={c.id} className="bg-slate-950 text-slate-100">
                       {c.name}
                     </option>
                   ))}
@@ -200,7 +202,7 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <input
-                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
                     placeholder="Name"
                     value={newCustomer.name}
                     onChange={(e) =>
@@ -208,7 +210,7 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                     }
                   />
                   <input
-                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
                     placeholder="E-Mail"
                     value={newCustomer.email}
                     onChange={(e) =>
@@ -216,7 +218,7 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                     }
                   />
                   <input
-                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
                     placeholder="Telefon"
                     value={newCustomer.phone}
                     onChange={(e) =>
@@ -228,7 +230,7 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
 
               <div className="flex justify-end gap-2 mt-2">
                 <button
-                  className="rounded-lg border border-slate-700 px-3 py-2"
+                  className="rounded-lg border border-slate-700 px-3 py-2 text-slate-200 hover:bg-slate-800 disabled:opacity-50"
                   onClick={() => setModal(false)}
                   disabled={loading}
                 >

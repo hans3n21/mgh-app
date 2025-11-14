@@ -1,14 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   // Performance optimizations for development
-  experimental: {
-    turbo: {
-      // Reduce file watching sensitivity
-      resolveAlias: {},
-      // Optimize hot reload
-      memoryLimit: 4096,
-    },
+  turbopack: {
+    // Reduce file watching sensitivity
+    resolveAlias: {},
   },
   
   // Reduce unnecessary rebuilds
