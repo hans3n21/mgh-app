@@ -7,7 +7,7 @@ type Attachment = {
 	filename: string;
 	mimeType: string | null;
 	size: number | null;
-	storagePath: string;
+	path: string;
 };
 
 type Mail = {

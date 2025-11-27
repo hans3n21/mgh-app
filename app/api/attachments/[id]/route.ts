@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 		const att = await prisma.attachment.findUnique({ where: { id } });
 		if (!att) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-		const abs = path.join(process.cwd(), att.storagePath);
+		const abs = path.join(process.cwd(), 'uploads', 'mail', att.path);
 		const stream = createReadStream(abs);
 		return new NextResponse(stream as any, {
 			headers: {

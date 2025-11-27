@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     for (const a of body.attachments || []) {
       if (a.id) {
         const att = await prisma.attachment.findUnique({ where: { id: a.id } });
-        if (att) atts.push({ filename: att.filename, path: (att.storagePath || undefined), contentType: att.mimeType || undefined });
+        if (att) atts.push({ filename: att.filename, path: att.path, contentType: att.mimeType || undefined });
       } else if (a.name && a.content) {
         const buf = Buffer.from(a.content, 'base64');
         atts.push({ filename: a.name, content: buf, contentType: a.contentType || undefined });
