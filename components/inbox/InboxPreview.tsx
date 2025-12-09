@@ -46,17 +46,17 @@ export default function InboxPreview({ message, actionsSlot, onLeadLinked, onLea
 	useEffect(() => {
 		if (!message) return;
 		
-		// Set initial unread state from message data
-		setIsUnread(message.unread !== false); // Default to unread if not specified
+		// Set initial unread state from message data (isRead is inverted)
+		setIsUnread(!message.isRead); // Default to unread if isRead is false
 		
 		// Mark as read after a short delay (user has actually looked at it)
 		const timer = setTimeout(async () => {
-			if (message.unread !== false) {
+			if (!message.isRead) {
 				try {
 					const res = await fetch(`/api/mails/${message.id}/mark-read`, {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ unread: false }),
+						body: JSON.stringify({ isRead: true }),
 					});
 					
 					if (res.ok) {
@@ -132,20 +132,20 @@ const [activeTab, setActiveTab] = useState<'mail' | 'parsed' | 'datasheet'>('mai
 						<button
 							onClick={async () => {
 								if (!message) return;
-								const newUnreadState = !isUnread;
+								const newIsReadState = !isUnread; // isUnread is inverted from isRead
 								
 								try {
 									const res = await fetch(`/api/mails/${message.id}/mark-read`, {
 										method: 'POST',
 										headers: { 'Content-Type': 'application/json' },
-										body: JSON.stringify({ unread: newUnreadState }),
+										body: JSON.stringify({ isRead: newIsReadState }),
 									});
 									
-									if (res.ok) {
-										setIsUnread(newUnreadState);
-										// Update navigation counter
-										window.dispatchEvent(new CustomEvent(newUnreadState ? 'mail-unread' : 'mail-read'));
-									}
+								if (res.ok) {
+									setIsUnread(!newIsReadState);
+									// Update navigation counter
+									window.dispatchEvent(new CustomEvent(!newIsReadState ? 'mail-unread' : 'mail-read'));
+								}
 								} catch (error) {
 									console.error('Failed to update read status:', error);
 								}

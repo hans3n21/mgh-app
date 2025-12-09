@@ -5,7 +5,9 @@ import * as React from 'react';
 export default function DeleteOrderButton({ orderId, onDeleted }: { orderId: string; onDeleted?: () => void }) {
   const [loading, setLoading] = React.useState(false);
 
-  const handleDelete = async () => {
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (loading) return;
     if (!confirm('Auftrag wirklich löschen?')) return;
     setLoading(true);

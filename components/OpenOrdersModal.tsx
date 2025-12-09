@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 
 const STATUS_LABEL = {
   intake: 'Eingang',
-  quote: 'Angebot', 
+  quote: 'Angebot',
   in_progress: 'In Arbeit',
   finishing: 'Finish',
   setup: 'Setup',
@@ -58,7 +59,7 @@ function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string })
     complete: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
     design_review: 'bg-fuchsia-900/30 text-fuchsia-300 border-fuchsia-700/50',
   };
-  
+
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full border ${map[String(status)] || 'bg-slate-800 text-slate-300 border-slate-700'}`}>
       {STATUS_LABEL[String(status) as keyof typeof STATUS_LABEL] || String(status)}
@@ -68,6 +69,7 @@ function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string })
 
 export default function OpenOrdersModal({ isOpen, onClose, onOrderAssigned }: OpenOrdersModalProps) {
   const { data: session } = useSession();
+  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigningOrderId, setAssigningOrderId] = useState<string | null>(null);
@@ -95,7 +97,7 @@ export default function OpenOrdersModal({ isOpen, onClose, onOrderAssigned }: Op
 
   const assignOrderToMe = async (orderId: string) => {
     if (!session?.user?.id) return;
-    
+
     try {
       setAssigningOrderId(orderId);
       const response = await fetch(`/api/orders/${orderId}/assign`, {
@@ -131,7 +133,7 @@ export default function OpenOrdersModal({ isOpen, onClose, onOrderAssigned }: Op
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-700">
           <h2 className="text-xl font-semibold text-slate-100">Offene Aufträge</h2>
-          <button 
+          <button
             onClick={onClose}
             className="text-slate-400 hover:text-slate-200 text-2xl"
           >
@@ -150,9 +152,10 @@ export default function OpenOrdersModal({ isOpen, onClose, onOrderAssigned }: Op
           ) : (
             <div className="space-y-4">
               {orders.map((order) => (
-                <div 
+                <div
                   key={order.id}
-                  className="border border-slate-700 rounded-lg p-4 bg-slate-800/30"
+                  onClick={() => router.push(`/app/orders/${order.id}`)}
+                  className="border border-slate-700 rounded-lg p-4 bg-slate-800/30 cursor-pointer hover:bg-slate-800/50 transition-colors"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="space-y-2">
@@ -170,10 +173,13 @@ export default function OpenOrdersModal({ isOpen, onClose, onOrderAssigned }: Op
                         Erstellt: {new Date(order.createdAt).toLocaleDateString('de-DE')}
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => assignOrderToMe(order.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          assignOrderToMe(order.id);
+                        }}
                         disabled={assigningOrderId === order.id}
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
                       >

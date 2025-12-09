@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { buildSuggestions } from '@/lib/mail/buildSuggestions';
 import { getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
+import { parseMail } from '@/lib/mail/parseMail';
 
 const BodySchema = z.object({
 	mailId: z.string().min(1),
@@ -26,12 +27,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 		}
 		console.log('📋 autofill-from-mail: Found order:', order);
 
-		const mail = await prisma.mail.findUnique({ where: { id: body.mailId }, select: { id: true, subject: true, date: true, parsedData: true } });
+		const mail = await prisma.mail.findUnique({ where: { id: body.mailId }, select: { id: true, subject: true, date: true, text: true, html: true } });
 		if (!mail) {
 			console.log('❌ autofill-from-mail: Mail not found:', body.mailId);
 			return NextResponse.json({ error: 'Mail not found' }, { status: 404 });
 		}
-		console.log('📧 autofill-from-mail: Found mail:', { id: mail.id, subject: mail.subject, date: mail.date, parsedDataKeys: Object.keys(mail.parsedData as any || {}) });
+		
+		// Compute parsedData dynamically from mail content
+		const parsedData = parseMail(mail.text || '', mail.html || '');
+		console.log('📧 autofill-from-mail: Found mail:', { id: mail.id, subject: mail.subject, date: mail.date, parsedDataKeys: Object.keys(parsedData || {}) });
 
 		// aktuelles KV laden - entferne Duplikate: behalte den "besten" Wert pro Key
 		const existing = await prisma.orderSpecKV.findMany({ where: { orderId }, select: { key: true, value: true, id: true } });
@@ -53,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 		const kv: Record<string, string> = Object.fromEntries(Array.from(uniqueSpecsMap.values()).map((e) => [e.key, e.value]));
 		console.log('💾 autofill-from-mail: Existing KV pairs:', Object.keys(kv).length);
 
-		const suggestions = buildSuggestions({ id: mail.id, subject: mail.subject, date: mail.date, parsedData: mail.parsedData as any }, order.type);
+		const suggestions = buildSuggestions({ id: mail.id, subject: mail.subject, date: mail.date }, parsedData, order.type);
 		console.log('💡 autofill-from-mail: Generated suggestions:', suggestions.length, suggestions);
 		
 		const updates: Record<string, string> = {};

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import linkMailArtifactsToOrder from '@/lib/mail/linkArtifacts';
+import { parseMail } from './parseMail';
 
 const ORDER_REGEX = /\bORD-\d{4}-\d+\b/;
 
@@ -8,9 +9,9 @@ export async function autoLinkOrderForMail(mailId: string): Promise<string | nul
 	if (!mail) return null;
 	if (mail.orderId) return mail.orderId; // already linked
 
-	// 1) Explicit order number from parsedData
-	const pd: any = mail.parsedData || {};
-	const candidateFromParsed: string | undefined = pd.orderNumber;
+	// 1) Explicit order number from parsedData (computed dynamically)
+	const parsedData = parseMail(mail.text || '', mail.html || '');
+	const candidateFromParsed: string | undefined = parsedData.orderNumber;
 	const fromText = typeof candidateFromParsed === 'string' ? candidateFromParsed : undefined;
 	const explicit = fromText && ORDER_REGEX.test(fromText) ? fromText.match(ORDER_REGEX)![0] : undefined;
 	if (explicit) {

@@ -56,7 +56,7 @@ function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string })
     complete: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
     design_review: 'bg-fuchsia-900/30 text-fuchsia-300 border-fuchsia-700/50',
   };
-  
+
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full border ${map[String(status)] || 'bg-slate-800 text-slate-300 border-slate-700'}`}>
       {STATUS_LABEL[String(status) as keyof typeof STATUS_LABEL] || String(status)}
@@ -103,11 +103,11 @@ export default function DashboardClient({ orders, openOrdersCount, isAdmin }: Da
             </Link>
           </div>
         </div>
-        
+
         <ul className="mt-3 divide-y divide-slate-800">
           {orders.map((order) => (
             <li key={order.id} className="py-3">
-              <Link 
+              <Link
                 href={`/app/orders/${order.id}`}
                 className="block hover:bg-slate-800/30 rounded-lg p-2 -m-2 transition-colors"
               >
@@ -115,12 +115,12 @@ export default function DashboardClient({ orders, openOrdersCount, isAdmin }: Da
                   <div className="text-center sm:text-left space-y-1">
                     {/* Titel alleine in der ersten Zeile */}
                     <div className="font-medium">{order.title}</div>
-                    
+
                     {/* Auftragsnummer und Kunde in der zweiten Zeile */}
                     <div className="text-sm text-slate-400">
                       {order.id} · {order.customer?.name || 'Unbekannt'}
                     </div>
-                    
+
                     {/* Typ und Status mittig untereinander in der dritten Zeile (nur mobile) */}
                     <div className="flex items-center justify-center gap-2 sm:hidden">
                       <span className="text-xs rounded-full border border-slate-700 px-2 py-0.5 text-slate-300">
@@ -129,7 +129,7 @@ export default function DashboardClient({ orders, openOrdersCount, isAdmin }: Da
                       <StatusBadge status={order.status} />
                     </div>
                   </div>
-                  
+
                   {/* Desktop: Status rechts */}
                   <div className="hidden sm:flex items-center justify-end gap-3">
                     <span className="text-xs rounded-full border border-slate-700 px-2 py-0.5 text-slate-300">
@@ -145,7 +145,7 @@ export default function DashboardClient({ orders, openOrdersCount, isAdmin }: Da
             </li>
           ))}
         </ul>
-        
+
         {orders.length === 0 && (
           <div className="text-slate-500 text-sm mt-3">
             {isAdmin ? 'Keine Aufträge vorhanden.' : 'Du hast noch keine zugewiesenen Aufträge.'}

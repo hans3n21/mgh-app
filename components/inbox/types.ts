@@ -16,7 +16,7 @@ export type Message = {
 	attachments?: Attachment[];
 	lang: 'DE' | 'EN';
 	assignedTo?: string | null;
-	unread: boolean;
+	isRead: boolean;
 	snippet: string;
 	html?: string;
 	threadId?: string;
@@ -26,5 +26,4 @@ export type Message = {
 };
 
 export type InboxFilter = 'all' | 'assigned' | 'unassigned' | 'with_attachments';
-
 

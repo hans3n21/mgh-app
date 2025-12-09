@@ -1,4 +1,5 @@
 import type { Attachment, Mail } from '@prisma/client';
+import type { ParsedData } from './parseMail';
 
 export type OrderTypeKey =
   | 'GUITAR'
@@ -37,10 +38,10 @@ function attachmentHints(attachments: Pick<Attachment, 'mimeType' | 'filename'>[
   return out;
 }
 
-export function suggestOrderTypes(mail: Pick<Mail, 'subject' | 'text' | 'html' | 'parsedData'> & { attachments?: Pick<Attachment, 'mimeType' | 'filename'>[] }): OrderTypeSuggestion[] {
+export function suggestOrderTypes(mail: Pick<Mail, 'subject' | 'text' | 'html'> & { attachments?: Pick<Attachment, 'mimeType' | 'filename'>[] }, parsedData: ParsedData): OrderTypeSuggestion[] {
   const text = textFromMail({ ...mail, attachmentsNames: (mail.attachments || []).map(a => a.filename || '') });
   const hints = attachmentHints(mail.attachments);
-  const pd = (mail.parsedData as any) || {};
+  const pd = parsedData || {};
 
   const base: Record<OrderTypeKey, { score: number; reasons: string[] }> = {
     GUITAR: { score: 0, reasons: [] },

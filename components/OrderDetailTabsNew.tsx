@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  getPresetForOrderType, 
+import {
+  getPresetForOrderType,
   getCategoriesForOrderType,
   getFieldsForCategory,
   getRequiredFieldsForCategory,
@@ -60,7 +60,7 @@ function ImageAttachmentPanel({ images }: { images: OrderImage[] }) {
           )}
         </div>
         {selectedImages.size > 0 && (
-          <button 
+          <button
             onClick={() => setSelectedImages(new Set())}
             className="text-xs text-slate-400 hover:text-slate-300"
           >
@@ -73,11 +73,10 @@ function ImageAttachmentPanel({ images }: { images: OrderImage[] }) {
           <div key={img.id} className="relative group">
             <img
               src={img.path}
-              className={`h-12 w-full object-cover rounded cursor-pointer border-2 transition-colors ${
-                selectedImages.has(img.id) 
-                  ? 'border-sky-500 shadow-lg shadow-sky-500/25' 
-                  : 'border-slate-600 hover:border-slate-400'
-              }`}
+              className={`h-12 w-full object-cover rounded cursor-pointer border-2 transition-colors ${selectedImages.has(img.id)
+                ? 'border-sky-500 shadow-lg shadow-sky-500/25'
+                : 'border-slate-600 hover:border-slate-400'
+                }`}
               title={img.comment || 'Als Anhang markieren'}
               onClick={() => toggleImage(img.id)}
             />
@@ -237,7 +236,7 @@ export default function OrderDetailTabsNew({
     const defaultValues = getDefaultValues(orderType);
     // Sortiere Specs nach der definierten Reihenfolge
     const sortedSpecs = sortSpecsByDefinedOrder(specs, orderType);
-    
+
     // Entferne Duplikate: behalte den "besten" Wert pro Key
     // Strategie: längerer Wert bevorzugt (vollständiger), sonst neuerer (spätere CUID)
     const uniqueSpecsMap = new Map<string, any>();
@@ -256,9 +255,9 @@ export default function OrderDetailTabsNew({
         }
       }
     }
-    
+
     const currentValues = Array.from(uniqueSpecsMap.values()).reduce(
-      (acc, spec) => ({ ...acc, [spec.key]: spec.value }), 
+      (acc, spec) => ({ ...acc, [spec.key]: spec.value }),
       {}
     );
     return { ...defaultValues, ...currentValues };
@@ -268,49 +267,49 @@ export default function OrderDetailTabsNew({
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [lightbox, setLightbox] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const messageSystemRef = useRef<{ attachPDF: (blob: Blob, filename: string) => void }>(null);
-	const router = useRouter();
+  const router = useRouter();
 
-	// Kunde bearbeiten (Inline-Form)
-	const [editingCustomer, setEditingCustomer] = useState(false);
-	const [customerDraft, setCustomerDraft] = useState(() => ({
-		name: order.customer?.name || '',
-		email: order.customer?.email || '',
-		phone: order.customer?.phone || '',
-		addressLine1: (order.customer as any)?.addressLine1 || '',
-		postalCode: (order.customer as any)?.postalCode || '',
-		city: (order.customer as any)?.city || '',
-		country: (order.customer as any)?.country || 'DE',
-	}));
+  // Kunde bearbeiten (Inline-Form)
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [customerDraft, setCustomerDraft] = useState(() => ({
+    name: order.customer?.name || '',
+    email: order.customer?.email || '',
+    phone: order.customer?.phone || '',
+    addressLine1: (order.customer as any)?.addressLine1 || '',
+    postalCode: (order.customer as any)?.postalCode || '',
+    city: (order.customer as any)?.city || '',
+    country: (order.customer as any)?.country || 'DE',
+  }));
 
-	const startEditCustomer = () => {
-		setCustomerDraft({
-			name: order.customer?.name || '',
-			email: order.customer?.email || '',
-			phone: order.customer?.phone || '',
-			addressLine1: (order.customer as any)?.addressLine1 || '',
-			postalCode: (order.customer as any)?.postalCode || '',
-			city: (order.customer as any)?.city || '',
-			country: (order.customer as any)?.country || 'DE',
-		});
-		setEditingCustomer(true);
-	};
+  const startEditCustomer = () => {
+    setCustomerDraft({
+      name: order.customer?.name || '',
+      email: order.customer?.email || '',
+      phone: order.customer?.phone || '',
+      addressLine1: (order.customer as any)?.addressLine1 || '',
+      postalCode: (order.customer as any)?.postalCode || '',
+      city: (order.customer as any)?.city || '',
+      country: (order.customer as any)?.country || 'DE',
+    });
+    setEditingCustomer(true);
+  };
 
-	const saveCustomer = async () => {
-		if (!order.customer) return;
-		const payload = { id: order.customer.id, ...customerDraft } as any;
-		const res = await fetch('/api/customers', {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(payload),
-		});
-		if (!res.ok) { alert('Kundendaten konnten nicht aktualisiert werden'); return; }
+  const saveCustomer = async () => {
+    if (!order.customer) return;
+    const payload = { id: order.customer.id, ...customerDraft } as any;
+    const res = await fetch('/api/customers', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) { alert('Kundendaten konnten nicht aktualisiert werden'); return; }
     const upd = await res.json();
     // Sofort im UI anzeigen
     (order as any).customer = upd;
-		setEditingCustomer(false);
-		// Seite aktualisieren, damit alle Konsumenten (z. B. Shop-Export) die neuen Daten sehen
-		router.refresh();
-	};
+    setEditingCustomer(false);
+    // Seite aktualisieren, damit alle Konsumenten (z. B. Shop-Export) die neuen Daten sehen
+    router.refresh();
+  };
 
   // Get preset configuration for this order type
   const preset = useMemo(() => getPresetForOrderType(orderType), [orderType]);
@@ -336,7 +335,7 @@ export default function OrderDetailTabsNew({
     if ((specValues[key] ?? '') === (value ?? '')) return;
 
     setSpecValues(prev => ({ ...prev, [key]: value }));
-    
+
     if (validationErrors[key]) {
       setValidationErrors(prev => {
         const newErrors = { ...prev };
@@ -344,7 +343,7 @@ export default function OrderDetailTabsNew({
         return newErrors;
       });
     }
-    
+
     // Debounced save
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
@@ -400,7 +399,7 @@ export default function OrderDetailTabsNew({
     activeCategories.forEach(category => {
       const requiredFields = getRequiredFieldsForCategory(orderType, category);
       const categoryFields = getFieldsForCategory(orderType, category);
-      
+
       requiredFields.forEach(fieldKey => {
         if (categoryFields.includes(fieldKey)) {
           const value = specValues[fieldKey];
@@ -459,11 +458,11 @@ export default function OrderDetailTabsNew({
   // Filter images by active categories
   const filteredImages = useMemo(() => {
     if (activeTab !== 'images' || !Array.isArray(images)) return images || [];
-    
+
     const activeCategoryArray = Array.from(activeCategories);
     if (activeCategoryArray.length === 0) return images;
-    
-    return images.filter(image => 
+
+    return images.filter(image =>
       !image.scope || activeCategoryArray.includes(image.scope as CategoryKey)
     );
   }, [images, activeCategories, activeTab]);
@@ -483,7 +482,7 @@ export default function OrderDetailTabsNew({
             </option>
           ))}
         </select>
-        
+
         <select
           value={assigneeId || ''}
           onChange={(e) => onAssigneeChange(e.target.value)}
@@ -514,11 +513,10 @@ export default function OrderDetailTabsNew({
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${
-              activeTab === tab.id
-                ? 'bg-slate-200/10 text-white'
-                : 'bg-slate-200/5 text-slate-300 hover:bg-slate-200/10'
-            }`}
+            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === tab.id
+              ? 'bg-slate-200/10 text-white'
+              : 'bg-slate-200/5 text-slate-300 hover:bg-slate-200/10'
+              }`}
           >
             {tab.label}
           </button>
@@ -543,7 +541,7 @@ export default function OrderDetailTabsNew({
                 >
                   🔄 Aktualisieren
                 </button>
-                
+
                 {/* Direkter PDF-Download */}
                 <DatasheetPDFGenerator
                   orderId={orderId}
@@ -563,15 +561,14 @@ export default function OrderDetailTabsNew({
                 />
               </div>
             </div>
-            
+
             {/* Category Chips - nur anzeigen wenn mehr als eine Kategorie */}
             {categories.length > 1 && (
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setActiveCategories(new Set(categories))}
-                  className={`rounded-full px-3 py-1.5 text-sm ${
-                    activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
+                  className={`rounded-full px-3 py-1.5 text-sm ${activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
                 >
                   Alle
                 </button>
@@ -579,11 +576,10 @@ export default function OrderDetailTabsNew({
                   <button
                     key={category}
                     onClick={() => setActiveCategories(new Set([category]))}
-                    className={`rounded-full px-3 py-1.5 text-sm ${
-                      activeCategories.has(category) && activeCategories.size === 1
-                        ? 'bg-slate-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
+                    className={`rounded-full px-3 py-1.5 text-sm ${activeCategories.has(category) && activeCategories.size === 1
+                      ? 'bg-slate-600 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }`}
                   >
                     {CATEGORY_LABELS[category]}
                   </button>
@@ -602,7 +598,7 @@ export default function OrderDetailTabsNew({
                     <h4 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">
                       {CATEGORY_LABELS[category]}
                     </h4>
-                    
+
                     {/* Category Images: nur anzeigen, wenn vorhanden */}
                     {images?.some(img => img.scope === category) && (
                       <div className="mb-4">
@@ -650,23 +646,23 @@ export default function OrderDetailTabsNew({
                         const halfLength = Math.ceil(categoryFields.length / 2);
                         const leftFields = categoryFields.slice(0, halfLength);
                         const rightFields = categoryFields.slice(halfLength);
-                        
+
                         return (
                           <>
                             {/* Linke Spalte */}
                             <div className="space-y-3">
                               {leftFields.map((fieldKey) => {
-                        const isRequired = isFieldRequired(orderType, category, fieldKey);
-                        const hasError = validationErrors[fieldKey];
-                        const label = FIELD_LABELS[fieldKey] || fieldKey;
+                                const isRequired = isFieldRequired(orderType, category, fieldKey);
+                                const hasError = validationErrors[fieldKey];
+                                const label = FIELD_LABELS[fieldKey] || fieldKey;
 
-                        // Bedingte Feldanzeige für Oberflächenbehandlung
-                        if (category === 'oberflaeche' && orderType === 'FINISH_ONLY') {
-                          const oberflaeche_typ = specValues['oberflaeche_typ'] || '';
-                          if (!shouldShowField(fieldKey, oberflaeche_typ)) {
-                            return null;
-                          }
-                        }
+                                // Bedingte Feldanzeige für Oberflächenbehandlung
+                                if (category === 'oberflaeche' && orderType === 'FINISH_ONLY') {
+                                  const oberflaeche_typ = specValues['oberflaeche_typ'] || '';
+                                  if (!shouldShowField(fieldKey, oberflaeche_typ)) {
+                                    return null;
+                                  }
+                                }
 
 
                                 return (
@@ -730,7 +726,7 @@ export default function OrderDetailTabsNew({
                                 );
                               })}
                             </div>
-                            
+
                             {/* Rechte Spalte */}
                             <div className="space-y-3">
                               {rightFields.map((fieldKey) => {
@@ -841,7 +837,7 @@ export default function OrderDetailTabsNew({
             {/* Zahlungs-Optionen (Shop) */}
             <div className="rounded-xl border border-slate-800 p-3">
               {/* Kopfzeile: nur Titel + Stift */}
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex flex-wrap items-center justify-between mb-2 gap-2">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">Endbetrag</span>
                   <button
@@ -868,8 +864,8 @@ export default function OrderDetailTabsNew({
                 </div>
               </div>
               {/* Zeile 2: links Summe/Input, rechts Buttons + Checkbox */}
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
                   <span id="endbetrag-display" className={`text-slate-200 font-bold underline text-lg whitespace-nowrap ${isLocked ? '' : 'hidden'}`}>{formattedAmount}</span>
                   <div className={`${isLocked ? 'hidden' : 'flex'} items-center gap-2`}>
                     <input
@@ -901,7 +897,7 @@ export default function OrderDetailTabsNew({
                     >OK</button>
                   </div>
                   {/* Zahlungsstatus Checkboxen */}
-                  <div className="flex items-center gap-4 ml-4">
+                  <div className="flex items-center gap-4 ml-0 sm:ml-4">
                     <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
                       <input
                         type="checkbox"
@@ -929,7 +925,7 @@ export default function OrderDetailTabsNew({
                     </label>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 justify-end w-full">
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
                   {!(isGuitar && splitPayment) && (
                     <button
                       onClick={() => {
@@ -939,14 +935,14 @@ export default function OrderDetailTabsNew({
                         if (!confirm('Möchten Sie den Auftrag jetzt an WooCommerce übertragen?')) return;
                         document.dispatchEvent(new CustomEvent('sync-to-woo', { detail: { mode: 'full' } } as CustomEventInit));
                       }}
-                      className="rounded bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium"
+                      className="rounded bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium w-full sm:w-auto"
                     >Auftrag in Shop</button>
                   )}
                   {isGuitar && splitPayment && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
                       <button
                         title="1. Zahlung (Anzahlung)"
-                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs"
+                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs flex-1 sm:flex-none"
                         onClick={() => {
                           const value = shopAmount;
                           if (!value || !value.trim()) { alert('Bitte Endbetrag eintragen.'); return; }
@@ -956,7 +952,7 @@ export default function OrderDetailTabsNew({
                       >Zahlung 1</button>
                       <button
                         title="2. Zahlung (Rest)"
-                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs"
+                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs flex-1 sm:flex-none"
                         onClick={() => {
                           const value = shopAmount;
                           if (!value || !value.trim()) { alert('Bitte Endbetrag eintragen.'); return; }
@@ -971,31 +967,31 @@ export default function OrderDetailTabsNew({
 
               {/* Extrakosten (ein-/ausklappbar) */}
               {extrasOpen && (
-              <div className="mt-3 rounded border border-slate-800 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="font-semibold">Extrakosten</div>
+                <div className="mt-3 rounded border border-slate-800 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-semibold">Extrakosten</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <input id="extra-amount" placeholder="Betrag (€)" className="w-28 rounded bg-slate-950 border border-slate-700 px-2 py-1" />
+                    <input id="extra-label" placeholder="Begründung" className="min-w-52 flex-1 rounded bg-slate-950 border border-slate-700 px-2 py-1" />
+                    <button
+                      className="ml-auto rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-medium"
+                      onClick={async () => {
+                        const amountStr = (document.getElementById('extra-amount') as HTMLInputElement | null)?.value || '';
+                        const label = (document.getElementById('extra-label') as HTMLInputElement | null)?.value || '';
+                        const normalized = amountStr.replace(',', '.');
+                        const parsed = parseFloat(normalized);
+                        if (!label.trim() || isNaN(parsed) || parsed <= 0) { alert('Bitte Betrag und Begründung angeben.'); return; }
+                        const amountCents = Math.round(parsed * 100);
+                        // Speichern
+                        await fetch(`/api/orders/${orderId}/extras`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, amountCents }) });
+                        // Bestellung mit Produkt/Preis erzeugen (nutzt WC_PRODUCT_ID_WORKORDER, sonst Fee)
+                        await fetch(`/api/orders/${orderId}/woocommerce`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'full', amountCents, customLabel: `Extra: ${label}` }) });
+                        alert('Extrakosten-Bestellung angelegt');
+                      }}
+                    >Bestellung erzeugen</button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <input id="extra-amount" placeholder="Betrag (€)" className="w-28 rounded bg-slate-950 border border-slate-700 px-2 py-1" />
-                  <input id="extra-label" placeholder="Begründung" className="min-w-52 flex-1 rounded bg-slate-950 border border-slate-700 px-2 py-1" />
-                  <button
-                    className="ml-auto rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-xs font-medium"
-                    onClick={async () => {
-                      const amountStr = (document.getElementById('extra-amount') as HTMLInputElement | null)?.value || '';
-                      const label = (document.getElementById('extra-label') as HTMLInputElement | null)?.value || '';
-                      const normalized = amountStr.replace(',', '.');
-                      const parsed = parseFloat(normalized);
-                      if (!label.trim() || isNaN(parsed) || parsed <= 0) { alert('Bitte Betrag und Begründung angeben.'); return; }
-                      const amountCents = Math.round(parsed * 100);
-                      // Speichern
-                      await fetch(`/api/orders/${orderId}/extras`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, amountCents }) });
-                      // Bestellung mit Produkt/Preis erzeugen (nutzt WC_PRODUCT_ID_WORKORDER, sonst Fee)
-                      await fetch(`/api/orders/${orderId}/woocommerce`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'full', amountCents, customLabel: `Extra: ${label}` }) });
-                      alert('Extrakosten-Bestellung angelegt');
-                    }}
-                  >Bestellung erzeugen</button>
-                </div>
-              </div>
               )}
             </div>
           </div>
@@ -1009,14 +1005,14 @@ export default function OrderDetailTabsNew({
                 Scopes: {imageScopes.join(', ')}
               </div>
             </div>
-            
 
 
-            <ImageUploader 
-              orderId={orderId} 
+
+            <ImageUploader
+              orderId={orderId}
               images={images || []}
               allowedScopes={imageScopes}
-              onImagesChange={onImagesChange} 
+              onImagesChange={onImagesChange}
             />
           </div>
         )}
@@ -1042,24 +1038,24 @@ export default function OrderDetailTabsNew({
 
 
 
-			{activeTab === 'details' && (
+        {activeTab === 'details' && (
           <div className="space-y-4">
             <h3 className="font-semibold">Details</h3>
-            
+
             <div className="grid sm:grid-cols-2 gap-4">
               {/* Kunde */}
               <div className="rounded-xl border border-slate-800 p-3">
-							<div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2">
                   <div className="font-semibold">Kunde</div>
-								{order.customer && (
-									<button
-										className="text-xs text-slate-400 hover:text-sky-400 flex items-center gap-1"
-										title={editingCustomer ? "Änderungen speichern" : "Kundendaten bearbeiten"}
-										onClick={editingCustomer ? saveCustomer : startEditCustomer}
-									>
-										{editingCustomer ? "💾 Speichern" : "✏️ Bearbeiten"}
-									</button>
-								)}
+                  {order.customer && (
+                    <button
+                      className="text-xs text-slate-400 hover:text-sky-400 flex items-center gap-1"
+                      title={editingCustomer ? "Änderungen speichern" : "Kundendaten bearbeiten"}
+                      onClick={editingCustomer ? saveCustomer : startEditCustomer}
+                    >
+                      {editingCustomer ? "💾 Speichern" : "✏️ Bearbeiten"}
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-1">
                   {!editingCustomer && (
@@ -1098,48 +1094,48 @@ export default function OrderDetailTabsNew({
                       </a>
                     </div>
                   )}
-							{order.customer && !editingCustomer && (
-								<div>
-									{((order.customer as any).addressLine1 || (order.customer as any).city || (order.customer as any).postalCode) ? (
-										<div className="flex items-start gap-3">
-											<div className="w-4 h-4 flex items-center justify-center mt-0.5">
-												<span className="text-slate-400 text-sm">🏠</span>
-											</div>
-											<div className="text-xs text-slate-400 leading-relaxed">
-												{(order.customer as any).addressLine1 && <div>{(order.customer as any).addressLine1}</div>}
-												{(((order.customer as any).postalCode || (order.customer as any).city || (order.customer as any).country)) && (
-													<div>
-														{`${(order.customer as any).postalCode || ''} ${(order.customer as any).city || ''}${((order.customer as any).country && (order.customer as any).country !== 'DE') ? `, ${(order.customer as any).country}` : ''}`}
-													</div>
-												)}
-											</div>
-										</div>
-									) : (
-										<div className="flex items-center gap-3">
-											<div className="w-4 h-4 flex items-center justify-center">
-												<span className="text-slate-500 text-sm">🏠</span>
-											</div>
-											<span className="text-xs text-slate-500">Keine Adresse hinterlegt</span>
-										</div>
-									)}
-								</div>
-							)}
-							{order.customer && editingCustomer && (
-								<div className="mt-2 space-y-2 text-sm">
-									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Name" value={customerDraft.name} onChange={(e)=>setCustomerDraft({ ...customerDraft, name: e.target.value })} />
-									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="E-Mail" value={customerDraft.email} onChange={(e)=>setCustomerDraft({ ...customerDraft, email: e.target.value })} />
-									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Telefon" value={customerDraft.phone} onChange={(e)=>setCustomerDraft({ ...customerDraft, phone: e.target.value })} />
-									<input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Adresse (Zeile 1)" value={customerDraft.addressLine1} onChange={(e)=>setCustomerDraft({ ...customerDraft, addressLine1: e.target.value })} />
-									<div className="grid grid-cols-3 gap-2">
-										<input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="PLZ" value={customerDraft.postalCode} onChange={(e)=>setCustomerDraft({ ...customerDraft, postalCode: e.target.value })} />
-										<input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Ort" value={customerDraft.city} onChange={(e)=>setCustomerDraft({ ...customerDraft, city: e.target.value })} />
-										<input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Land" value={customerDraft.country} onChange={(e)=>setCustomerDraft({ ...customerDraft, country: e.target.value })} />
-									</div>
-									<div className="flex justify-end">
-										<button className="rounded border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800" onClick={()=>setEditingCustomer(false)}>Abbrechen</button>
-									</div>
-								</div>
-							)}
+                  {order.customer && !editingCustomer && (
+                    <div>
+                      {((order.customer as any).addressLine1 || (order.customer as any).city || (order.customer as any).postalCode) ? (
+                        <div className="flex items-start gap-3">
+                          <div className="w-4 h-4 flex items-center justify-center mt-0.5">
+                            <span className="text-slate-400 text-sm">🏠</span>
+                          </div>
+                          <div className="text-xs text-slate-400 leading-relaxed">
+                            {(order.customer as any).addressLine1 && <div>{(order.customer as any).addressLine1}</div>}
+                            {(((order.customer as any).postalCode || (order.customer as any).city || (order.customer as any).country)) && (
+                              <div>
+                                {`${(order.customer as any).postalCode || ''} ${(order.customer as any).city || ''}${((order.customer as any).country && (order.customer as any).country !== 'DE') ? `, ${(order.customer as any).country}` : ''}`}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="w-4 h-4 flex items-center justify-center">
+                            <span className="text-slate-500 text-sm">🏠</span>
+                          </div>
+                          <span className="text-xs text-slate-500">Keine Adresse hinterlegt</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {order.customer && editingCustomer && (
+                    <div className="mt-2 space-y-2 text-sm">
+                      <input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Name" value={customerDraft.name} onChange={(e) => setCustomerDraft({ ...customerDraft, name: e.target.value })} />
+                      <input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="E-Mail" value={customerDraft.email} onChange={(e) => setCustomerDraft({ ...customerDraft, email: e.target.value })} />
+                      <input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Telefon" value={customerDraft.phone} onChange={(e) => setCustomerDraft({ ...customerDraft, phone: e.target.value })} />
+                      <input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Adresse (Zeile 1)" value={customerDraft.addressLine1} onChange={(e) => setCustomerDraft({ ...customerDraft, addressLine1: e.target.value })} />
+                      <div className="grid grid-cols-3 gap-2">
+                        <input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="PLZ" value={customerDraft.postalCode} onChange={(e) => setCustomerDraft({ ...customerDraft, postalCode: e.target.value })} />
+                        <input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Ort" value={customerDraft.city} onChange={(e) => setCustomerDraft({ ...customerDraft, city: e.target.value })} />
+                        <input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Land" value={customerDraft.country} onChange={(e) => setCustomerDraft({ ...customerDraft, country: e.target.value })} />
+                      </div>
+                      <div className="flex justify-end">
+                        <button className="rounded border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800" onClick={() => setEditingCustomer(false)}>Abbrechen</button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1237,9 +1233,9 @@ export default function OrderDetailTabsNew({
       )}
 
       {/* Mobile Navigation unten */}
-      <div 
+      <div
         className="fixed left-0 right-0 bg-slate-900 border-t border-slate-800 md:hidden z-50"
-        style={{ 
+        style={{
           bottom: '0px',
           margin: '0px',
           padding: '12px 8px 16px 8px'
@@ -1250,11 +1246,10 @@ export default function OrderDetailTabsNew({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-sky-600 text-white'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-              }`}
+              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${activeTab === tab.id
+                ? 'bg-sky-600 text-white'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                }`}
             >
               <div className="text-lg">
                 {tab.id === 'spec' && '📋'}

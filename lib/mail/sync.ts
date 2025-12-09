@@ -1,264 +1,287 @@
-import { ImapFlow } from 'imapflow';
-import { simpleParser } from 'mailparser';
+import { simpleParser, type ParsedMail, type AddressObject } from 'mailparser';
+import type { FetchMessageObject } from 'imapflow';
 import { prisma } from '@/lib/prisma';
-import { parseMail } from '@/lib/mail/parseMail';
-import { promises as fs } from 'fs';
-import * as path from 'path';
-import * as z from 'zod';
-import { autoLinkOrderForMail } from '@/lib/mail/autoLinkOrder';
-import log from '@/lib/logger';
+import { getImapClient } from './client';
+import { saveAttachment } from './attachments';
+import { computeThreadId } from './threading';
+import { findCustomerForEmail } from './customer';
+import { parseMail } from './parseMail';
+import type { MailAccount } from '@prisma/client';
 
-const envSchema = z.object({
-	IMAP_HOST: z.string().min(1),
-	IMAP_PORT: z.coerce.number().int().positive().default(993),
-	IMAP_USER: z.string().min(1),
-	IMAP_PASSWORD: z.string().min(1),
-	IMAP_SECURE: z
-		.union([z.literal('true'), z.literal('false')])
-		.transform((v) => v === 'true')
-		.default('true' as any),
-	IMAP_TLS_REJECT_UNAUTHORIZED: z
-		.union([z.literal('true'), z.literal('false')])
-		.transform((v) => v === 'true')
-		.default('true' as any),
-});
+const BATCH_SIZE = 10;
 
-function sanitizeFileName(input: string): string {
-	return input.replace(/[<>:"/\\|?*]+/g, '_');
+/**
+ * Public helper used by scripts and API routes.
+ * Currently just syncs all active accounts and returns a simple status object.
+ */
+export async function syncMails() {
+	await syncAllAccounts();
+
+	return {
+		success: true,
+	};
 }
 
-function sanitizeMessageId(msgId: string): string {
-	return sanitizeFileName(msgId.replace(/[<>]/g, ''));
-}
-
-async function ensureDir(dirPath: string): Promise<void> {
-	await fs.mkdir(dirPath, { recursive: true });
-}
-
-async function writeUniqueFile(baseDir: string, filename: string, data: Buffer): Promise<string> {
-	const name = sanitizeFileName(filename || 'attachment');
-	let target = path.join(baseDir, name);
-	const parsed = path.parse(target);
-	let counter = 1;
-	while (true) {
-		try {
-			await fs.writeFile(target, data, { flag: 'wx' });
-			return target;
-		} catch (err: any) {
-			if (err?.code === 'EEXIST') {
-				const nextName = `${parsed.name}_${counter}${parsed.ext}`;
-				target = path.join(parsed.dir, nextName);
-				counter++;
-				continue;
-			}
-			throw err;
-		}
-	}
-}
-
-export type SyncSummary = {
-	synced: number;
-	skipped: number;
-	processedIds: string[];
-};
-
-export async function syncMails(): Promise<SyncSummary> {
-	let env;
+/**
+ * Guarded variant for API usage – logs errors and rethrows for HTTP handling.
+ */
+export async function guardedSyncMails() {
 	try {
-		env = envSchema.parse(process.env);
+		return await syncMails();
 	} catch (error) {
-		console.error('❌ IMAP Environment validation failed:', error);
-		throw new Error('IMAP configuration invalid or missing. Please check your .env.local file.');
+		console.error('guardedSyncMails: sync failed', error);
+		throw error;
 	}
+}
 
-	const client = new ImapFlow({
-		host: env.IMAP_HOST,
-		port: env.IMAP_PORT,
-		secure: env.IMAP_SECURE,
-		logger: false,
-		auth: {
-			user: env.IMAP_USER,
-			pass: env.IMAP_PASSWORD,
-		},
-		tls: {
-			rejectUnauthorized: env.IMAP_TLS_REJECT_UNAUTHORIZED,
-		},
-		// Lima-City specific settings
-		disableAutoEnable: true,
-		missingIdleCommand: 'NOOP' as const,
+/**
+ * Main entry point: Syncs all active accounts.
+ */
+export async function syncAllAccounts() {
+	const accounts = await prisma.mailAccount.findMany({
+		where: { isActive: true },
 	});
 
-	let synced = 0;
-	let skipped = 0;
-	const processedIds: string[] = [];
+	for (const account of accounts) {
+		try {
+			await syncAccount(account);
+		} catch (error) {
+			console.error(`Error syncing account ${account.email}:`, error);
+		}
+	}
+}
 
+/**
+ * Syncs INBOX, Sent, and Trash for a specific account.
+ */
+export async function syncAccount(account: MailAccount) {
+	const folders = ['INBOX', 'Sent', 'Trash']; // Standard folders, might need mapping
+	// Note: 'Sent' might be 'Sent Items' or similar depending on server. 
+	// For now assuming standard names or handled by imapflow/server capability.
+
+	for (const folder of folders) {
+		try {
+			await syncFolder(account, folder);
+		} catch (error) {
+			console.error(`Error syncing folder ${folder} for ${account.email}:`, error);
+		}
+	}
+}
+
+/**
+ * Syncs a specific folder using incremental UID fetch.
+ */
+export async function syncFolder(account: MailAccount, folderName: string) {
+	const client = await getImapClient(account);
+
+	// Open mailbox
+	const lock = await client.getMailboxLock(folderName);
 	try {
-		console.log('🔌 Connecting to IMAP server:', env.IMAP_HOST + ':' + env.IMAP_PORT);
-		await client.connect();
-		console.log('✅ IMAP connection established');
-		await client.mailboxOpen('INBOX');
-		console.log('📬 INBOX opened successfully');
+		// Get last seen UID from DB (SystemSetting)
+		const cursorKey = `sync:${account.id}:${folderName}`;
+		const cursor = await prisma.systemSetting.findUnique({ where: { key: cursorKey } });
 
-		const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 30); // last 30 days
-		const uids = await client.search({ since });
-		if (!uids || uids.length === 0) {
-			return { synced, skipped, processedIds };
+		let lastUid = 0;
+		if (cursor?.value) {
+			try {
+				const parsed = JSON.parse(cursor.value);
+				lastUid = parsed.lastUid || 0;
+			} catch { }
 		}
 
-		for await (const msg of client.fetch(uids, { source: true, envelope: true })) {
-			const envelope = msg.envelope;
-			const messageId = envelope?.messageId || '';
-			if (!messageId) {
-				// No message-id? skip safely
-				skipped++;
-				continue;
-			}
+		// Fetch new messages
+		// Fetching from lastUid + 1 to *
+		// If lastUid is 0, fetch all (or maybe limit to recent if mailbox is huge? 
+		// For now, let's assume we want everything initially, but maybe batched)
 
-			const existing = await prisma.mail.findUnique({ where: { messageId } });
-			if (existing) {
-				skipped++;
-				continue;
-			}
+		// Check if there are any messages
+		if (!client.mailbox || client.mailbox.exists === 0) return;
 
-		const parsed = await simpleParser(msg.source as any);
-		const text = parsed.text || undefined;
-		const html = parsed.html ? String(parsed.html) : undefined;
-		const hasAttachments = Array.isArray(parsed.attachments) && parsed.attachments.length > 0;
+		// We use a generator to fetch
+		const fetchRange = `${lastUid + 1}:*`;
 
-		// Build address helper
-		const to = (envelope?.to || []).map((a: any) => a.address).filter(Boolean);
-		const cc = (envelope?.cc || []).map((a: any) => a.address).filter(Boolean);
-		const bcc = (envelope?.bcc || []).map((a: any) => a.address).filter(Boolean);
-		const fromAddr = (envelope?.from && envelope.from[0]) || undefined;
-		const fromEmail: string | undefined = fromAddr?.address;
-		const fromName: string | undefined = fromAddr?.name;
+		// If lastUid is very old or invalid, this might fetch nothing if UIDs reset (UIDVALIDITY).
+		// Ideally we check UIDVALIDITY, but for simplicity here we assume persistence.
+		// If fetchRange is invalid (e.g. lastUid > max), imapflow handles it gracefully usually.
 
-		// References und inReplyTo aus parsed headers, da sie nicht im envelope sind
-		const references = parsed.references ? (Array.isArray(parsed.references) ? parsed.references : [parsed.references]) : undefined;
-		const inReplyTo = parsed.inReplyTo || undefined;
+		const messageGenerator = client.fetch(fetchRange, {
+			envelope: true,
+			source: true, // We need source to parse
+			uid: true,
+			flags: true,
+			internalDate: true,
+		});
 
-			const parsedData = parseMail(text || '', html);
+		let maxUidSeen = lastUid;
 
-			// Write attachments to disk
-			const baseUploadDir = path.join(process.cwd(), 'uploads', 'mail_attachments');
-			const safeMsgId = sanitizeMessageId(messageId);
-			const mailDir = path.join(baseUploadDir, safeMsgId);
-			await ensureDir(mailDir);
-
-			const attachmentRecords: Array<{ filename: string; mimeType: string | null; size: number | null; storagePath: string }> = [];
-			if (hasAttachments) {
-				for (const att of parsed.attachments) {
-					const filename = att.filename || 'attachment';
-					const buffer: Buffer = Buffer.isBuffer(att.content) ? att.content : Buffer.from(att.content as any);
-					let savedPathAbs: string;
-					try {
-						savedPathAbs = await writeUniqueFile(mailDir, filename, buffer);
-					} catch (e) {
-						log.error('mail-sync.writeAttachment', e, { mailId: messageId, file: filename });
-						continue;
-					}
-					const savedPathRel = path.relative(process.cwd(), savedPathAbs).replace(/\\/g, '/');
-					attachmentRecords.push({
-						filename: sanitizeFileName(filename),
-						mimeType: att.contentType || null,
-						size: typeof att.size === 'number' ? att.size : buffer.length,
-						storagePath: savedPathRel,
-					});
+		for await (const message of messageGenerator) {
+			try {
+				await ingestMessage(account, message, folderName);
+				if (message.uid > maxUidSeen) {
+					maxUidSeen = message.uid;
 				}
+			} catch (err) {
+				console.error(`Failed to ingest message UID ${message.uid} in ${folderName}:`, err);
 			}
+		}
 
-			const created = await prisma.$transaction(async (tx) => {
-				const createdMail = await tx.mail.create({
-					data: {
-						messageId,
-						fromName: fromName || null,
-						fromEmail: fromEmail || null,
-						to: to.length ? (to as unknown as any) : null,
-						cc: cc.length ? (cc as unknown as any) : null,
-						bcc: bcc.length ? (bcc as unknown as any) : null,
-						subject: envelope?.subject || null,
-						text: text || null,
-						html: html || null,
-						date: envelope?.date ? new Date(envelope.date) : null,
-						inReplyTo: inReplyTo || null,
-						references: references ? (references as unknown as any) : null,
-						hasAttachments,
-						parsedData: Object.keys(parsedData).length ? (parsedData as any) : null,
-						attachments: {
-							createMany: attachmentRecords.length
-								? {
-									data: attachmentRecords,
-								}
-								: undefined,
-						},
-					},
-				});
+		// Update cursor
+		if (maxUidSeen > lastUid) {
+			await prisma.systemSetting.upsert({
+				where: { key: cursorKey },
+				update: { value: JSON.stringify({ lastUid: maxUidSeen }) },
+				create: { key: cursorKey, value: JSON.stringify({ lastUid: maxUidSeen }) },
+			});
+		}
 
-				return createdMail;
+	} finally {
+		lock.release();
+	}
+}
+
+/**
+ * Processes a single IMAP message: parses, links, and saves to DB.
+ */
+async function ingestMessage(
+	account: MailAccount,
+	message: FetchMessageObject,
+	folderName: string
+) {
+	const source = message.source;
+	if (!source) return; // Should not happen if requested
+	if (!message.envelope) return;
+
+	// Parse MIME
+	const parsed = await simpleParser(source);
+
+	// Extract key fields
+	const messageId = parsed.messageId || message.envelope.messageId || `no-id-${message.uid}-${Date.now()}`;
+	const subject = parsed.subject || '(No Subject)';
+
+	// Helper to extract address
+	const getAddress = (addr: AddressObject | AddressObject[] | undefined): string[] => {
+		if (!addr) return [];
+		if (Array.isArray(addr)) {
+			return addr.flatMap(a => a.value.map(v => v.address || '')).filter(Boolean);
+		}
+		return addr.value.map(v => v.address || '').filter(Boolean);
+	};
+
+	const fromArr = getAddress(parsed.from);
+	const fromEmail = fromArr[0] || '';
+	const fromName = (parsed.from && !Array.isArray(parsed.from) && parsed.from.value[0]?.name) || '';
+
+	const to = getAddress(parsed.to);
+	const cc = getAddress(parsed.cc);
+	const bcc = getAddress(parsed.bcc);
+
+	const date = parsed.date || new Date();
+	const text = parsed.text;
+	const html = parsed.html || text; // Fallback
+	const snippet = text?.substring(0, 200);
+	const inReplyTo = parsed.inReplyTo;
+	const references = typeof parsed.references === 'string'
+		? [parsed.references]
+		: (Array.isArray(parsed.references) ? parsed.references : []);
+
+	// Parse structured data from mail content (not stored in DB, computed on-demand)
+	const parsedData = parseMail(text || '', html || '');
+
+	// 1. Customer Linking
+	const customer = await findCustomerForEmail(fromEmail);
+
+	// 2. Order Linking (Regex)
+	// Look for [ORD-XXXX] in subject
+	let orderId: string | null = null;
+	const orderMatch = subject.match(/\[ORD-([A-Za-z0-9-]+)\]/);
+	if (orderMatch) {
+		// Verify order exists? 
+		// For speed, we might just trust it or do a quick check. 
+		// Let's do a quick check to ensure referential integrity.
+		const exists = await prisma.order.findUnique({ where: { id: orderMatch[1] } });
+		if (exists) orderId = exists.id;
+	}
+
+	// 3. Threading
+	// If we found an order via regex, that takes precedence for the orderId.
+	// But we still need threadId.
+	const threadResult = await computeThreadId(inReplyTo, references, messageId);
+
+	// If we didn't find an order via regex, maybe the thread has one?
+	if (!orderId && threadResult.orderId) {
+		orderId = threadResult.orderId;
+	}
+
+	// 4. Upsert Mail
+	// We use upsert to handle "moves" (e.g. Inbox -> Trash).
+	// If messageId exists, we update the folder and UID.
+	const mail = await prisma.mail.upsert({
+		where: { messageId },
+		update: {
+			folder: folderName,
+			uid: message.uid,
+			// If we found new links (e.g. orderId), update them. 
+			// But be careful not to overwrite existing valid links if this is just a folder move.
+			// Actually, if we found an orderId now, it's good to set it.
+			...(orderId ? { orderId } : {}),
+			...(customer ? { customerId: customer.id } : {}),
+		},
+		create: {
+			messageId,
+			accountId: account.id,
+			uid: message.uid,
+			folder: folderName,
+			subject,
+			fromEmail,
+			fromName,
+			to: JSON.stringify(to),
+			cc: JSON.stringify(cc),
+			bcc: JSON.stringify(bcc),
+			text,
+			html,
+			snippet,
+			date,
+			inReplyTo,
+			references: JSON.stringify(references),
+			threadId: threadResult.threadId,
+			orderId,
+			customerId: customer?.id,
+			isRead: message.flags ? message.flags.has('\\Seen') : false,
+		},
+	});
+
+	// 5. Handle Attachments
+	if (parsed.attachments && parsed.attachments.length > 0) {
+		for (const att of parsed.attachments) {
+			// Check if already saved? 
+			// We can check DB for this mailId + filename + size
+			const existing = await prisma.attachment.findFirst({
+				where: {
+					mailId: mail.id,
+					filename: att.filename || 'unnamed',
+					size: att.size,
+				}
 			});
 
-			synced++;
-			processedIds.push(messageId);
+			if (!existing) {
+				const saved = await saveAttachment(
+					att.content,
+					att.filename || 'unnamed',
+					mail.id,
+					att.contentType
+				);
 
-			// Auto-link to order if possible
-			try {
-				await autoLinkOrderForMail(created.id);
-			} catch {
-				// ignore auto-link errors to keep sync resilient
+				await prisma.attachment.create({
+					data: {
+						mailId: mail.id,
+						filename: saved.filename,
+						path: saved.path,
+						size: saved.size,
+						mimeType: saved.mimeType,
+						cid: att.cid,
+					}
+				});
 			}
 		}
-
-		console.log('✅ Mail sync completed:', { synced, skipped });
-		return { synced, skipped, processedIds };
-	} catch (error) {
-		console.error('❌ IMAP sync error:', error);
-		log.error('mail-sync', error);
-		
-		// Better error classification for authentication issues
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		if (errorMessage.includes('Authentication failed') || errorMessage.includes('Invalid credentials')) {
-			throw new Error('IMAP Authentication failed. Please check IMAP_USER and IMAP_PASSWORD in your .env.local file.');
-		} else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('getaddrinfo')) {
-			throw new Error(`IMAP Host not found: ${env.IMAP_HOST}. Please check IMAP_HOST in your .env.local file.`);
-		} else if (errorMessage.includes('ECONNREFUSED')) {
-			throw new Error(`IMAP Connection refused to ${env.IMAP_HOST}:${env.IMAP_PORT}. Please check IMAP_HOST and IMAP_PORT.`);
-		}
-		
-		throw error;
-	} finally {
-		try {
-			await client.logout();
-		} catch {}
 	}
 }
-
-// Simple in-memory rate-limit and lock for API usage
-const globalState = globalThis as unknown as {
-	__mailSyncLock?: boolean;
-	__mailSyncLastAt?: number;
-};
-
-export async function guardedSyncMails(minIntervalMs = 30_000): Promise<SyncSummary> {
-	const now = Date.now();
-	if (globalState.__mailSyncLock) {
-		throw Object.assign(new Error('Sync läuft bereits'), { status: 429 });
-	}
-	if (globalState.__mailSyncLastAt && now - globalState.__mailSyncLastAt < minIntervalMs) {
-		const remainingMs = minIntervalMs - (now - globalState.__mailSyncLastAt);
-		throw Object.assign(new Error(`Zu häufig angefragt. Warten Sie noch ${Math.ceil(remainingMs/1000)} Sekunden.`), { status: 429 });
-	}
-	globalState.__mailSyncLock = true;
-	try {
-		// Add delay to prevent rate limiting
-		console.log('⏱️ Adding 2 second delay to prevent rate limiting...');
-		await new Promise(resolve => setTimeout(resolve, 2000));
-		
-		const res = await syncMails();
-		globalState.__mailSyncLastAt = Date.now();
-		return res;
-	} finally {
-		globalState.__mailSyncLock = false;
-	}
-}
-
-

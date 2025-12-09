@@ -1,4 +1,5 @@
 import type { Mail } from '@prisma/client';
+import type { ParsedData } from './parseMail';
 import { getPresetForOrderType } from '@/lib/order-presets';
 
 export type SpecSuggestion = {
@@ -29,8 +30,8 @@ function score(key: string, value: unknown): number {
   return Math.min(1, s);
 }
 
-export function buildSuggestions(mail: Pick<Mail, 'id' | 'subject' | 'date' | 'parsedData'>, orderTypeKey: string | undefined): SpecSuggestion[] {
-  const pd = (mail.parsedData as any) || {};
+export function buildSuggestions(mail: Pick<Mail, 'id' | 'subject' | 'date'>, parsedData: ParsedData, orderTypeKey: string | undefined): SpecSuggestion[] {
+  const pd = parsedData || {};
   const preset = getPresetForOrderType(orderTypeKey || 'GUITAR');
   const label = `${mail.subject || 'Mail'} · ${mail.date ? new Date(mail.date).toLocaleDateString() : ''}`.trim();
   const out: SpecSuggestion[] = [];

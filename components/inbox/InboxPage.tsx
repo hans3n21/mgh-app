@@ -33,7 +33,7 @@ function generateMockMessages(): Message[] {
 				: [],
 			lang: Math.random() > 0.2 ? 'DE' : 'EN',
 			assignedTo: Math.random() > 0.5 ? `ORD-${1000 + i}` : null,
-			unread: Math.random() > 0.5,
+			isRead: Math.random() > 0.5,
 			snippet: 'Hallo, wir interessieren uns für Ihr Produkt. Können Sie uns ein Angebot und die aktuelle Lieferzeit senden?',
 			html: `<p>Hallo,</p><p>wir interessieren uns für Ihr Produkt. Können Sie uns ein Angebot und die aktuelle Lieferzeit senden?</p><p>Beste Grüße</p>`,
 			threadId: `thr_${Math.floor(i / 3) + 1}`,
@@ -72,7 +72,7 @@ export default function InboxPage() {
 					attachmentsCount: 0,
 					lang: 'DE',
 					assignedTo: null,
-					unread: true,
+					isRead: false,
 					snippet: '',
 					threadId: payload.threadId,
 				}, ...prev]);
@@ -96,12 +96,12 @@ export default function InboxPage() {
 						fromName: m.fromName || m.fromEmail || '–',
 						fromEmail: m.fromEmail || '',
 						createdAt: m.date || new Date().toISOString(),
-						hasAttachments: !!m.hasAttachments,
+						hasAttachments: m.hasAttachments !== undefined ? !!m.hasAttachments : (m.attachments?.length || 0) > 0,
 						attachmentsCount: (m.attachments?.length) || 0,
 						attachments: (m.attachments || []).map((a: any) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType || null, url: `/api/attachments/${a.id}` })),
 						lang: detectLang((m.text || m.html || '')), 
 						assignedTo: m.orderId || null,
-						unread: m.unread !== false, // Default to unread if not specified
+						isRead: m.isRead !== undefined ? m.isRead : false, // Default to unread (isRead: false) if not specified
 						snippet: (m.text || '').slice(0, 200),
 						html: m.html || undefined,
 						threadId: m.threadId || undefined,
@@ -172,7 +172,7 @@ export default function InboxPage() {
 	async function bulkMarkRead(read: boolean) {
 		const ids = Array.from(selectedIds);
 		if (ids.length === 0) return;
-		setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, unread: !read ? true : false } : m)));
+		setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, isRead: read } : m)));
 		await fetch('/api/inbox/update-meta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageIds: ids, meta: { read } }) });
 	}
 

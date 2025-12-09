@@ -51,6 +51,10 @@ model User {
   // NextAuth
   accounts Account[]
   sessions Session[]
+  
+  // Mail System
+  mailAccounts MailAccount[]
+  sentMails    Mail[]        @relation("UserSentMails")
 }
 
 model Customer {
@@ -65,6 +69,7 @@ model Customer {
   country      String?  @default("DE")
   createdAt    DateTime @default(now())
   orders       Order[]
+  mails        Mail[]
 }
 
 model Order {
@@ -219,44 +224,105 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+model MailAccount {
+  id        String   @id @default(cuid())
+  name      String   // e.g. "Support"
+  email     String   @unique
+  
+  // Configuration
+  imapHost  String
+  imapPort  Int      @default(993)
+  imapUser  String
+  imapPass  String   
+  smtpHost  String
+  smtpPort  Int      @default(587)
+  smtpUser  String
+  smtpPass  String
+  
+  // State
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  
+  mails     Mail[]
+  // Optional: Link to specific staff user
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Mail {
   id             String       @id @default(cuid())
   messageId      String       @unique
+  threadId       String?      // Root message ID for conversation grouping
+  
+  // Multi-Account Context
+  accountId      String
+  account        MailAccount  @relation(fields: [accountId], references: [id])
+
+  // IMAP State
+  uid            Int          
+  folder         String       // "INBOX", "TRASH", "Sent", "Drafts"
+  
+  // Content
+  subject        String?
+  fromEmail      String
   fromName       String?
-  fromEmail      String?
-  to             Json?
+  to             Json         // Array of strings
   cc             Json?
   bcc            Json?
-  subject        String?
-  text           String?
-  html           String?
-  date           DateTime?
+  text           String?      @db.Text
+  html           String?      @db.Text
+  snippet        String?
+  
+  // Metadata
+  date           DateTime
   inReplyTo      String?
-  references     Json?
-  hasAttachments Boolean      @default(false)
-  parsedData     Json?
-  order          Order?       @relation(fields: [orderId], references: [id])
+  references     Json?        
+  
+  // Associations
   orderId        String?
+  order          Order?       @relation(fields: [orderId], references: [id])
+  customerId     String?
+  customer       Customer?    @relation(fields: [customerId], references: [id])
+  senderId       String?      // Staff member who sent this
+  sender         User?        @relation("UserSentMails", fields: [senderId], references: [id])
+
   attachments    Attachment[]
-  unread         Boolean      @default(true)
+  
+  isRead         Boolean      @default(false)
+  isDeleted      Boolean      @default(false)
+
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  // Performance Indices
+  @@index([accountId])
   @@index([orderId])
-  @@index([unread])
+  @@index([folder])
+  @@index([threadId])
+  @@index([customerId])
+  @@index([fromEmail])
+  @@index([date])
 }
 
 model Attachment {
   id          String   @id @default(cuid())
-  mail        Mail     @relation(fields: [mailId], references: [id])
   mailId      String
+  mail        Mail     @relation(fields: [mailId], references: [id], onDelete: Cascade)
   filename    String
   mimeType    String?
-  size        Int?
-  storagePath String
+  size        Int
+  path        String   // e.g. "2025/11/uuid-file.jpg"
+  cid         String?  // Content-ID for inline images
+  
   createdAt   DateTime @default(now())
+}
 
-  @@index([mailId])
+model SystemSetting {
+  key   String @id
+  value String // JSON value
 }
 
 model Datasheet {

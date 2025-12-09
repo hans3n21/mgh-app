@@ -25,7 +25,10 @@ export default function RootLayout({
   return (
     <html lang="de">
       <head>
-        <link rel="manifest" href="/manifest.json" />
+        <link rel="manifest" href="/icons/site.webmanifest" />
+        <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" />
+        <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <meta name="theme-color" content="#0f172a" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
@@ -33,6 +36,24 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js').then(
+                    function(registration) {
+                      console.log('Service Worker registration successful');
+                    },
+                    function(err) {
+                      console.log('Service Worker registration failed: ', err);
+                    }
+                  );
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

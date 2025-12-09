@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
@@ -10,6 +10,26 @@ export default function SignIn() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+
+  const [showInstallHint, setShowInstallHint] = useState(false);
+
+  useEffect(() => {
+    // Check if iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    // Check if not standalone
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    // Check if already dismissed
+    const isDismissed = localStorage.getItem('ios-install-hint-dismissed');
+
+    if (isIOS && !isStandalone && !isDismissed) {
+      setShowInstallHint(true);
+    }
+  }, []);
+
+  const dismissHint = () => {
+    setShowInstallHint(false);
+    localStorage.setItem('ios-install-hint-dismissed', 'true');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,7 +56,7 @@ export default function SignIn() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 relative">
       <div className="w-full max-w-md">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
           <div className="text-center mb-6">
@@ -94,6 +114,34 @@ export default function SignIn() {
           </div>
         </div>
       </div>
+
+      {/* iOS Install Hint */}
+      {showInstallHint && (
+        <div className="fixed bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-sm border border-slate-700 p-4 rounded-xl shadow-2xl z-50 animate-in slide-in-from-bottom-10 fade-in duration-500">
+          <div className="flex items-start gap-3">
+            <div className="bg-slate-800 p-2 rounded-lg shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 text-sky-500">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-sm text-slate-200 mb-1">App installieren</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Zum Startbildschirm hinzufügen: Tippe auf <span className="inline-block mx-1"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 inline"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg></span> und dann auf "Zum Home-Bildschirm".
+              </p>
+            </div>
+            <button
+              onClick={dismissHint}
+              className="text-slate-400 hover:text-slate-200 p-1"
+              aria-label="Schließen"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

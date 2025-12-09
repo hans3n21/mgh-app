@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { mapToDatasheet } from '@/lib/mail/mapToDatasheet';
 import linkMailArtifactsToOrder from '@/lib/mail/linkArtifacts';
+import { parseMail } from '@/lib/mail/parseMail';
 
 const bodySchema = z.object({
   mailId: z.string().min(1),
@@ -62,7 +63,8 @@ export async function POST(req: NextRequest) {
 
     const { order, mail } = await ensureOrderFromMail(mailId);
 
-    const parsedBase = (mail.parsedData as any) || {};
+    // Compute parsedData dynamically from mail content
+    const parsedBase = parseMail(mail.text || '', mail.html || '');
     const merged = { ...parsedBase, ...(overrides || {}) };
     const normalized = mapToDatasheet(merged);
     if (!normalized) return NextResponse.json({ error: 'Mapping fehlgeschlagen' }, { status: 400 });

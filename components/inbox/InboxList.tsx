@@ -85,15 +85,15 @@ export default function InboxList({ messages, selectedId, onSelect }: Props) {
 							className={`absolute inset-x-0 px-3 py-3 border-b transition ${
 								isSelected
 									? 'border-sky-700 bg-sky-900/20 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.35)]'
-									: `border-slate-800 hover:bg-slate-800/40 ${m.unread ? 'bg-sky-900/10' : ''}`
+									: `border-slate-800 hover:bg-slate-800/40 ${!m.isRead ? 'bg-sky-900/10' : ''}`
 							}`}
 							style={{ top, height: rowHeight }}
 						>
 							<div className="flex items-center gap-3 h-full">
-								<div className={`h-2 w-2 rounded-full ${m.unread ? 'bg-sky-400' : 'bg-slate-700'}`} />
+								<div className={`h-2 w-2 rounded-full ${!m.isRead ? 'bg-sky-400' : 'bg-slate-700'}`} />
 								<div className="min-w-0 flex-1">
 									<div className="flex items-center gap-2 min-w-0">
-										<span className={`truncate text-sm ${m.unread ? 'text-slate-100' : 'text-slate-200'}`}>{m.subject || 'Ohne Betreff'}</span>
+										<span className={`truncate text-sm ${!m.isRead ? 'text-slate-100' : 'text-slate-200'}`}>{m.subject || 'Ohne Betreff'}</span>
 										{m.hasAttachments ? (
 											<span className="ml-1 text-slate-400 text-xs">📎 {m.attachmentsCount}</span>
 										) : null}

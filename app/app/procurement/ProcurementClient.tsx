@@ -95,10 +95,10 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
       console.log('🔄 Sending item to API:', newItem);
-      
+
       const res = await fetch('/api/procurement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -139,10 +139,10 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
 
       if (res.ok) {
         const updatedItem = await res.json();
-        setItems(prev => prev.map(item => 
+        setItems(prev => prev.map(item =>
           item.id === itemId ? updatedItem : item
         ));
-        
+
         // Wenn archiviert und Filter nicht auf "archiviert", Item aus Liste entfernen
         if (newStatus === 'archiviert' && !showArchived) {
           setItems(prev => prev.filter(item => item.id !== itemId));
@@ -178,8 +178,8 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
       const res = await fetch('/api/procurement', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          id: itemId, 
+        body: JSON.stringify({
+          id: itemId,
           name: editData.name,
           qty: editData.qty,
           note: editData.note,
@@ -190,7 +190,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
 
       if (res.ok) {
         const updatedItem = await res.json();
-        setItems(prev => prev.map(item => 
+        setItems(prev => prev.map(item =>
           item.id === itemId ? updatedItem : item
         ));
         setEditingItem(null);
@@ -209,7 +209,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
   // Item löschen (nur Admin)
   const handleDeleteItem = async (itemId: string) => {
     if (!confirm('Item wirklich löschen?')) return;
-    
+
     setLoading(true);
     try {
       const res = await fetch(`/api/procurement?id=${itemId}`, {
@@ -368,7 +368,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
             </div>
           </div>
         )}
-        
+
         {!loading && filteredItems.length === 0 ? (
           <div className="text-slate-500 text-center py-8">
             <div className="text-4xl mb-2">📦</div>
@@ -505,7 +505,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                               >
                                 ✏️
                               </button>
-                              
+
                               {/* Status Icon Buttons */}
                               {item.status !== 'offen' && (
                                 <button
@@ -516,7 +516,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                                   ⭕
                                 </button>
                               )}
-                              
+
                               {item.status !== 'bestellt' && (
                                 <button
                                   onClick={() => handleStatusChange(item.id, 'bestellt')}
@@ -526,7 +526,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                                   🚚
                                 </button>
                               )}
-                              
+
                               {(item.status === 'bestellt' || item.status === 'offen') && (
                                 <button
                                   onClick={() => handleStatusChange(item.id, 'archiviert')}
@@ -536,7 +536,7 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                                   ✅
                                 </button>
                               )}
-                              
+
                               {/* Delete Button */}
                               <button
                                 onClick={() => handleDeleteItem(item.id)}

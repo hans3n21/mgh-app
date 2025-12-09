@@ -3,10 +3,10 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
 	try {
-		// Count unread mails using the new unread field
+		// Count unread mails using isRead field (unread = isRead: false)
 		const unreadCount = await prisma.mail.count({
 			where: {
-				unread: true,
+				isRead: false,
 			},
 		});
 
@@ -16,4 +16,3 @@ export async function GET() {
 		return NextResponse.json({ error: 'Failed to count unread mails' }, { status: 500 });
 	}
 }
-

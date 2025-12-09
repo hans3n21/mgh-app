@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { suggestOrderTypes } from '@/lib/mail/suggestOrderType';
 import { buildSuggestions } from '@/lib/mail/buildSuggestions';
+import { parseMail } from '@/lib/mail/parseMail';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -10,6 +11,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     include: { attachments: true },
   });
   if (!mail) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  // Compute parsedData dynamically from mail content
+  const parsedData = parseMail(mail.text || '', mail.html || '');
 
   // Kunde anhand Mailadresse bestimmen
   let customerId: string | null = null;
@@ -36,20 +40,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     subject: mail.subject,
     text: mail.text as any,
     html: mail.html as any,
-    parsedData: mail.parsedData as any,
     attachments: mail.attachments.map(a => ({ filename: a.filename, mimeType: a.mimeType }))
-  });
+  }, parsedData);
 
   const topType = suggestedOrderTypes[0]?.key;
-  const specSuggestions = buildSuggestions({ id: mail.id, subject: mail.subject, date: mail.date, parsedData: mail.parsedData as any }, topType);
+  const specSuggestions = buildSuggestions({ id: mail.id, subject: mail.subject, date: mail.date }, parsedData, topType);
 
   // Parsed Contact Daten (für Reply/Anlage)
-  const parsed = (mail.parsedData as any) || {};
   const parsedContact = {
-    name: (parsed.name as string | undefined) ?? (mail.fromName || undefined),
-    email: (parsed.email as string | undefined) ?? (mail.fromEmail || undefined),
-    phone: (parsed.phone as string | undefined) ?? undefined,
-    address: (parsed.address as string | undefined) ?? undefined,
+    name: parsedData.name ?? (mail.fromName || undefined),
+    email: parsedData.email ?? (mail.fromEmail || undefined),
+    phone: parsedData.phone ?? undefined,
+    address: parsedData.address ?? undefined,
   };
 
   return NextResponse.json({

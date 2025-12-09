@@ -3,26 +3,28 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 
+const emptyToUndefined = (val: unknown) => (val === '' ? undefined : val);
+
 const CreateProcurementItemSchema = z.object({
   name: z.string().min(1, 'Name ist erforderlich'),
   qty: z.number().int().positive('Menge muss positiv sein'),
-  unit: z.string().optional(),
-  neededBy: z.string().optional().transform(val => val ? new Date(val) : undefined),
-  note: z.string().optional(),
-  orderId: z.string().optional(),
-  link: z.string().url().optional(),
+  unit: z.preprocess(emptyToUndefined, z.string().optional()),
+  neededBy: z.preprocess(emptyToUndefined, z.string().optional().transform(val => val ? new Date(val) : undefined)),
+  note: z.preprocess(emptyToUndefined, z.string().optional()),
+  orderId: z.preprocess(emptyToUndefined, z.string().optional()),
+  link: z.preprocess(emptyToUndefined, z.string().url().optional().or(z.literal(''))),
 });
 
 const UpdateProcurementItemSchema = z.object({
   id: z.string(),
   name: z.string().min(1).optional(),
   qty: z.number().int().positive().optional(),
-  unit: z.string().optional(),
+  unit: z.preprocess(emptyToUndefined, z.string().optional()),
   status: z.enum(['offen', 'bestellt', 'archiviert']).optional(),
-  neededBy: z.string().optional().transform(val => val ? new Date(val) : undefined),
-  note: z.string().optional(),
-  orderId: z.string().optional(),
-  link: z.string().url().optional(),
+  neededBy: z.preprocess(emptyToUndefined, z.string().optional().transform(val => val ? new Date(val) : undefined)),
+  note: z.preprocess(emptyToUndefined, z.string().optional()),
+  orderId: z.preprocess(emptyToUndefined, z.string().optional()),
+  link: z.preprocess(emptyToUndefined, z.string().url().optional().or(z.literal(''))),
 });
 
 // GET /api/procurement - Liste aller Procurement Items
@@ -38,11 +40,11 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
 
     const where: any = {};
-    
+
     if (!showArchived) {
       where.status = { not: 'archiviert' };
     }
-    
+
     if (status && status !== 'all') {
       where.status = status;
     }
@@ -71,10 +73,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     console.log('🚀 POST /api/procurement - Start');
-    
+
     const session = await auth();
     console.log('👤 Session:', session?.user ? { id: session.user.id, email: session.user.email, role: session.user.role } : 'No session');
-    
+
     if (!session?.user) {
       console.log('❌ No session - returning 401');
       return NextResponse.json({ error: 'Nicht autorisiert' }, { status: 401 });
@@ -82,10 +84,10 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     console.log('📦 Request body:', body);
-    
+
     const validation = CreateProcurementItemSchema.safeParse(body);
     console.log('✅ Validation result:', validation.success ? 'Success' : validation.error.issues);
-    
+
     if (!validation.success) {
       console.log('❌ Validation failed:', validation.error.issues);
       return NextResponse.json(
@@ -133,9 +135,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(item, { status: 201 });
   } catch (error) {
     console.error('❌ POST /api/procurement error:', error);
-    return NextResponse.json({ 
-      error: 'Server-Fehler', 
-      details: error instanceof Error ? error.message : String(error) 
+    return NextResponse.json({
+      error: 'Server-Fehler',
+      details: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
 }
@@ -150,7 +152,7 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
     const validation = UpdateProcurementItemSchema.safeParse(body);
-    
+
     if (!validation.success) {
       return NextResponse.json(
         { error: 'Ungültige Daten', issues: validation.error.issues },
