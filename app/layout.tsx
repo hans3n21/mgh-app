@@ -25,12 +25,15 @@ export default function RootLayout({
   return (
     <html lang="de">
       <head>
-        <link rel="manifest" href="/icons/site.webmanifest" />
+        <link rel="manifest" href="/manifest.json" />
         <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" />
         <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <meta name="theme-color" content="#0f172a" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="MGH App" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

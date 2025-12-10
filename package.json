@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate",
     "db:reset": "prisma migrate reset --force --skip-generate --skip-seed && prisma generate && tsx prisma/seed.ts",
     "db:seed": "tsx prisma/seed.ts",
     "smoke": "ts-node scripts/smoke.ts",
