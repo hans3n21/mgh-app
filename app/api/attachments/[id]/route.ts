@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createReadStream } from 'fs';
-import * as path from 'path';
 
 interface RouteParams { params: Promise<{ id: string }> }
 
@@ -11,9 +9,26 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 		const att = await prisma.attachment.findUnique({ where: { id } });
 		if (!att) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-		const abs = path.join(process.cwd(), 'uploads', 'mail', att.path);
-		const stream = createReadStream(abs);
-		return new NextResponse(stream as any, {
+		// If path is a blob URL, redirect to it
+		// Otherwise, fetch and proxy the blob
+		if (att.path.startsWith('http://') || att.path.startsWith('https://')) {
+			// Redirect to blob URL
+			return NextResponse.redirect(att.path, {
+				headers: {
+					'Content-Type': att.mimeType || 'application/octet-stream',
+					'Content-Disposition': `inline; filename="${att.filename}"`,
+				},
+			});
+		}
+
+		// Fallback: try to fetch from blob storage
+		const response = await fetch(att.path);
+		if (!response.ok) {
+			return NextResponse.json({ error: 'Failed to fetch attachment' }, { status: 404 });
+		}
+
+		const blob = await response.blob();
+		return new NextResponse(blob, {
 			headers: {
 				'Content-Type': att.mimeType || 'application/octet-stream',
 				'Content-Disposition': `inline; filename="${att.filename}"`,

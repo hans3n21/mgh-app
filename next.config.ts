@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
   // Performance optimizations for development
   turbopack: {
     // Reduce file watching sensitivity

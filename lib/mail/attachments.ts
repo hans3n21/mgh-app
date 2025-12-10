@@ -1,21 +1,19 @@
-import fs from 'fs';
+import { put, del } from '@vercel/blob';
 import path from 'path';
 import { Readable } from 'stream';
-import { pipeline } from 'stream/promises';
-
-const UPLOAD_BASE_DIR = path.join(process.cwd(), 'uploads', 'mail');
+import { ReadableStream as NodeReadableStream } from 'stream/web';
 
 export interface AttachmentMetadata {
     filename: string;
-    path: string; // Relative path for DB
+    path: string; // Blob URL or path identifier for DB
     size: number;
     mimeType: string;
 }
 
 /**
  * Generates the storage path for an attachment.
- * Format: /uploads/mail/{mailId}/{filename}
- * Returns the relative path.
+ * Format: mail/{mailId}/{filename}
+ * Returns the relative path identifier.
  */
 export function generateAttachmentPath(mailId: string, filename: string): string {
     // Sanitize filename to prevent directory traversal or weird chars
@@ -24,68 +22,83 @@ export function generateAttachmentPath(mailId: string, filename: string): string
     const name = path.basename(filename, ext).replace(/[^a-zA-Z0-9-_]/g, '_');
     const safeFilename = `${name}${ext}`;
 
-    return path.join(mailId, safeFilename);
+    return `mail/${mailId}/${safeFilename}`;
 }
 
 /**
- * Saves an attachment stream to disk.
- * Ensures the directory exists.
+ * Saves an attachment to Vercel Blob Storage.
+ * Returns metadata including the blob URL.
+ * Supports Buffer, Uint8Array, Node.js Readable streams, and Web ReadableStream.
  */
 export async function saveAttachment(
-    stream: Readable | Buffer,
+    stream: Readable | Buffer | Uint8Array | ReadableStream,
     filename: string,
     mailId: string,
     mimeType: string
 ): Promise<AttachmentMetadata> {
     const relativePath = generateAttachmentPath(mailId, filename);
-    const absolutePath = path.join(UPLOAD_BASE_DIR, relativePath);
-    const dir = path.dirname(absolutePath);
-
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-
-    if (Buffer.isBuffer(stream)) {
-        await fs.promises.writeFile(absolutePath, stream);
+    
+    // Convert to Blob
+    let blob: Blob;
+    
+    if (Buffer.isBuffer(stream) || stream instanceof Uint8Array) {
+        // Buffer or Uint8Array - direct conversion
+        blob = new Blob([stream], { type: mimeType });
+    } else if (stream instanceof Readable) {
+        // Node.js Readable stream - convert to Buffer first
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        blob = new Blob(chunks, { type: mimeType });
+    } else if (stream instanceof ReadableStream || stream instanceof NodeReadableStream) {
+        // Web ReadableStream - convert to chunks
+        const chunks: Uint8Array[] = [];
+        const reader = stream.getReader();
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+            }
+        } finally {
+            reader.releaseLock();
+        }
+        blob = new Blob(chunks, { type: mimeType });
     } else {
-        const writeStream = fs.createWriteStream(absolutePath);
-        await pipeline(stream, writeStream);
+        throw new Error(`Unsupported stream type: ${typeof stream}`);
     }
 
-    const stats = await fs.promises.stat(absolutePath);
+    const blobResult = await put(relativePath, blob, {
+        access: 'public',
+        contentType: mimeType,
+        addRandomSuffix: false,
+    });
 
     return {
         filename,
-        path: relativePath, // Store relative path in DB
-        size: stats.size,
+        path: blobResult.url, // Store blob URL in DB
+        size: blob.size,
         mimeType,
     };
 }
 
 /**
- * Deletes an attachment file.
+ * Deletes an attachment from Vercel Blob Storage.
  */
-export async function deleteAttachment(relativePath: string): Promise<void> {
-    const absolutePath = path.join(UPLOAD_BASE_DIR, relativePath);
-    if (fs.existsSync(absolutePath)) {
-        await fs.promises.unlink(absolutePath);
-
-        // Try to remove the directory if empty (cleanup)
-        const dir = path.dirname(absolutePath);
-        try {
-            const files = await fs.promises.readdir(dir);
-            if (files.length === 0) {
-                await fs.promises.rmdir(dir);
-            }
-        } catch (e) {
-            // Ignore error if directory not empty
-        }
+export async function deleteAttachment(blobUrl: string): Promise<void> {
+    try {
+        await del(blobUrl);
+    } catch (error) {
+        // Ignore if blob doesn't exist
+        console.warn('Failed to delete attachment:', error);
     }
 }
 
 /**
- * Gets the absolute path for an attachment.
+ * Gets the blob URL for an attachment.
+ * For Vercel Blob, the path stored in DB is already the URL.
  */
-export function getAttachmentAbsolutePath(relativePath: string): string {
-    return path.join(UPLOAD_BASE_DIR, relativePath);
+export function getAttachmentAbsolutePath(blobUrl: string): string {
+    return blobUrl;
 }

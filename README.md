@@ -29,64 +29,39 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Docker Deployment auf QNAP NAS
-
-### Voraussetzungen
-- QNAP NAS mit Container Station
-- Git-Zugriff auf das Repository
-
-### Schnellstart
-
-1. **Projekt auf QNAP klonen**:
-   ```bash
-   cd /share/Container
-   git clone https://github.com/your-repo/mgh-app.git
-   cd mgh-app
-   ```
-
-2. **Umgebungsvariablen setzen**:
-   ```bash
-   cp .env.example .env
-   nano .env  # Anpassen
-   ```
-
-3. **NEXTAUTH_SECRET generieren**:
-   ```bash
-   openssl rand -base64 32
-   ```
-
-4. **Volumes vorbereiten**:
-   ```bash
-   mkdir -p data uploads
-   chmod 777 data uploads
-   ```
-
-5. **Container bauen und starten**:
-   ```bash
-   docker-compose up -d
-   ```
-
-6. **Erste Migration und Seed**:
-   ```bash
-   docker-compose exec mgh-app npx prisma migrate deploy
-   docker-compose exec mgh-app npx prisma db seed
-   ```
-
-7. **Zugriff testen**:
-   - App: `http://qnap-ip:4000`
-   - Login mit Seed-User aus `prisma/seed.ts`
-
-### Updates
-Siehe [UPDATE.md](./UPDATE.md) für detaillierte Update-Anleitung.
-
-### Wichtige Hinweise
-- **Port 4000** ist frei wählbar (in docker-compose.yml anpassen)
-- **Volumes** unter `./data` und `./uploads` bleiben bei Updates erhalten
-- **Backups** sollten regelmäßig von `./data/production.db` erstellt werden
-- **Logs** mit `docker-compose logs -f` überwachen
-
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+### Voraussetzungen
+
+1. **Vercel Account** erstellen
+2. **Vercel Blob Storage** aktivieren (für File-Uploads)
+3. **Umgebungsvariablen** in Vercel Dashboard setzen:
+   - `DATABASE_URL` - PostgreSQL Connection String
+   - `BLOB_READ_WRITE_TOKEN` - Vercel Blob Storage Token (automatisch gesetzt)
+   - `NEXTAUTH_SECRET` - Secret für NextAuth
+   - `NEXTAUTH_URL` - Deine Vercel-URL
+   - Weitere ENV-Variablen je nach Bedarf (IMAP, etc.)
+
+### Deployment
+
+1. **Repository mit Vercel verbinden**:
+   - Vercel Dashboard → New Project
+   - Repository auswählen
+   - Build Settings automatisch erkannt
+
+2. **Environment Variables setzen** (siehe oben)
+
+3. **Deploy**:
+   - Vercel führt automatisch `npm install` aus
+   - `postinstall` Script führt `prisma generate` aus
+   - Build wird automatisch gestartet
+
+### Wichtige Hinweise
+
+- **File-Uploads**: Nutzen Vercel Blob Storage (automatisch konfiguriert)
+- **Database**: PostgreSQL wird empfohlen (z.B. Vercel Postgres oder externe DB)
+- **Prisma**: Migrations müssen manuell ausgeführt werden (`prisma migrate deploy`)
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
