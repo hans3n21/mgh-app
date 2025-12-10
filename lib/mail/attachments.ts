@@ -75,19 +75,31 @@ export async function saveAttachment(
         const arrayBuffer = u8.slice().buffer;
         blob = new Blob([arrayBuffer], { type: mimeType });
     } else if (isReadableStream(stream)) {
-        // Web ReadableStream - convert to chunks
+        // Web ReadableStream - convert to chunks with safe ArrayBuffer
         const chunks: Uint8Array[] = [];
         const reader = stream.getReader();
         try {
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                chunks.push(value);
+                // Convert each chunk to safe ArrayBuffer (same method as Buffer/Uint8Array block)
+                const u8 = new Uint8Array(value);
+                const arrayBuffer = u8.slice().buffer;
+                chunks.push(new Uint8Array(arrayBuffer));
             }
         } finally {
             reader.releaseLock();
         }
-        blob = new Blob(chunks, { type: mimeType });
+        // Combine all chunks into single ArrayBuffer for Blob
+        const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const combined = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+            combined.set(chunk, offset);
+            offset += chunk.length;
+        }
+        const finalArrayBuffer = combined.slice().buffer;
+        blob = new Blob([finalArrayBuffer], { type: mimeType });
     } else {
         throw new Error(`Unsupported stream type: ${typeof stream}`);
     }
