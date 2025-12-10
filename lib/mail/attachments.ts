@@ -42,14 +42,15 @@ export async function saveAttachment(
     let blob: Blob;
     
     if (Buffer.isBuffer(stream) || stream instanceof Uint8Array) {
-        // Buffer or Uint8Array - safe conversion using ArrayBuffer
-        // This ensures proper handling of typed arrays with byteOffset/byteLength
-        const typedArray = stream instanceof Uint8Array ? stream : (stream as Buffer);
-        const arrayBuffer = typedArray.buffer.slice(
-            typedArray.byteOffset,
-            typedArray.byteOffset + typedArray.byteLength
-        );
-        
+        // Schritt 1: Immer in Uint8Array konvertieren
+        const u8 = Buffer.isBuffer(stream)
+            ? new Uint8Array(stream)
+            : stream;
+
+        // Schritt 2: Neues ArrayBuffer erzeugen (NICHT u8.buffer verwenden!)
+        const arrayBuffer = u8.slice().buffer;
+
+        // Schritt 3: Blob erzeugen
         blob = new Blob([arrayBuffer], { type: mimeType });
     } else if (stream instanceof Readable) {
         // Node.js Readable stream - convert to Buffer first
