@@ -1,13 +1,23 @@
 import { put, del } from '@vercel/blob';
 import path from 'path';
 import { Readable } from 'stream';
-import { ReadableStream as NodeReadableStream } from 'stream/web';
 
 export interface AttachmentMetadata {
     filename: string;
     path: string; // Blob URL or path identifier for DB
     size: number;
     mimeType: string;
+}
+
+/**
+ * Type guard to check if a value is a ReadableStream.
+ * Works with both Web ReadableStream and Node.js ReadableStream.
+ */
+function isReadableStream(value: unknown): value is ReadableStream {
+    return typeof value === 'object' && 
+           value !== null && 
+           'getReader' in value && 
+           typeof (value as any).getReader === 'function';
 }
 
 /**
@@ -64,7 +74,7 @@ export async function saveAttachment(
         const u8 = new Uint8Array(combinedBuffer);
         const arrayBuffer = u8.slice().buffer;
         blob = new Blob([arrayBuffer], { type: mimeType });
-    } else if (stream instanceof ReadableStream || stream instanceof NodeReadableStream) {
+    } else if (isReadableStream(stream)) {
         // Web ReadableStream - convert to chunks
         const chunks: Uint8Array[] = [];
         const reader = stream.getReader();
