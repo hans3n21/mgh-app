@@ -53,12 +53,17 @@ export async function saveAttachment(
         // Schritt 3: Blob erzeugen
         blob = new Blob([arrayBuffer], { type: mimeType });
     } else if (stream instanceof Readable) {
-        // Node.js Readable stream - convert to Buffer first
-        const chunks: Buffer[] = [];
+        // Node.js Readable stream - collect all chunks and convert to single Uint8Array
+        const bufferChunks: Buffer[] = [];
         for await (const chunk of stream) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            bufferChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         }
-        blob = new Blob(chunks, { type: mimeType });
+        // Combine all buffers into one
+        const combinedBuffer = Buffer.concat(bufferChunks);
+        // Convert to Uint8Array with safe ArrayBuffer (same method as Buffer/Uint8Array block)
+        const u8 = new Uint8Array(combinedBuffer);
+        const arrayBuffer = u8.slice().buffer;
+        blob = new Blob([arrayBuffer], { type: mimeType });
     } else if (stream instanceof ReadableStream || stream instanceof NodeReadableStream) {
         // Web ReadableStream - convert to chunks
         const chunks: Uint8Array[] = [];
