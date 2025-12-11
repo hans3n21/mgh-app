@@ -30,7 +30,7 @@
     "imapflow": "^1.0.164",
     "jspdf": "^3.0.1",
     "mailparser": "^3.7.1",
-    "next": "15.4.6",
+    "next": "15.4.8",
     "next-auth": "^4.24.11",
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.10",
