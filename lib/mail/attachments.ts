@@ -58,7 +58,8 @@ export async function saveAttachment(
             : stream;
 
         // Schritt 2: Neues ArrayBuffer erzeugen (NICHT u8.buffer verwenden!)
-        const arrayBuffer = u8.slice().buffer;
+        const sliced = u8.slice();
+        const arrayBuffer: ArrayBuffer = sliced.buffer;
 
         // Schritt 3: Blob erzeugen
         blob = new Blob([arrayBuffer], { type: mimeType });
@@ -72,7 +73,8 @@ export async function saveAttachment(
         const combinedBuffer = Buffer.concat(bufferChunks);
         // Convert to Uint8Array with safe ArrayBuffer (same method as Buffer/Uint8Array block)
         const u8 = new Uint8Array(combinedBuffer);
-        const arrayBuffer = u8.slice().buffer;
+        const sliced = u8.slice();
+        const arrayBuffer: ArrayBuffer = sliced.buffer;
         blob = new Blob([arrayBuffer], { type: mimeType });
     } else if (isReadableStream(stream)) {
         // Web ReadableStream - convert to chunks with safe ArrayBuffer
@@ -84,7 +86,8 @@ export async function saveAttachment(
                 if (done) break;
                 // Convert each chunk to safe ArrayBuffer (same method as Buffer/Uint8Array block)
                 const u8 = new Uint8Array(value);
-                const arrayBuffer = u8.slice().buffer;
+                const sliced = u8.slice();
+                const arrayBuffer: ArrayBuffer = sliced.buffer;
                 chunks.push(new Uint8Array(arrayBuffer));
             }
         } finally {
@@ -98,7 +101,8 @@ export async function saveAttachment(
             combined.set(chunk, offset);
             offset += chunk.length;
         }
-        const finalArrayBuffer = combined.slice().buffer;
+        const finalSliced = combined.slice();
+        const finalArrayBuffer: ArrayBuffer = finalSliced.buffer;
         blob = new Blob([finalArrayBuffer], { type: mimeType });
     } else {
         throw new Error(`Unsupported stream type: ${typeof stream}`);
