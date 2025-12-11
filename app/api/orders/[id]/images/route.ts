@@ -124,7 +124,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         position: validated.position,
         attach: validated.attach,
         scope: validated.scope === null ? null : validated.scope,
-        fieldKey: (validated.fieldKey ?? undefined) as string | undefined,
+        fieldKey: validated.fieldKey === null ? null : validated.fieldKey,
       },
     });
 
