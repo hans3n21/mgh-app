@@ -1,4 +1,6 @@
 {
-  "buildCommand": "npm run prisma:generate && npm run build"
+  "buildCommand": "npm run vercel-build"
 }
+
+
 
