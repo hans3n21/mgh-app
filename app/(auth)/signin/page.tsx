@@ -75,7 +75,7 @@ export default function SignIn() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-600"
-                placeholder="admin@mgh.local"
+                placeholder="E-Mail eingeben"
                 required
               />
             </div>
@@ -87,7 +87,7 @@ export default function SignIn() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-600"
-                placeholder="mgh123"
+                placeholder="Passwort eingeben"
                 required
               />
             </div>
@@ -106,12 +106,6 @@ export default function SignIn() {
               {loading ? 'Anmelden...' : 'Anmelden'}
             </button>
           </form>
-
-          <div className="mt-6 text-xs text-slate-500 text-center">
-            <div>Demo-Zugänge:</div>
-            <div>admin@mgh.local / mgh123</div>
-            <div>johannes@mgh.local / staff123</div>
-          </div>
         </div>
       </div>
 
