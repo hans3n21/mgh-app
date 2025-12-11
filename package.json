@@ -38,7 +38,8 @@
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "@vercel/blob": "^0.25.0",
-    "zod": "^4.0.17"
+    "zod": "^4.0.17",
+    "tsx": "^4.20.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -57,7 +58,6 @@
     "prisma": "^6.13.0",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
-    "tsx": "^4.20.3",
     "typescript": "^5"
   }
 }
