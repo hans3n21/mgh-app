@@ -1,0 +1,1919 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MGH Pickup Label Generator</title>
+  <style>
+    :root {
+      --bg: #050918;
+      --card: #0c1224;
+      --card-soft: #11182b;
+      --text: #eef3ff;
+      --muted: #8f9bb3;
+      --line: #202b44;
+      --accent: #f59a23;
+      --accent-strong: #ffad3d;
+      --success: #20b768;
+      --danger: #ef6b6b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      overflow: auto;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 20% 0%, rgb(31 47 88 / 34%), transparent 32rem),
+        linear-gradient(180deg, #050918 0%, #060a18 100%);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 14px 24px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #182238;
+      color: #fff;
+      font-size: 12px;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      color: var(--muted);
+      padding: 6px 10px;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) 1fr;
+      gap: 24px;
+      min-height: 0;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .panel,
+    .preview-wrap {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 22px 55px rgb(0 0 0 / 24%);
+    }
+
+    .panel {
+      align-self: start;
+      padding: 22px;
+      position: sticky;
+      top: 24px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: clamp(18px, 2.4vw, 20px);
+      letter-spacing: -0.02em;
+    }
+
+    .hint {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: clamp(13px, 1.8vw, 14px);
+      line-height: 1.45;
+    }
+
+    form {
+      display: grid;
+      gap: 14px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: clamp(12px, 1.7vw, 13px);
+      font-weight: 700;
+    }
+
+    input,
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--text);
+      font: inherit;
+      font-size: 16px;
+      padding: 10px 11px;
+      background: #070d1d;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--accent);
+      outline: 3px solid rgb(245 154 35 / 16%);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .position-row {
+      grid-template-columns: minmax(0, 1fr) 112px;
+      align-items: end;
+    }
+
+    .field-with-add {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 42px 42px;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .add-button,
+    .remove-button {
+      height: 41px;
+      border: 1px solid var(--line);
+      background: var(--card-soft);
+      color: var(--text);
+      font-size: 22px;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .remove-button {
+      font-size: 26px;
+      color: var(--danger);
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .winding-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card-soft);
+      padding: 12px;
+    }
+
+    .winding-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .winding-card h2 {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .icon-button {
+      display: inline-grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid var(--line);
+      background: #070d1d;
+      color: var(--accent-strong);
+      padding: 0;
+    }
+
+    .winding-card dl {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 5px 10px;
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.3;
+    }
+
+    .winding-card dt {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .winding-card dd {
+      margin: 0;
+    }
+
+    .winding-empty {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .field-hint {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 1.35;
+    }
+
+    .label-size-field {
+      display: grid;
+      gap: 6px;
+      border: 0;
+      margin: 0;
+      padding: 0;
+    }
+
+    .label-size-field legend {
+      padding: 0;
+      font-size: clamp(12px, 1.7vw, 13px);
+      font-weight: 700;
+    }
+
+    .segmented-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .position-controls {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .size-toggle,
+    .position-toggle {
+      border: 1px solid var(--line);
+      background: #070d1d;
+      color: var(--text);
+      padding: 9px 8px;
+      border-radius: 9px;
+    }
+
+    .quantity-field input {
+      min-width: 0;
+      text-align: left;
+    }
+
+    .size-toggle.is-active,
+    .position-toggle.is-active {
+      border-color: var(--accent);
+      background: rgb(245 154 35 / 14%);
+      color: var(--accent-strong);
+    }
+
+    .status-message {
+      min-height: 18px;
+      margin: 2px 0 0;
+      color: var(--success);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .option-editor {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .option-editor button,
+    .winding-edit-actions button {
+      padding: 9px 11px;
+    }
+
+    .winding-edit-form {
+      display: grid;
+      gap: 10px;
+    }
+
+    .winding-edit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .winding-edit-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    button {
+      border: 0;
+      border-radius: 11px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      padding: 11px 14px;
+      transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    .primary {
+      background: var(--accent);
+      color: #111827;
+    }
+
+    .primary:hover {
+      background: var(--accent-strong);
+    }
+
+    .secondary {
+      border: 1px solid var(--line);
+      background: #11182b;
+      color: var(--text);
+    }
+
+    .danger {
+      border: 1px solid rgb(239 107 107 / 34%);
+      background: rgb(239 107 107 / 10%);
+      color: var(--danger);
+    }
+
+    .preview-wrap {
+      overflow: visible;
+      padding: 22px;
+      background: #090f20;
+    }
+
+    .toolbar-note {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 0 14px;
+      line-height: 1.4;
+    }
+
+    .sheet {
+      width: min(210mm, 100%);
+      min-height: 297mm;
+      margin: 0 auto;
+      background: #fff;
+      box-shadow: 0 22px 55px rgb(0 0 0 / 36%);
+      padding: 28mm 22mm 18mm;
+    }
+
+    .labels {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      align-content: start;
+      gap: 1mm;
+    }
+
+    .label {
+      width: 68mm;
+      height: 6.5mm;
+      position: relative;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      text-align: center;
+      color: #000;
+      overflow: hidden;
+    }
+
+    .label.is-selected {
+      box-shadow: inset 0 0 0 1px #f59a23;
+    }
+
+    .label-title {
+      font-size: 10px;
+      line-height: 1.05;
+      font-weight: 400;
+      text-decoration: underline;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .label-title[contenteditable],
+    .label-info[contenteditable] {
+      cursor: text;
+      outline: none;
+    }
+
+    .label-title[contenteditable]:focus,
+    .label-info[contenteditable]:focus {
+      background: rgb(245 154 35 / 12%);
+      box-shadow: inset 0 -1px 0 #f59a23;
+    }
+
+    .label-info {
+      margin: 1px auto 0;
+      max-width: 100%;
+      overflow: hidden;
+      font-size: 6.8px;
+      line-height: 1;
+      font-weight: 400;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .label--large {
+      height: 7mm;
+      font-family: Calibri, Arial, Helvetica, sans-serif;
+    }
+
+    .label--large .label-title {
+      font-family: Calibri, Arial, Helvetica, sans-serif;
+      font-size: 12pt;
+      line-height: 0.95;
+    }
+
+    .label--large .label-info {
+      margin-top: 0;
+      font-family: Calibri, Arial, Helvetica, sans-serif;
+      font-size: 8pt;
+      line-height: 0.9;
+    }
+
+    .label-delete {
+      position: absolute;
+      top: 0;
+      right: 0;
+      display: none;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      border: 1px solid rgb(239 107 107 / 42%);
+      border-radius: 999px;
+      background: #fff;
+      color: #b91c1c;
+      font-size: 11px;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .label:hover .label-delete,
+    .label:focus-within .label-delete,
+    .label.is-selected .label-delete {
+      display: grid;
+    }
+
+    .empty {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      min-height: 120mm;
+      color: var(--muted);
+      font-size: 15px;
+      text-align: center;
+    }
+
+    .sheet .empty {
+      color: #6b7280;
+    }
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    @media (max-width: 980px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .app {
+        grid-template-columns: 1fr;
+        padding: 16px;
+        gap: 16px;
+      }
+
+      .panel {
+        position: static;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .app {
+        padding: 12px;
+        gap: 12px;
+      }
+
+      .panel,
+      .preview-wrap {
+        padding: 14px;
+      }
+
+      .row,
+      .winding-edit-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .topbar,
+      .panel,
+      .toolbar-note {
+        display: none;
+      }
+
+      .app,
+      .preview-wrap {
+        display: block;
+        padding: 0;
+        border: 0;
+        box-shadow: none;
+        background: #fff;
+      }
+
+      .sheet {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0;
+        box-shadow: none;
+        padding: 28mm 22mm 18mm;
+      }
+
+      .label-delete {
+        display: none !important;
+      }
+
+      .label.is-selected,
+      .label-title[contenteditable]:focus,
+      .label-info[contenteditable]:focus {
+        box-shadow: none;
+        background: transparent;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="panel">
+      <h1>Pickup Label Generator</h1>
+      <p class="hint">
+        Beim Speichern einer Wicklung wird das heutige Datum fest hinterlegt. Druckliste, Dropdown-Optionen und Wickeldaten werden geräteübergreifend synchronisiert.
+      </p>
+
+      <form id="labelForm">
+        <div class="field-with-add">
+          <label>
+            Tonabnehmertyp
+            <select id="pickupType" required></select>
+          </label>
+          <button class="remove-button" type="button" data-remove-option="pickupTypes" aria-label="Ausgewählten Tonabnehmertyp entfernen">−</button>
+          <button class="add-button" type="button" data-add-option="pickupTypes" aria-label="Tonabnehmertyp hinzufügen">+</button>
+        </div>
+
+        <fieldset class="label-size-field">
+          <legend>Labelgröße</legend>
+          <div class="segmented-controls" role="group" aria-label="Labelgröße">
+            <button class="size-toggle is-active" type="button" data-label-size-mode="auto">Auto</button>
+            <button class="size-toggle" type="button" data-label-size-mode="small">Klein</button>
+            <button class="size-toggle" type="button" data-label-size-mode="large">Groß</button>
+          </div>
+          <span class="field-hint">Label anklicken und dann Klein/Groß wählen. Groß druckt 7mm hoch mit Calibri 12pt / 8pt.</span>
+        </fieldset>
+
+        <div class="field-with-add">
+          <label>
+            Modell
+            <select id="model" required></select>
+          </label>
+          <button class="remove-button" type="button" data-remove-option="models" aria-label="Ausgewähltes Modell entfernen">−</button>
+          <button class="add-button" type="button" data-add-option="models" aria-label="Modell hinzufügen">+</button>
+        </div>
+
+        <section class="winding-card" aria-live="polite">
+          <div class="winding-header">
+            <h2>Wickeldaten</h2>
+            <button class="icon-button" type="button" id="editWindingButton" aria-label="Wickeldaten bearbeiten">✎</button>
+          </div>
+          <div id="windingData"></div>
+        </section>
+
+        <label>
+          Modellname auf dem Label
+          <input id="labelModelName" required>
+          <span class="field-hint">Kann gekürzt werden, wenn der Name auf dem Label zu lang ist.</span>
+        </label>
+
+        <div class="row">
+          <div class="field-with-add">
+            <label>
+              Magnet
+              <select id="magnet" required></select>
+            </label>
+            <button class="remove-button" type="button" data-remove-option="magnets" aria-label="Ausgewählten Magneten entfernen">−</button>
+            <button class="add-button" type="button" data-add-option="magnets" aria-label="Magnet hinzufügen">+</button>
+          </div>
+
+          <div class="field-with-add">
+            <label>
+              Spacing
+              <select id="spacing" required></select>
+            </label>
+            <button class="remove-button" type="button" data-remove-option="spacings" aria-label="Ausgewähltes Spacing entfernen">−</button>
+            <button class="add-button" type="button" data-add-option="spacings" aria-label="Spacing hinzufügen">+</button>
+          </div>
+        </div>
+
+        <div class="row position-row">
+          <fieldset class="label-size-field">
+            <legend>Position</legend>
+            <div class="segmented-controls position-controls" role="group" aria-label="Position">
+              <button class="position-toggle" type="button" data-position="Neck">Neck</button>
+              <button class="position-toggle" type="button" data-position="Middle">Middle</button>
+              <button class="position-toggle" type="button" data-position="Bridge">Bridge</button>
+            </div>
+          </fieldset>
+
+          <label class="quantity-field">
+            Anzahl
+            <input id="quantity" type="number" min="1" max="100" value="1" required>
+          </label>
+        </div>
+
+        <div class="actions">
+          <button class="primary" type="submit">Label in Druckliste speichern</button>
+          <button class="secondary" type="button" id="printButton">PDF erstellen / drucken</button>
+          <button class="danger" type="button" id="clearButton">Liste leeren</button>
+          <p class="status-message" id="saveStatus"></p>
+        </div>
+      </form>
+    </aside>
+
+    <section class="preview-wrap" aria-label="Label Vorschau">
+      <p class="toolbar-note">Vorschau auf A4. Beim PDF-Erstellen im Druckdialog „Als PDF speichern“ auswählen.</p>
+      <div class="sheet">
+        <div id="labels" class="labels">
+          <div class="empty">Noch keine Labels angelegt.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "mgh-pickup-labels";
+    const OPTIONS_KEY = "mgh-pickup-options";
+    const WINDING_DATA_KEY = "mgh-pickup-winding-data";
+    const QUEUE_API = "/api/label-generator/queue";
+    const CONFIG_API = "/api/label-generator/config";
+    const QUEUE_SYNC_MS = 15000;
+    const DEFAULT_WINDING_DATA = [
+      { name: "MGH - N", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "5500", coil2: "5500" },
+      { name: "MGH - B", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "6500", coil2: "6500" },
+      { name: "MGH - 1N", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "4800", coil2: "4800" },
+      { name: "MGH - 1B", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "5500", coil2: "5500" },
+      { name: "MGH - 2N", category: "Humbuckerformat", magnet: "Keramik", wire: "0,063", coil1: "5000", coil2: "5000" },
+      { name: "MGH - 2B", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "8000", coil2: "6500" },
+      { name: "MGH - 3N", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "6000", coil2: "6000" },
+      { name: "MGH - 3B", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "6600", coil2: "6600" },
+      { name: "MGH - 4N", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "5600", coil2: "5300" },
+      { name: "MGH - 4B", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "5900", coil2: "5500" },
+      { name: "MGH - 5", category: "Humbuckerformat", magnet: "Keramik", wire: "0,063", coil1: "5500", coil2: "5500" },
+      { name: "MGH - 5B", category: "Humbuckerformat", magnet: "Keramik", wire: "0,063", coil1: "5500", coil2: "5500" },
+      { name: "MGH - 5TB", category: "Humbuckerformat", magnet: "Keramik", wire: "0,060", coil1: "5500", coil2: "5500" },
+      { name: "MGH - 6", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "6500", coil2: "5300" },
+      { name: "MGH - 7", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "8000", coil2: "6500" },
+      { name: "MGH-7TB alt", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "7600", coil2: "6200" },
+      { name: "MGH-7TB", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "8000", coil2: "0,056 / 7000" },
+      { name: "MGH - 7TB Custom", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "8000", coil2: "8000" },
+      { name: "MGH - 8", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "7000", coil2: "5500" },
+      { name: "MGH - 9", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "6280", coil2: "6280" },
+      { name: "MGH - 10", category: "Humbuckerformat", magnet: "Keramik", wire: "0,063", coil1: "5000", coil2: "5000" },
+      { name: "MGH - 11", category: "Humbuckerformat", magnet: "Keramik", wire: "0,063", coil1: "5000", coil2: "5000" },
+      { name: "MGH - 14 The Bulldog", category: "Humbuckerformat", magnet: "Keramik", wire: "0,063", coil1: "6350", coil2: "6350" },
+      { name: "MGH - 16P - Bucker", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "7350", coil2: "4500" },
+      { name: "MGH - 19", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "8000", coil2: "0,056 / 7000" },
+      { name: "MGH - 90HN", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "8000" },
+      { name: "MGH - 90HB", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "9000" },
+      { name: "MGH - H", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "4300", coil2: "5500" },
+      { name: "MGH - 77N", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "5500", coil2: "4300" },
+      { name: "MGH - 77B", category: "Humbuckerformat", magnet: "AL", wire: "0,056", coil1: "6800", coil2: "5200" },
+      { name: "MGH - LBN Littel Bucker Neck", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "4500", coil2: "4500" },
+      { name: "MGH - LBB Littel Bucker Bridge", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "5000", coil2: "5000" },
+      { name: "MGH - TVN TV Jones Style", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "4500", coil2: "4500" },
+      { name: "MGH - TVB TV Jones Style", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050", coil1: "5000", coil2: "5000" },
+      { name: "MGH - LB90 Mini in P90 Cover", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "5000", coil2: "5000" },
+      { name: "MGH - 022 Green Hornet Rail", category: "Humbuckerformat", magnet: "AL", wire: "0,050", coil1: "8000", coil2: "6200" },
+      { name: "MGH - THB Tele HB Bridge", category: "Humbuckerformat", magnet: "AL", wire: "0,063 / 0,050", coil1: "12000", coil2: "6000" },
+      { name: "MGH - THN Tele HB Neck", category: "Humbuckerformat", magnet: "AL", wire: "0,063 / 0,050", coil1: "4000", coil2: "4000" },
+      { name: "MGH - 8B Dive Bomber", category: "Humbuckerformat", magnet: "Keramik", wire: "0,050 / 0,063", coil1: "6500", coil2: "4500" },
+      { name: "MGH - 88N Octopus", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "5500", coil2: "5500" },
+      { name: "MGH - 88B Octopus", category: "Humbuckerformat", magnet: "Keramik", wire: "0,056", coil1: "5500", coil2: "5500" },
+      { name: "MGH - 99B Nine Eyes HB", category: "Humbuckerformat", magnet: "Keramik", wire: "0,063", coil1: "5500", coil2: "5500" },
+      { name: "MGH - BB45 Smal Bucker Closed", category: "Humbuckerformat", magnet: "AL6 / AL8", wire: "0,063", coil1: "6800", coil2: "6800" },
+      { name: "MGH - 77DS B", category: "Humbuckerformat", magnet: "Keramik", wire: "0,056", coil1: "6000", coil2: "6000" },
+      { name: "MGH - 77DS N", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "6000", coil2: "6000" },
+      { name: "MGH - 77PAF B", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "5800", coil2: "5800" },
+      { name: "MGH - 77PAF N", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "5500", coil2: "5500" },
+      { name: "MGH - Wide Range", category: "Humbuckerformat", magnet: "AL", wire: "0,063", coil1: "5500", coil2: "5500" },
+      { name: "MGH - 77 N", category: "Humbuckerformat", wire: "0,063", coil1: "5500", coil2: "4300" },
+      { name: "MGH - 77BD", category: "Humbuckerformat", wire: "0,056", coil1: "6800", coil2: "5200" },
+      { name: "MGH - 91SB Neck", category: "Humbuckerformat", wire: "0,056", coil1: "7000", coil2: "4000" },
+      { name: "MGH - 91SB Bridge", category: "Humbuckerformat", wire: "0,050", coil1: "8000", coil2: "5000" },
+      { name: "MGH - SN", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "9000" },
+      { name: "MGH - SM", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "9000" },
+      { name: "MGH - SB", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "9000" },
+      { name: "MGH - T1N", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "9000" },
+      { name: "MGH - T1B", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "12500" },
+      { name: "MGH - 90N", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "9800" },
+      { name: "MGH - 90B", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "11000" },
+      { name: "MGH - 7S", category: "Singlecoilformat", magnet: "AL", wire: "0,060", coil1: "8800" },
+      { name: "MGH - 17 Two Blades", category: "Singlecoilformat", magnet: "Keramik", wire: "0,050", coil1: "5200", coil2: "5200" },
+      { name: "MGH - 18 Black Hornet", category: "Singlecoilformat", magnet: "Keramik", wire: "0,050", coil1: "5500", coil2: "5500" },
+      { name: "MGH - SC90 im P90 Cover", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "9000" },
+      { name: "MGH - S9", category: "Singlecoilformat", magnet: "AL", wire: "0,063", coil1: "8500" },
+      { name: "MGH - JBHN", category: "Basspickups", magnet: "AL", wire: "0,050", coil1: "9340", coil2: "9340" },
+      { name: "MGH - JBHB", category: "Basspickups", magnet: "AL", wire: "0,050", coil1: "11100", coil2: "11100" },
+      { name: "MGH - JBSTN", category: "Basspickups", magnet: "AL", wire: "0,063", coil1: "8000" },
+      { name: "MGH - JBSTB", category: "Basspickups", magnet: "AL", wire: "0,063", coil1: "10000" },
+      { name: "MGH - JB Custom", category: "Basspickups" },
+      { name: "MGH - PBST4", category: "Basspickups", magnet: "AL", wire: "0,063", coil1: "15000" },
+      { name: "MGH - PB Custom", category: "Basspickups" },
+      { name: "MGH - MM4", category: "Basspickups" },
+      { name: "MGH - MM5", category: "Basspickups", magnet: "AL", wire: "0,050 / 0,063", coil1: "8000", coil2: "5500" },
+      { name: "MGH - Custom 4", category: "Basspickups" },
+      { name: "MGH - PB5 Fat Mag", category: "Basspickups", wire: "0,050 / 0,056", coil1: "2Mag 8000", coil2: "3Mag 7390" },
+      { name: "MGH - JFM J-Bass Fat Mag 4", category: "Basspickups", magnet: "AL", wire: "0,056", coil1: "7000" },
+      { name: "MGH - PBV P-Bass Vintage 4", category: "Basspickups", magnet: "AL", wire: "0,063", coil1: "9000" },
+      { name: "MGH - JBV J-Bass Vintage 4", category: "Basspickups", magnet: "AL", wire: "0,063", coil1: "9100", coil2: "9300", note: "Je Spule" },
+      { name: "MGH - JBHB J-Bass HB 4 Closed", category: "Basspickups", magnet: "AL", wire: "0,063 / 0,056", coil1: "5000", coil2: "6000", note: "Je Spule" },
+      { name: "MGH - JHB J-Bass Fat Pole 4", category: "Basspickups", magnet: "Keramik", wire: "0,050", coil1: "6000", coil2: "6000", note: "Je Spule" },
+      { name: "MGH - BM4 SC Big Mag", category: "Basspickups", wire: "0,050", coil1: "6500" },
+      { name: "MGH - BM5 SC Big Mag", category: "Basspickups", wire: "0,050", coil1: "6500" },
+      { name: "MGH - SB4 HB Steel Bar", category: "Basspickups", wire: "0,056", coil1: "5000", coil2: "5000" },
+      { name: "MGH - SB5 HB Steel Bar", category: "Basspickups", wire: "0,060", coil1: "5200", coil2: "5200" },
+      { name: "MGH - SB6 HB Steel Bar", category: "Basspickups", wire: "0,063", coil1: "5100", coil2: "5100" },
+      { name: "MGH - MM4 HB MM", category: "Basspickups", wire: "0,050 / 0,063", coil1: "8000", coil2: "5500" },
+      { name: "MGH - JB4 SC Jazz Neck", category: "Basspickups", wire: "0,063", coil1: "6500" },
+      { name: "MGH - LB1 HB Neck", category: "Basspickups", wire: "0,050", coil1: "4800", coil2: "4800" },
+      { name: "MGH - LB2 HB Bridge", category: "Basspickups", wire: "0,050", coil1: "5800", coil2: "5800" },
+      { name: "MGH - BBS SC Blizzard Beast", category: "Basspickups", magnet: "AL", wire: "0,050", coil1: "8800" },
+      { name: "MGH - BBH HB Blizzard Beast", category: "Basspickups", magnet: "Keramik", wire: "0,050", coil1: "8000", coil2: "6500" },
+      { name: "MGH - 12 Bloody Blades", category: "Humbucker", magnet: "Keramik", wire: "0,050", coil1: "5200", coil2: "5200", coil3: "5200", coil4: "5200" },
+      { name: "MGH - 13 The Knife", category: "Humbucker", magnet: "Keramik", wire: "0,050", coil1: "5500", coil2: "5500", coil3: "5500", coil4: "5500" },
+      { name: "MGH - 15 Triple Bucker", category: "Humbucker", magnet: "Keramik", wire: "0,050", coil1: "5500", coil2: "5500", coil3: "5500" }
+    ];
+
+    const DEFAULT_OPTIONS = {
+      pickupTypes: ["HB-PU", "SC-PU", "P90-PU", "JB-PU"],
+      models: DEFAULT_WINDING_DATA.map((item) => item.name),
+      magnets: ["Ceramic", "Alnico 2", "Alnico 5", "Alnico 5 Bar", "Alnico 9"],
+      spacings: ["50", "52", "57", "58", "61,5", "67", "70"]
+    };
+
+    const form = document.querySelector("#labelForm");
+    const labelsElement = document.querySelector("#labels");
+    const modelInput = document.querySelector("#model");
+    const labelModelNameInput = document.querySelector("#labelModelName");
+    const labelSizeModeButtons = [...document.querySelectorAll("[data-label-size-mode]")];
+    const positionButtons = [...document.querySelectorAll("[data-position]")];
+    const printButton = document.querySelector("#printButton");
+    const clearButton = document.querySelector("#clearButton");
+    const saveStatusElement = document.querySelector("#saveStatus");
+    const editWindingButton = document.querySelector("#editWindingButton");
+    const windingDataElement = document.querySelector("#windingData");
+    const optionFields = {
+      pickupTypes: document.querySelector("#pickupType"),
+      models: modelInput,
+      magnets: document.querySelector("#magnet"),
+      spacings: document.querySelector("#spacing")
+    };
+
+    function createEmptyRemovedOptions() {
+      return { pickupTypes: [], models: [], magnets: [], spacings: [] };
+    }
+
+    let labels = [];
+    let removedOptions = createEmptyRemovedOptions();
+    let options = mergeOptionSets({});
+    let windingData = mergeWindingSets([]);
+    let labelModelNameEdited = false;
+    let labelSizeMode = "auto";
+    let selectedPosition = "";
+    let selectedLabelId = null;
+    let windingEditMode = false;
+    let queueUpdatedAt = null;
+    let queueSaveTimer = null;
+    let queueSyncTimer = null;
+    let configUpdatedAt = null;
+    let configSaveTimer = null;
+
+    function todayStamp() {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, "0");
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const year = now.getFullYear();
+      return `${day}${month}${year}`;
+    }
+
+    function createLabelId() {
+      if (globalThis.crypto?.randomUUID) {
+        return globalThis.crypto.randomUUID();
+      }
+
+      return `label-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    function inferLabelSize(pickupType) {
+      const type = String(pickupType || "").trim().toLowerCase();
+
+      if (type.includes("bass") || type.includes("jb") || type.includes("pb") || type.includes("p90") || type.includes("hb") || type.includes("humbucker")) {
+        return "large";
+      }
+
+      if (type === "sc-pu" || type.includes("single coil") || type.includes("singlecoil")) {
+        return "small";
+      }
+
+      return "large";
+    }
+
+    function resolveLabelSize(label) {
+      return label?.labelSize === "small" || label?.labelSize === "large"
+        ? label.labelSize
+        : inferLabelSize(label?.pickupType);
+    }
+
+    function toPlainLabelText(value) {
+      return String(value || "").replace(/\s+/g, " ").trim();
+    }
+
+    function buildDefaultTitle(label) {
+      return `MGH GUITARS - PU ${label.dateStamp}-${label.number}`;
+    }
+
+    function buildTitle(label) {
+      return toPlainLabelText(label.customTitle) || buildDefaultTitle(label);
+    }
+
+    function normalizeLabel(label) {
+      const id = typeof label?.id === "string" && label.id.trim() ? label.id : createLabelId();
+      const labelSize = resolveLabelSize(label);
+
+      return {
+        id,
+        dateStamp: String(label?.dateStamp || todayStamp()),
+        number: Number(label?.number) || 1,
+        pickupType: String(label?.pickupType || ""),
+        model: String(label?.model || ""),
+        magnet: String(label?.magnet || ""),
+        spacing: String(label?.spacing || ""),
+        position: String(label?.position || ""),
+        labelSize,
+        customTitle: typeof label?.customTitle === "string" ? label.customTitle : undefined,
+        customInfo: typeof label?.customInfo === "string" ? label.customInfo : undefined
+      };
+    }
+
+    function normalizeLabelsList(value) {
+      const sourceLabels = Array.isArray(value) ? value : [];
+      let changed = false;
+
+      const normalized = sourceLabels.map((label) => {
+        const nextLabel = normalizeLabel(label);
+
+        if (nextLabel.id !== label?.id || nextLabel.labelSize !== label?.labelSize) {
+          changed = true;
+        }
+
+        return nextLabel;
+      });
+
+      return { labels: normalized, changed };
+    }
+
+    function loadLabelsLocal() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return normalizeLabelsList(raw ? JSON.parse(raw) : []).labels;
+      } catch {
+        return [];
+      }
+    }
+
+    async function fetchLabelsFromServer() {
+      const response = await fetch(QUEUE_API, { credentials: "same-origin" });
+
+      if (!response.ok) {
+        throw new Error(`Server antwortete mit ${response.status}`);
+      }
+
+      const data = await response.json();
+      const normalized = normalizeLabelsList(Array.isArray(data.labels) ? data.labels : []);
+      return {
+        labels: normalized.labels,
+        updatedAt: data.updatedAt || null,
+        changed: normalized.changed
+      };
+    }
+
+    async function persistLabelsToServer() {
+      const response = await fetch(QUEUE_API, {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labels })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server antwortete mit ${response.status}`);
+      }
+
+      const data = await response.json();
+      queueUpdatedAt = data.updatedAt || queueUpdatedAt;
+    }
+
+    function scheduleSaveLabels() {
+      if (queueSaveTimer) {
+        clearTimeout(queueSaveTimer);
+      }
+
+      queueSaveTimer = setTimeout(async () => {
+        queueSaveTimer = null;
+
+        try {
+          await persistLabelsToServer();
+          updateSaveStatus();
+        } catch {
+          updateSaveStatus("Speichern fehlgeschlagen. Bitte erneut versuchen.");
+        }
+      }, 250);
+    }
+
+    async function loadLabels() {
+      let offline = false;
+
+      try {
+        const remote = await fetchLabelsFromServer();
+
+        if (remote.labels.length === 0) {
+          const localLabels = loadLabelsLocal();
+
+          if (localLabels.length > 0) {
+            labels = localLabels;
+            await persistLabelsToServer();
+            localStorage.removeItem(STORAGE_KEY);
+          } else {
+            labels = [];
+          }
+        } else {
+          labels = remote.labels;
+        }
+
+        queueUpdatedAt = remote.updatedAt;
+
+        if (remote.changed && labels.length > 0) {
+          await persistLabelsToServer();
+        }
+      } catch {
+        labels = loadLabelsLocal();
+        offline = true;
+      }
+
+      renderLabels();
+
+      if (offline) {
+        updateSaveStatus("Offline-Modus: lokale Druckliste wird verwendet.");
+      } else {
+        updateSaveStatus();
+      }
+    }
+
+    function saveLabels() {
+      scheduleSaveLabels();
+    }
+
+    async function syncLabelsFromServer() {
+      try {
+        const remote = await fetchLabelsFromServer();
+
+        if (remote.updatedAt && remote.updatedAt === queueUpdatedAt) {
+          return;
+        }
+
+        labels = remote.labels;
+        queueUpdatedAt = remote.updatedAt;
+
+        if (remote.changed && labels.length > 0) {
+          await persistLabelsToServer();
+        }
+
+        renderLabels();
+        updateSaveStatus();
+      } catch {
+        // Hintergrund-Sync darf die UI nicht stören.
+      }
+    }
+
+    function startQueueSync() {
+      if (queueSyncTimer) {
+        clearInterval(queueSyncTimer);
+      }
+
+      queueSyncTimer = setInterval(() => {
+        if (!queueSaveTimer && !configSaveTimer) {
+          syncLabelsFromServer();
+          syncConfigFromServer();
+        }
+      }, QUEUE_SYNC_MS);
+    }
+
+    function updateSaveStatus(message = "") {
+      if (message) {
+        saveStatusElement.textContent = message;
+        return;
+      }
+
+      saveStatusElement.textContent = labels.length
+        ? `${labels.length} Eintrag/Einträge in der Druckliste gespeichert (geräteübergreifend synchronisiert).`
+        : "Noch nichts in der Druckliste gespeichert.";
+    }
+
+    function loadOptionsFromLocal() {
+      try {
+        const raw = localStorage.getItem(OPTIONS_KEY);
+        const savedOptions = raw ? JSON.parse(raw) : {};
+        return mergeOptionSets(savedOptions);
+      } catch {
+        return mergeOptionSets({});
+      }
+    }
+
+    function optionValueKey(key, value) {
+      if (key === "models") {
+        return normalizeModelName(value);
+      }
+
+      return String(value || "").trim().toLowerCase();
+    }
+
+    function isOptionRemoved(key, value, removed = removedOptions) {
+      return (removed[key] || []).some((item) => optionValueKey(key, item) === optionValueKey(key, value));
+    }
+
+    function mergeRemovedOptions(savedRemoved) {
+      const merged = createEmptyRemovedOptions();
+
+      Object.keys(merged).forEach((key) => {
+        merged[key] = uniqueOptions([...(savedRemoved?.[key] || [])], key);
+      });
+
+      return merged;
+    }
+
+    function mergeOptionSets(savedOptions, removed = removedOptions) {
+      return Object.fromEntries(
+        Object.entries(DEFAULT_OPTIONS).map(([key, values]) => [
+          key,
+          uniqueOptions(
+            [...values, ...(savedOptions[key] || [])].filter((value) => !isOptionRemoved(key, value, removed)),
+            key
+          )
+        ])
+      );
+    }
+
+    function saveOptionsLocal() {
+      try {
+        localStorage.setItem(OPTIONS_KEY, JSON.stringify(options));
+      } catch {
+        // localStorage kann im Privatmodus blockiert sein
+      }
+    }
+
+    function mergeWindingSets(savedData) {
+      const dataByName = new Map(DEFAULT_WINDING_DATA.map((item) => [normalizeModelName(item.name), { ...item }]));
+
+      (savedData || []).forEach((item) => {
+        if (item?.name) {
+          dataByName.set(normalizeModelName(item.name), { ...item });
+        }
+      });
+
+      return [...dataByName.values()];
+    }
+
+    function loadWindingDataFromLocal() {
+      try {
+        const raw = localStorage.getItem(WINDING_DATA_KEY);
+        const savedData = raw ? JSON.parse(raw) : [];
+        return mergeWindingSets(savedData);
+      } catch {
+        return mergeWindingSets([]);
+      }
+    }
+
+    function saveWindingDataLocal() {
+      try {
+        localStorage.setItem(WINDING_DATA_KEY, JSON.stringify(windingData));
+      } catch {
+        // localStorage kann im Privatmodus blockiert sein
+      }
+    }
+
+    function hasCustomOptions(optionSet) {
+      return Object.entries(DEFAULT_OPTIONS).some(([key, defaults]) => {
+        const merged = uniqueOptions([...defaults, ...(optionSet[key] || [])], key);
+        return merged.length > defaults.length;
+      });
+    }
+
+    function hasLocalOptionsSaved() {
+      try {
+        return !!localStorage.getItem(OPTIONS_KEY);
+      } catch {
+        return false;
+      }
+    }
+
+    function hasLocalWindingSaved() {
+      try {
+        return !!localStorage.getItem(WINDING_DATA_KEY);
+      } catch {
+        return false;
+      }
+    }
+
+    async function fetchConfigFromServer() {
+      const response = await fetch(CONFIG_API, { credentials: "same-origin" });
+
+      if (!response.ok) {
+        throw new Error(`Server antwortete mit ${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    async function persistConfigToServer() {
+      const response = await fetch(CONFIG_API, {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          options,
+          windingData,
+          removedOptions
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server antwortete mit ${response.status}`);
+      }
+
+      const data = await response.json();
+      configUpdatedAt = data.updatedAt || configUpdatedAt;
+    }
+
+    function scheduleSaveConfig() {
+      saveOptionsLocal();
+      saveWindingDataLocal();
+
+      if (configSaveTimer) {
+        clearTimeout(configSaveTimer);
+      }
+
+      configSaveTimer = setTimeout(async () => {
+        configSaveTimer = null;
+
+        try {
+          await persistConfigToServer();
+        } catch {
+          updateSaveStatus("Einstellungen konnten nicht gespeichert werden. Bitte erneut versuchen.");
+        }
+      }, 250);
+    }
+
+    async function loadConfig() {
+      const localOptions = loadOptionsFromLocal();
+      const localWindingData = loadWindingDataFromLocal();
+      let migrated = false;
+
+      try {
+        const remote = await fetchConfigFromServer();
+        const remoteHasOptions = Boolean(
+          remote.options &&
+          typeof remote.options === "object" &&
+          Array.isArray(remote.options.pickupTypes)
+        );
+        const remoteHasWinding = Array.isArray(remote.windingData) && remote.windingData.length > 0;
+
+        if (remote.removedOptions) {
+          removedOptions = mergeRemovedOptions(remote.removedOptions);
+        }
+
+        if (remoteHasOptions) {
+          options = mergeOptionSets(remote.options);
+        } else if (hasCustomOptions(localOptions) || hasLocalOptionsSaved()) {
+          options = localOptions;
+          migrated = true;
+        } else {
+          options = mergeOptionSets({});
+        }
+
+        if (remoteHasWinding) {
+          windingData = mergeWindingSets(remote.windingData);
+        } else if (hasLocalWindingSaved()) {
+          windingData = localWindingData;
+          migrated = true;
+        } else {
+          windingData = mergeWindingSets([]);
+        }
+
+        configUpdatedAt = remote.updatedAt;
+
+        if (migrated) {
+          await persistConfigToServer();
+          saveOptionsLocal();
+          saveWindingDataLocal();
+        }
+      } catch {
+        options = localOptions;
+        windingData = localWindingData;
+      }
+    }
+
+    async function syncConfigFromServer() {
+      try {
+        const remote = await fetchConfigFromServer();
+
+        if (remote.updatedAt && remote.updatedAt === configUpdatedAt) {
+          return;
+        }
+
+        if (remote.removedOptions) {
+          removedOptions = mergeRemovedOptions(remote.removedOptions);
+        }
+
+        if (remote.options) {
+          options = mergeOptionSets(remote.options);
+        }
+
+        if (remote.windingData) {
+          windingData = mergeWindingSets(remote.windingData);
+        }
+
+        configUpdatedAt = remote.updatedAt;
+        saveOptionsLocal();
+        saveWindingDataLocal();
+        renderOptionFields();
+      } catch {
+        // Hintergrund-Sync darf die UI nicht stören.
+      }
+    }
+
+    function uniqueOptions(values, key) {
+      const mappedValues = values.map((value) => key === "models" ? renameModelOption(value) : value);
+      const seen = new Set();
+
+      return mappedValues.filter((value) => {
+        const compareValue = key === "models" ? normalizeModelName(value) : value.toLowerCase();
+
+        if (seen.has(compareValue)) {
+          return false;
+        }
+
+        seen.add(compareValue);
+        return true;
+      });
+    }
+
+    function renameModelOption(value) {
+      const renamedModels = {
+        "mgh-7tb alte version": "MGH-7TB alt",
+        "mgh-7tb neue version": "MGH-7TB"
+      };
+
+      return renamedModels[normalizeModelName(value)] || value;
+    }
+
+    function renderOptionField(key) {
+      const field = optionFields[key];
+      field.innerHTML = "";
+
+      options[key].forEach((value) => {
+        const item = document.createElement("option");
+        item.value = value;
+
+        item.textContent = value;
+
+        field.append(item);
+      });
+
+      const currentValue = field.value;
+      if (currentValue && !options[key].some((item) => item === currentValue)) {
+        field.value = options[key][0] || "";
+      }
+    }
+
+    function renderOptionFields() {
+      Object.keys(optionFields).forEach(renderOptionField);
+      modelInput.value ||= options.models[0] || "";
+      syncLabelModelName(true);
+      renderWindingData();
+    }
+
+    function addOption(key, value) {
+      const cleanValue = value?.trim();
+
+      if (!cleanValue) {
+        return;
+      }
+
+      const exists = options[key].some((option) => optionValueKey(key, option) === optionValueKey(key, cleanValue));
+      if (!exists) {
+        removedOptions[key] = removedOptions[key].filter(
+          (item) => optionValueKey(key, item) !== optionValueKey(key, cleanValue)
+        );
+        options[key].push(cleanValue);
+        scheduleSaveConfig();
+        renderOptionField(key);
+      }
+
+      if (key === "models") {
+        selectModel(cleanValue);
+      } else {
+        optionFields[key].value = cleanValue;
+      }
+    }
+
+    function removeOption(key, value) {
+      if (!value) {
+        return;
+      }
+
+      const compareKey = optionValueKey(key, value);
+      options[key] = options[key].filter((item) => optionValueKey(key, item) !== compareKey);
+
+      const isDefault = DEFAULT_OPTIONS[key].some((item) => optionValueKey(key, item) === compareKey);
+      if (isDefault && !isOptionRemoved(key, value)) {
+        removedOptions[key].push(value);
+      }
+
+      scheduleSaveConfig();
+      renderOptionField(key);
+
+      const field = optionFields[key];
+      if (!field.value || optionValueKey(key, field.value) === compareKey) {
+        field.value = options[key][0] || "";
+      }
+
+      if (key === "models") {
+        syncLabelModelName(true);
+        renderWindingData();
+      }
+    }
+
+    function removeSelectedOption(key) {
+      const field = optionFields[key];
+      const value = field.value;
+
+      if (!value) {
+        alert("Bitte zuerst einen Eintrag aus der Liste auswählen.");
+        return;
+      }
+
+      if (!confirm(`„${value}" aus der Liste entfernen?`)) {
+        return;
+      }
+
+      removeOption(key, value);
+    }
+
+    function showOptionEditor(button, key) {
+      const promptLabels = {
+        pickupTypes: "neuen Tonabnehmertyp",
+        models: "neues Modell",
+        magnets: "neuen Magneten",
+        spacings: "neues Spacing"
+      };
+      const field = button.closest(".field-with-add");
+      field.querySelector(".option-editor")?.remove();
+
+      const editor = document.createElement("div");
+      editor.className = "option-editor";
+
+      const input = document.createElement("input");
+      input.placeholder = `${promptLabels[key]} eingeben`;
+
+      const saveButton = document.createElement("button");
+      saveButton.className = "secondary";
+      saveButton.type = "button";
+      saveButton.textContent = "OK";
+
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "danger";
+      cancelButton.type = "button";
+      cancelButton.textContent = "X";
+
+      const saveValue = () => {
+        addOption(key, input.value);
+        editor.remove();
+      };
+
+      saveButton.addEventListener("click", saveValue);
+      cancelButton.addEventListener("click", () => editor.remove());
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveValue();
+        }
+      });
+
+      editor.append(input, saveButton, cancelButton);
+      field.append(editor);
+      input.focus();
+    }
+
+    function selectModel(modelName) {
+      modelInput.value = modelName;
+      syncLabelModelName(true);
+      renderWindingData();
+    }
+
+    function syncLabelModelName(force = false) {
+      if (force || !labelModelNameEdited) {
+        labelModelNameInput.value = buildLabelModelName(modelInput.value);
+        labelModelNameEdited = false;
+      }
+    }
+
+    function findWindingData(modelName) {
+      const normalizedModel = normalizeModelName(modelName);
+      return windingData.find((item) => normalizeModelName(item.name) === normalizedModel);
+    }
+
+    function buildLabelModelName(modelName) {
+      const renamedName = renameModelOption(modelName);
+      const match = renamedName.match(/^MGH\s*-?\s*(\S+)(?:\s+(alt))?/i);
+
+      if (!match) {
+        return renamedName;
+      }
+
+      return `MGH-${match[1]}${match[2] ? " alt" : ""}`;
+    }
+
+    function normalizeModelName(value) {
+      return value.trim().toLowerCase().replace(/\s*-\s*/g, "-").replace(/\s+/g, " ");
+    }
+
+    function getModelCode(modelName) {
+      const match = modelName.match(/^MGH\s*-?\s*(\S+)/i);
+      return match ? match[1] : "";
+    }
+
+    function appendDefinition(list, label, value) {
+      if (!value) {
+        return;
+      }
+
+      const term = document.createElement("dt");
+      term.textContent = label;
+
+      const description = document.createElement("dd");
+      description.textContent = value;
+
+      list.append(term, description);
+    }
+
+    function createWindingDefinitionList(data) {
+      const list = document.createElement("dl");
+      appendDefinition(list, "Format", data.category);
+      appendDefinition(list, "Magnet", data.magnet);
+      appendDefinition(list, "Draht", data.wire);
+      appendDefinition(list, "Spule 1", data.coil1);
+      appendDefinition(list, "Spule 2", data.coil2);
+      appendDefinition(list, "Spule 3", data.coil3);
+      appendDefinition(list, "Spule 4", data.coil4);
+      appendDefinition(list, "Hinweis", data.note);
+      return list;
+    }
+
+    function createWindingEditInput(label, key, data) {
+      const field = document.createElement("label");
+      const input = document.createElement("input");
+      input.name = key;
+      input.value = data?.[key] || "";
+      field.append(label, input);
+      return field;
+    }
+
+    function renderWindingEditForm(data) {
+      windingDataElement.innerHTML = "";
+
+      const formElement = document.createElement("form");
+      formElement.className = "winding-edit-form";
+
+      const grid = document.createElement("div");
+      grid.className = "winding-edit-grid";
+      grid.append(
+        createWindingEditInput("Format", "category", data),
+        createWindingEditInput("Magnet", "magnet", data),
+        createWindingEditInput("Draht", "wire", data),
+        createWindingEditInput("Spule 1", "coil1", data),
+        createWindingEditInput("Spule 2", "coil2", data),
+        createWindingEditInput("Spule 3", "coil3", data),
+        createWindingEditInput("Spule 4", "coil4", data),
+        createWindingEditInput("Hinweis", "note", data)
+      );
+
+      const actions = document.createElement("div");
+      actions.className = "winding-edit-actions";
+
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "danger";
+      cancelButton.type = "button";
+      cancelButton.textContent = "Abbrechen";
+
+      const saveButton = document.createElement("button");
+      saveButton.className = "secondary";
+      saveButton.type = "submit";
+      saveButton.textContent = "Speichern";
+
+      actions.append(cancelButton, saveButton);
+      formElement.append(grid, actions);
+
+      cancelButton.addEventListener("click", () => {
+        windingEditMode = false;
+        renderWindingData();
+      });
+
+      formElement.addEventListener("submit", (event) => {
+        event.preventDefault();
+        saveWindingForm(formElement, data);
+      });
+
+      windingDataElement.append(formElement);
+    }
+
+    function saveWindingForm(formElement, existingData) {
+      const formData = new FormData(formElement);
+      const updatedData = {
+        name: modelInput.value,
+        category: formData.get("category").trim(),
+        magnet: formData.get("magnet").trim(),
+        wire: formData.get("wire").trim(),
+        coil1: formData.get("coil1").trim(),
+        coil2: formData.get("coil2").trim(),
+        coil3: formData.get("coil3").trim(),
+        coil4: formData.get("coil4").trim(),
+        note: formData.get("note").trim()
+      };
+      const existingIndex = windingData.findIndex((item) => normalizeModelName(item.name) === normalizeModelName(existingData?.name || modelInput.value));
+
+      if (existingIndex >= 0) {
+        windingData[existingIndex] = updatedData;
+      } else {
+        windingData.push(updatedData);
+      }
+
+      scheduleSaveConfig();
+      windingEditMode = false;
+      renderWindingData();
+    }
+
+    function renderWindingData() {
+      const data = findWindingData(modelInput.value);
+      windingDataElement.innerHTML = "";
+
+      if (windingEditMode) {
+        renderWindingEditForm(data);
+        return;
+      }
+
+      if (!data) {
+        const empty = document.createElement("p");
+        empty.className = "winding-empty";
+        empty.textContent = "Für dieses Modell sind noch keine Wickeldaten hinterlegt.";
+        windingDataElement.append(empty);
+        return;
+      }
+
+      const list = createWindingDefinitionList(data);
+      windingDataElement.append(list);
+    }
+
+    function buildDefaultInfo(label) {
+      const parts = [
+        `${label.pickupType} /`,
+        label.model,
+        label.magnet,
+        "Magnet",
+        label.position,
+        label.spacing
+      ];
+
+      return parts.filter(Boolean).join(" ");
+    }
+
+    function buildInfo(label) {
+      return toPlainLabelText(label.customInfo) || buildDefaultInfo(label);
+    }
+
+    function nextNumberForDate(dateStamp) {
+      return labels.filter((label) => label.dateStamp === dateStamp).length + 1;
+    }
+
+    function getSelectedLabel() {
+      return labels.find((label) => label.id === selectedLabelId) || null;
+    }
+
+    function updateLabelSizeButtons() {
+      labelSizeModeButtons.forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.labelSizeMode === labelSizeMode);
+      });
+    }
+
+    function updatePositionButtons() {
+      positionButtons.forEach((button) => {
+        button.classList.toggle("is-active", (button.dataset.position || "") === selectedPosition);
+      });
+    }
+
+    function setPosition(position) {
+      const nextPosition = position || "";
+      selectedPosition = selectedPosition === nextPosition ? "" : nextPosition;
+      updatePositionButtons();
+    }
+
+    function updateSelectedLabelState() {
+      labelsElement.querySelectorAll(".label").forEach((item) => {
+        item.classList.toggle("is-selected", item.dataset.labelId === selectedLabelId);
+      });
+    }
+
+    function selectLabel(labelId) {
+      selectedLabelId = labelId;
+      const label = getSelectedLabel();
+
+      if (label) {
+        labelSizeMode = resolveLabelSize(label);
+        updateLabelSizeButtons();
+        updateSelectedLabelState();
+        updateSaveStatus(`Label ${label.dateStamp}-${label.number} ausgewählt.`);
+      }
+    }
+
+    function setLabelSizeMode(mode) {
+      labelSizeMode = mode;
+      const selectedLabel = getSelectedLabel();
+
+      if (selectedLabel) {
+        selectedLabel.labelSize = mode === "auto" ? inferLabelSize(selectedLabel.pickupType) : mode;
+        saveLabels();
+        renderLabels();
+        updateSaveStatus(`Label ${selectedLabel.dateStamp}-${selectedLabel.number} auf ${selectedLabel.labelSize === "large" ? "groß" : "klein"} gesetzt.`);
+        return;
+      }
+
+      updateLabelSizeButtons();
+      updateSaveStatus(mode === "auto" ? "Neue Labels nutzen Auto-Größe." : `Neue Labels werden ${mode === "large" ? "groß" : "klein"} angelegt.`);
+    }
+
+    function saveLabelText(labelId, key, value) {
+      const label = labels.find((item) => item.id === labelId);
+
+      if (!label) {
+        return;
+      }
+
+      const cleanValue = toPlainLabelText(value);
+      const defaultValue = key === "customTitle" ? buildDefaultTitle(label) : buildDefaultInfo(label);
+
+      if (!cleanValue || cleanValue === defaultValue) {
+        delete label[key];
+      } else {
+        label[key] = cleanValue;
+      }
+
+      saveLabels();
+      renderLabels();
+      updateSaveStatus("Labeltext gespeichert.");
+    }
+
+    async function removeLabel(labelId) {
+      const previousLabels = labels;
+      const previousSelectedLabelId = selectedLabelId;
+      const previousLabelSizeMode = labelSizeMode;
+      const wasSelected = selectedLabelId === labelId;
+      labels = labels.filter((label) => label.id !== labelId);
+      if (wasSelected) {
+        selectedLabelId = null;
+        labelSizeMode = "auto";
+        updateLabelSizeButtons();
+      }
+      renderLabels();
+
+      try {
+        await persistLabelsToServer();
+        updateSaveStatus("Label gelöscht.");
+      } catch {
+        labels = previousLabels;
+        selectedLabelId = previousSelectedLabelId;
+        labelSizeMode = previousLabelSizeMode;
+        renderLabels();
+        updateSaveStatus("Label konnte nicht gelöscht werden. Bitte erneut versuchen.");
+      }
+    }
+
+    function renderLabels() {
+      labelsElement.innerHTML = "";
+
+      if (labels.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "Noch keine Labels angelegt.";
+        labelsElement.append(empty);
+        return;
+      }
+
+      labels.forEach((label) => {
+        const item = document.createElement("article");
+        const labelSize = resolveLabelSize(label);
+        item.className = `label label--${labelSize}`;
+        item.dataset.labelId = label.id;
+        item.tabIndex = 0;
+
+        const title = document.createElement("div");
+        title.className = "label-title";
+        title.contentEditable = "true";
+        title.spellcheck = false;
+        title.setAttribute("aria-label", "Obere Labelzeile bearbeiten");
+        title.textContent = buildTitle(label);
+
+        const info = document.createElement("div");
+        info.className = "label-info";
+        info.contentEditable = "true";
+        info.spellcheck = false;
+        info.setAttribute("aria-label", "Untere Labelzeile bearbeiten");
+        info.textContent = buildInfo(label);
+
+        [
+          [title, "customTitle"],
+          [info, "customInfo"]
+        ].forEach(([element, key]) => {
+          element.addEventListener("focus", () => selectLabel(label.id));
+          element.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              element.blur();
+            }
+          });
+          element.addEventListener("blur", () => saveLabelText(label.id, key, element.textContent));
+        });
+
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "label-delete";
+        deleteButton.type = "button";
+        deleteButton.title = "Label löschen";
+        deleteButton.setAttribute("aria-label", `Label ${label.dateStamp}-${label.number} löschen`);
+        deleteButton.textContent = "X";
+        deleteButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          removeLabel(label.id);
+        });
+
+        item.append(title, info, deleteButton);
+        labelsElement.append(item);
+        info.style.maxWidth = `${title.offsetWidth}px`;
+
+        item.addEventListener("click", () => selectLabel(label.id));
+        item.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectLabel(label.id);
+          }
+        });
+      });
+
+      updateLabelSizeButtons();
+      updateSelectedLabelState();
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+
+      const dateStamp = todayStamp();
+      const quantity = Number(document.querySelector("#quantity").value);
+      const pickupType = document.querySelector("#pickupType").value;
+      const labelSize = labelSizeMode === "auto" ? inferLabelSize(pickupType) : labelSizeMode;
+
+      for (let i = 0; i < quantity; i += 1) {
+        labels.push({
+          id: createLabelId(),
+          dateStamp,
+          number: nextNumberForDate(dateStamp),
+          pickupType,
+          model: labelModelNameInput.value.trim() || modelInput.value.trim(),
+          magnet: document.querySelector("#magnet").value,
+          spacing: document.querySelector("#spacing").value,
+          position: selectedPosition,
+          labelSize
+        });
+      }
+
+      saveLabels();
+      renderLabels();
+      updateSaveStatus(`${quantity} Eintrag/Einträge für ${dateStamp} gespeichert. Dieses Datum bleibt auch beim späteren Drucken erhalten.`);
+    });
+
+    labelSizeModeButtons.forEach((button) => {
+      button.addEventListener("click", () => setLabelSizeMode(button.dataset.labelSizeMode));
+    });
+
+    positionButtons.forEach((button) => {
+      button.addEventListener("click", () => setPosition(button.dataset.position));
+    });
+
+    updatePositionButtons();
+
+    printButton.addEventListener("click", () => {
+      window.print();
+    });
+
+    clearButton.addEventListener("click", async () => {
+      if (!labels.length || confirm("Alle Labels aus der aktuellen Liste entfernen?")) {
+        labels = [];
+
+        try {
+          await persistLabelsToServer();
+          renderLabels();
+          updateSaveStatus();
+        } catch {
+          updateSaveStatus("Liste konnte nicht geleert werden. Bitte erneut versuchen.");
+        }
+      }
+    });
+
+    document.querySelectorAll("[data-add-option]").forEach((button) => {
+      button.addEventListener("click", () => showOptionEditor(button, button.dataset.addOption));
+    });
+
+    document.querySelectorAll("[data-remove-option]").forEach((button) => {
+      button.addEventListener("click", () => removeSelectedOption(button.dataset.removeOption));
+    });
+
+    modelInput.addEventListener("change", () => {
+      windingEditMode = false;
+      syncLabelModelName(true);
+      renderWindingData();
+    });
+
+    editWindingButton.addEventListener("click", () => {
+      windingEditMode = !windingEditMode;
+      renderWindingData();
+    });
+
+    labelModelNameInput.addEventListener("input", () => {
+      labelModelNameEdited = true;
+    });
+
+    loadConfig()
+      .then(() => {
+        renderOptionFields();
+        return loadLabels();
+      })
+      .then(() => startQueueSync());
+  </script>
+</body>
+</html>
