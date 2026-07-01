@@ -28,9 +28,9 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
   GUITAR: {
     categories: ["body","neck","finish"],
     fields: {
-      body: ["body_shape","string_count","body_material","body_thickness","neck_construction","body_top","body_binding","body_top_thickness","body_shaping","bridge_type","pickups_routes","body_electronics_layout","body_surface_treatment","pickguard","battery_compartment","body_extras"],
-      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","finish_neck","neck_extras"],
-      finish: ["finish_body","electronics","pickups","elektronikparts","hardware_color","strap_pins","strings","notes"],
+      body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard","battery_compartment","body_extras","body_surface_treatment","body_notes"],
+      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","neck_extras","finish_neck","headstock_finish","neck_notes"],
+      finish: ["finish_body","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","electronics","pickups","elektronikparts","hardware_color","strap_pins","strings","tuning","notes"],
       oberflaeche: [],
       repair: [],
       pickguard: [],
@@ -45,11 +45,11 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
     imageScopes: ["body","neck","finish"],
   },
   BODY: {
-    categories: ["body","finish"],
+    categories: ["body"],
     fields: {
-      body: ["body_shape","string_count","body_material","body_thickness","neck_construction","body_top","body_binding","body_top_thickness","body_shaping","bridge_type","pickups_routes","body_electronics_layout","body_surface_treatment","pickguard_checkbox","pickguard_material","battery_compartment_checkbox","battery_compartment_details","body_extras"],
+      body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard_checkbox","pickguard_material","battery_compartment_checkbox","battery_compartment_details","body_extras","body_surface_treatment","neck_pocket","customer_provides_neck","finish_body","body_notes"],
       neck: [],
-      finish: ["finish_body","hardware_color","notes"],
+      finish: [],
       oberflaeche: [],
       repair: [],
       pickguard: [],
@@ -60,11 +60,11 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
     imageScopes: ["body","finish"],
   },
   NECK: {
-    categories: ["neck","finish"],
+    categories: ["neck"],
     fields: {
       body: [],
-      neck: ["string_count","headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","finish_neck","neck_extras"],
-      finish: ["finish_body","notes"],
+      neck: ["string_count","headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","neck_extras","neck_foot","customer_provides_body","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","neck_notes"],
+      finish: [],
       oberflaeche: [],
       repair: [],
       pickguard: [],
@@ -77,7 +77,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
   REPAIR: {
     categories: ["repair"],
     fields: {
-      repair: ["repair_type","repair_area","repair_description","repair_materials_needed","repair_priority","repair_extras"],
+      repair: ["repair_type","repair_area","repair_description","repair_materials_needed","repair_priority","repair_extras","repair_notes"],
       body: [], 
       neck: [], 
       finish: [],
@@ -154,26 +154,30 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
 // Field labels for UI display (German)
 export const FIELD_LABELS: Record<string, string> = {
   // Body fields
-  body_shape: "Korpusform",
+  body_shape: "Bodyform",
   string_count: "Saitenzahl",
-  body_material: "Korpusmaterial",
-  body_binding: "Korpus Binding",
-  body_top_thickness: "Decken-Dicke",
+  body_material: "Bodymaterial",
+  body_has_top: "Top vorhanden",
+  body_binding: "Body Binding",
+  body_top_thickness: "Top-Dicke",
   body_shaping: "Shaping",
   bridge_type: "Brücken-Typ",
-  body_thickness: "Korpus-Dicke",
+  body_thickness: "Body-Dicke",
   pickups_routes: "Tonabnehmer-Fräsungen",
+  pickup_mount_direct: "Direct Mount",
+  pickup_mount_frame: "Frame Mount",
   body_electronics_switch: "Elektronik-Schalter",
   body_electronics_layout: "Elektronik-Layout",
-  body_surface_treatment: "Oberflächenbehandlung",
+  body_surface_treatment: "Body Finish",
   pickguard: "Pickguard",
   battery_compartment: "Batteriefach",
-  body_extras: "Korpus-Extras",
+  body_extras: "Body-Extras",
+  body_notes: "Body-Notizen",
 
   // Neck fields
   headstock_type: "Headstock-Typ",
   neck_construction: "Hals-Konstruktion",
-  body_top: "Top",
+  body_top: "Top-Material",
   neck_wood: "Hals-Holz",
   fretboard_scale: "Mensur",
   fretboard_radius: "Griffbrett-Radius",
@@ -188,16 +192,25 @@ export const FIELD_LABELS: Record<string, string> = {
   neck_binding: "Hals Binding",
   spokewheel: "Spokewheel",
   finish_neck: "Hals-Finish",
+  headstock_finish: "Headstock-Finish",
+  headstock_logo: "Headstock Logo",
+  headstock_logo_notes: "Notizen Logo / Farbe",
   neck_extras: "Hals-Extras",
+  neck_foot: "Halsfuß",
+  customer_provides_body: "Kunde liefert Body",
+  neck_pocket: "Halstasche",
+  customer_provides_neck: "Kunde liefert Hals",
+  neck_notes: "Hals-Notizen",
 
   // Finish fields
-  finish_body: "Korpus-Finish",
+  finish_body: "Body-Finish",
   electronics: "Elektronik",
   pickups: "Pickups",
   elektronikparts: "Elektronikparts",
   hardware_color: "Hardware-Farbe",
   strap_pins: "Gurtpins",
   strings: "Saiten",
+  tuning: "Tuning",
   notes: "Notizen",
 
   // Repair fields
@@ -207,6 +220,7 @@ export const FIELD_LABELS: Record<string, string> = {
   repair_materials_needed: "Benötigte Materialien",
   repair_priority: "Priorität",
   repair_extras: "Reparatur-Extras",
+  repair_notes: "Reparatur-Notizen",
 
   // Pickguard fields
   pg_model: "Pickguard-Modell",
@@ -245,7 +259,7 @@ export const FIELD_LABELS: Record<string, string> = {
 
 // Category labels for UI display (German)
 export const CATEGORY_LABELS: Record<CategoryKey, string> = {
-  body: "Korpus",
+  body: "Body",
   neck: "Hals",
   finish: "Finish",
   oberflaeche: "Oberflächenbehandlung",

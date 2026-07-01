@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import InlineSpecEditor from '../InlineSpecEditor';
 
 type Candidate = { 
@@ -28,6 +28,31 @@ export default function OrderChooseAndEdit({
   specSuggestions?: SpecSuggestion[];
 }) {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(initialOrderId || null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedOrderId(initialOrderId || null);
+  }, [initialOrderId]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  async function persistAssignment(orderId: string | null) {
+    try {
+      const res = await fetch(`/api/mails/${mail.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      });
+      if (!res.ok) throw new Error('Fehler');
+      setToast(orderId ? `Mail zu ${orderId} zugeordnet` : 'Zuordnung aufgehoben');
+    } catch {
+      setToast('Fehler beim Speichern der Zuordnung');
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -36,7 +61,11 @@ export default function OrderChooseAndEdit({
         <select
           className="rounded-lg bg-slate-900 border border-slate-700 text-slate-200 px-2 py-1"
           value={selectedOrderId || ''}
-          onChange={(e)=> setSelectedOrderId(e.target.value || null)}
+          onChange={(e) => {
+            const val = e.target.value || null;
+            setSelectedOrderId(val);
+            persistAssignment(val);
+          }}
         >
           <option value="">Neu</option>
           {candidates.map((o) => (
@@ -45,7 +74,16 @@ export default function OrderChooseAndEdit({
             </option>
           ))}
         </select>
-        <button className="px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800" onClick={()=> setSelectedOrderId(null)}>Neu</button>
+        <button
+          className="px-2 py-1 rounded-lg border border-slate-700 hover:bg-slate-800"
+          onClick={() => {
+            setSelectedOrderId(null);
+            persistAssignment(null);
+          }}
+        >
+          Neu
+        </button>
+        {toast && <span className="text-xs text-slate-400">{toast}</span>}
       </div>
 
       <InlineSpecEditor

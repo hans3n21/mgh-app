@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
+import { auth } from '@/lib/auth';
 
 const bodySchema = z.object({
 	messageId: z.string().min(1),
@@ -9,6 +10,11 @@ const bodySchema = z.object({
 
 export async function POST(req: NextRequest) {
 	try {
+		const session = await auth();
+		if (!session?.user) {
+			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
 		const json = await req.json();
 		const { messageId, leadId } = bodySchema.parse(json);
 		// leadId existiert nicht im Mail-Model

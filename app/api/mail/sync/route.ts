@@ -1,5 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { guardedSyncMails } from '@/lib/mail/sync';
+import { auth } from '@/lib/auth';
+
+let syncInFlight: Promise<Awaited<ReturnType<typeof guardedSyncMails>>> | null = null;
+let syncMeta: {
+	running: boolean;
+	fullSync: boolean;
+	startedAt: string | null;
+	lastFinishedAt: string | null;
+	totalAccounts: number;
+	completedAccounts: number;
+	currentAccountEmail: string | null;
+	currentFolder: string | null;
+	totalProcessed: number;
+	errorCount: number;
+} = {
+	running: false,
+	fullSync: false,
+	startedAt: null,
+	lastFinishedAt: null,
+	totalAccounts: 0,
+	completedAccounts: 0,
+	currentAccountEmail: null,
+	currentFolder: null,
+	totalProcessed: 0,
+	errorCount: 0,
+};
 
 // Ensure .env.local is loaded in API routes
 if (typeof window === 'undefined' && process.env.NODE_ENV === 'development') {
@@ -11,39 +37,151 @@ if (typeof window === 'undefined' && process.env.NODE_ENV === 'development') {
 	}
 }
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
 	try {
-		console.log('🔄 API /mail/sync: Starting sync...');
+		const session = await auth();
+		if (!session) {
+			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		if (syncInFlight) {
+			return NextResponse.json(
+				{
+					error: 'Synchronisation läuft bereits',
+					advice: 'Bitte warten, bis der aktuelle Lauf abgeschlossen ist.',
+					running: true,
+					fullSync: syncMeta.fullSync,
+					startedAt: syncMeta.startedAt,
+					totalAccounts: syncMeta.totalAccounts,
+					completedAccounts: syncMeta.completedAccounts,
+					currentAccountEmail: syncMeta.currentAccountEmail,
+					currentFolder: syncMeta.currentFolder,
+					totalProcessed: syncMeta.totalProcessed,
+					errorCount: syncMeta.errorCount,
+				},
+				{ status: 409 }
+			);
+		}
+
+		// Optional: fullSync=true im Body setzen, um den Sync-Cursor zurückzusetzen (lädt alle Mails neu)
+		const body = await req.json().catch(() => ({}));
+		const fullSync = body?.fullSync === true;
+		const accountIds = Array.isArray(body?.accountIds)
+			? body.accountIds.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+			: [];
+		const folders = Array.isArray(body?.folders)
+			? body.folders.filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0)
+			: [];
+
+		console.log('🔄 API /mail/sync: Starting sync...', fullSync ? '(Full Sync – Cursor wird zurückgesetzt)' : '');
 		
-		// Check IMAP configuration
-		const required = ['IMAP_HOST','IMAP_PORT','IMAP_USER','IMAP_PASSWORD','IMAP_SECURE','IMAP_TLS_REJECT_UNAUTHORIZED'] as const;
-		const missing = required.filter((k) => !process.env[k] || String(process.env[k]).length === 0);
+		// Prüfe ob aktive Mail-Accounts vorhanden sind
+		const { prisma } = await import('@/lib/prisma');
+		const activeAccounts = await prisma.mailAccount.findMany({
+			where: {
+				isActive: true,
+				...(accountIds.length > 0 ? { id: { in: accountIds } } : {}),
+			},
+			select: { id: true, email: true, name: true },
+		});
 		
-		if (missing.length > 0) {
-			console.error('❌ API /mail/sync: Missing IMAP config:', missing);
+		if (activeAccounts.length === 0) {
+			console.error('❌ API /mail/sync: No active mail accounts found');
 			return NextResponse.json({ 
-				error: 'IMAP not configured', 
-				missing,
-				advice: 'Bitte .env.local um die fehlenden IMAP_* Variablen ergänzen.' 
+				error: 'Keine aktiven Mail-Accounts gefunden', 
+				advice: 'Bitte erstellen Sie einen Mail-Account in den Einstellungen.' 
 			}, { status: 400 });
 		}
 		
-		// Debug: Log the actual values (without password)
-		console.log('✅ API /mail/sync: IMAP config OK');
-		console.log('   Host:', process.env.IMAP_HOST);
-		console.log('   Port:', process.env.IMAP_PORT);
-		console.log('   User:', process.env.IMAP_USER);
-		console.log('   Secure:', process.env.IMAP_SECURE);
-		console.log('   TLS Reject Unauthorized:', process.env.IMAP_TLS_REJECT_UNAUTHORIZED);
-		console.log('   Password length:', process.env.IMAP_PASSWORD?.length || 0);
-		const result = await guardedSyncMails();
+		console.log(`✅ API /mail/sync: Found ${activeAccounts.length} active account(s):`, 
+			activeAccounts.map(a => `${a.name} (${a.email})`).join(', '));
+
+		// Bei Full Sync: Sync-Cursor löschen, damit alle Mails neu abgerufen werden
+		if (fullSync) {
+			const deleted = await prisma.systemSetting.deleteMany({
+				where: { key: { startsWith: 'sync:' } },
+			});
+			console.log(`🔄 API /mail/sync: Cursor zurückgesetzt (${deleted.count} Einträge gelöscht)`);
+		}
+
+		syncMeta = {
+			...syncMeta,
+			running: true,
+			fullSync,
+			startedAt: new Date().toISOString(),
+			totalAccounts: 0,
+			completedAccounts: 0,
+			currentAccountEmail: null,
+			currentFolder: null,
+			totalProcessed: 0,
+			errorCount: 0,
+		};
+
+		syncInFlight = guardedSyncMails({
+			accountIds: accountIds.length > 0 ? accountIds : undefined,
+			folders: folders.length > 0 ? folders : undefined,
+			onProgress: (progress) => {
+				syncMeta = {
+					...syncMeta,
+					totalAccounts: progress.totalAccounts,
+					completedAccounts: progress.completedAccounts,
+					currentAccountEmail: progress.currentAccountEmail,
+					currentFolder: progress.currentFolder,
+					totalProcessed: progress.totalProcessed,
+					errorCount: progress.errorCount,
+				};
+			},
+		});
+		const result = await syncInFlight;
 		console.log('✅ API /mail/sync: Sync completed:', result);
-		return NextResponse.json(result, { status: 200 });
+		return NextResponse.json(
+			{
+				...result,
+				running: false,
+				fullSync,
+				startedAt: syncMeta.startedAt,
+				finishedAt: new Date().toISOString(),
+				totalAccounts: syncMeta.totalAccounts,
+				completedAccounts: syncMeta.totalAccounts,
+				currentAccountEmail: null,
+				currentFolder: null,
+				totalProcessed: result.totalProcessed,
+				errorCount: result.errorCount,
+			},
+			{ status: result.success ? 200 : 207 }
+		);
 	} catch (err: any) {
 		console.error('❌ API /mail/sync: Error:', err);
 		const status = err?.status || 500;
 		return NextResponse.json({ error: err?.message || 'Sync failed', details: err }, { status });
+	} finally {
+		syncInFlight = null;
+		syncMeta = {
+			...syncMeta,
+			running: false,
+			lastFinishedAt: new Date().toISOString(),
+			currentAccountEmail: null,
+			currentFolder: null,
+		};
 	}
 }
 
+export async function GET() {
+	const session = await auth();
+	if (!session) {
+		return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+	}
 
+	return NextResponse.json({
+		running: syncMeta.running,
+		fullSync: syncMeta.fullSync,
+		startedAt: syncMeta.startedAt,
+		lastFinishedAt: syncMeta.lastFinishedAt,
+		totalAccounts: syncMeta.totalAccounts,
+		completedAccounts: syncMeta.completedAccounts,
+		currentAccountEmail: syncMeta.currentAccountEmail,
+		currentFolder: syncMeta.currentFolder,
+		totalProcessed: syncMeta.totalProcessed,
+		errorCount: syncMeta.errorCount,
+	});
+}

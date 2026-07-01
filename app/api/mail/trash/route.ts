@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { TRASH_FOLDER_CANDIDATES } from '@/lib/mail/folders';
 
 export async function GET(req: NextRequest) {
     const session = await auth();
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
 
     try {
         const whereClause: any = {
-            folder: 'Trash', // or 'TRASH' depending on sync normalization
+            folder: { in: TRASH_FOLDER_CANDIDATES },
         };
 
         if (customerId) whereClause.customerId = customerId;

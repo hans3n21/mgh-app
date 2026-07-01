@@ -2,8 +2,8 @@ export const AUTO_FIELDS = new Set<string>([
   'body_shape','body_material','body_thickness','neck_construction','body_top','body_top_thickness',
   'body_shaping','bridge_type','pickups_routes','body_electronics_layout','body_surface_treatment',
   'headstock_type','neck_wood','neck_shape','fretboard_scale','fretboard_radius','fretboard_material',
-  'inlays','frets','nut','side_dots','action_12th','tuners','finish_neck',
-  'finish_body','electronics','hardware_color','strap_pins','strings',
+  'inlays','frets','nut','side_dots','action_12th','tuners','finish_neck','headstock_finish',
+  'headstock_logo','neck_foot','neck_pocket','finish_body','electronics','hardware_color','strap_pins','strings','tuning',
   'objekt','oberflaeche_typ','farbe','aged','speziallack'
 ]);
 
@@ -25,16 +25,20 @@ export const AUTOFILL_OPTIONS: Record<string,string[]> = {
   headstock_type: ['Standard','Reversed','Angled','Straight','PRS-Style','Fender-Style','Gibson-Style','Custom','3+3','6-Inline','4+2'],
   neck_wood: ['Mahagoni','Ahorn','Riegelahorn','Walnuss','Ovangkol','Wenge','Rosenholz','Bubinga','Padauk','Purpleheart'],
   neck_shape: ['C','D','U','V','Asymmetric','Flat C','Round C','Modern C','Vintage V','Baseball Bat'],
-  fretboard_scale: ['635 mm (PRS)','648 mm (Fender)','628 mm (Gibson)','650 mm','25.5"','24.75"','Multi-Scale'],
-  fretboard_radius: ['7.25"','9.5"','10"','12"','14"','16"','20"','Compound 10"-16"','Compound 9.5"-14"'],
+  fretboard_scale: ['628 mm / 24.75" (Gibson)','635 mm / 25" (PRS)','648 mm / 25.5" (Fender)','650 mm / 25.59"','660 mm / 25.98"','686 mm / 27"','Multi-Scale'],
+  fretboard_radius: ['184 mm / 7.25"','241 mm / 9.5"','254 mm / 10"','305 mm / 12"','356 mm / 14"','406 mm / 16"','508 mm / 20"','Compound 254-406 mm / 10"-16"','Compound 241-356 mm / 9.5"-14"'],
   fretboard_material: ['Ebenholz','Palisander','Ahorn','Maple (Flamed)','Pau Ferro','Macassar','Ziricote','Cocobolo'],
   inlays: ['Dots','Blocks','Trapezoids','Birds','Abalone','MOP','Custom','Blank','Shark Tooth','Crown'],
   frets: ['22 Medium','22 Jumbo','24 Medium','24 Jumbo','21 Vintage','Stainless Steel','Gold','21 Medium'],
   nut: ['Bone','Tusq','Graphite','Locking','Floyd Rose','41mm','42mm','43mm','44mm','Corian'],
   side_dots: ['Standard','Abalone','MOP','Black','White','LED','Custom','None'],
-  action_12th: ['1.5 mm','1.8 mm','2.0 mm','2.2 mm','2.5 mm','Custom Setup'],
+  action_12th: ['1.5 mm / 0.059"','1.8 mm / 0.071"','2.0 mm / 0.079"','2.2 mm / 0.087"','2.5 mm / 0.098"','Custom Setup'],
   tuners: ['3L + 3R','6 Inline','4 Inline','3L + 3R Locking','6 Inline Locking','4L + 2R','Custom'],
   finish_neck: ['Oil/Wax','Satin','Gloss','Tinted Oil','Raw Wood','Vintage Tint'],
+  headstock_finish: ['Matching Headstock','Natural','Satin','Gloss','Oil/Wax','Relic','Custom'],
+  headstock_logo: ['Altes Logo','Neues Logo','Eigenes Logo'],
+  neck_foot: ['Fender-Standard','Gibson-Style','PRS-Pattern','Custom'],
+  neck_pocket: ['Fender-Standard','Gibson-Style','PRS-Pattern','Custom'],
 
   // Finish fields
   finish_body: ['Oil/Wax','Lackiert','High Gloss','Satin','Nitro','Poly','Relic','Cherry Burst','Tobacco Burst','Sunburst','Natural'],
@@ -42,6 +46,7 @@ export const AUTOFILL_OPTIONS: Record<string,string[]> = {
   hardware_color: ['Black','Chrome','Gold','Nickel','Cosmo Black','Aged Nickel','Satin Chrome','Antique Brass'],
   strap_pins: ['Standard','Schaller','Dunlop','Flush Mount','Custom'],
   strings: ['.009-.042','.010-.046','.011-.049','.012-.054','Custom Gauge','Drop Tuning Set'],
+  tuning: ['E-Standard','Eb-Standard','Drop D','Drop C','D-Standard','DADGAD','Open G','Custom'],
 
   // Oberflächenbehandlung fields
   objekt: ['Gitarre komplett','Body','Hals','Headstock','Pickguard','Hardware','Sonstiges'],

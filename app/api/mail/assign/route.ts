@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { assignMailToOrder } from '@/lib/mail/actions';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(req: NextRequest) {
     const session = await auth();
@@ -16,7 +17,19 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing mailId' }, { status: 400 });
         }
 
-        const result = await assignMailToOrder(mailId, orderId || null, customerId || null);
+        let resolvedCustomerId = customerId || null;
+        if (orderId) {
+            const order = await prisma.order.findUnique({
+                where: { id: String(orderId) },
+                select: { customerId: true },
+            });
+            if (!order) {
+                return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+            }
+            resolvedCustomerId = order.customerId;
+        }
+
+        const result = await assignMailToOrder(mailId, orderId || null, resolvedCustomerId);
 
         return NextResponse.json(result);
     } catch (error) {

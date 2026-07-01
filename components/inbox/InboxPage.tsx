@@ -1,126 +1,570 @@
 "use client";
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { detectLang } from '@/lib/lang/detectLang';
 import InboxToolbar from './InboxToolbar';
 import InboxList from './InboxList';
 import InboxPreview from './InboxPreview';
 import EmptyState from './EmptyState';
 import RowSkeleton from './RowSkeleton';
+import FolderSidebar from './FolderSidebar';
 import type { InboxFilter, Message } from './types';
 import DatasheetSidebar from './DatasheetSidebar';
-import ReplyComposer from './ReplyComposer';
+import InboxAccountSettingsPanel from './InboxAccountSettingsPanel';
+import type { MailAccountTab } from './AccountSidebar';
+import { isTrashFolderName } from '@/lib/mail/folders';
 
-function generateMockMessages(): Message[] {
-	const now = Date.now();
-	return Array.from({ length: 50 }).map((_, i) => {
-		const hasAttachments = Math.random() > 0.6;
-		const attachmentsCount = hasAttachments ? Math.floor(Math.random() * 4) + 1 : 0;
+const AUTO_SYNC_INTERVAL = 3 * 60 * 1000; // 3 Minuten
+const PAGE_SIZE = 100;
+const DEFAULT_LIST_WIDTH = 352;
+const MIN_LIST_WIDTH = 288;
+const MAX_LIST_WIDTH = 416;
+const DEFAULT_SETTINGS_WIDTH = 352;
+const MIN_SETTINGS_WIDTH = 288;
+const MAX_SETTINGS_WIDTH = 520;
+const INBOX_CACHE_TTL = 2 * 60 * 1000;
+const INBOX_SNAPSHOT_TTL = 10 * 60 * 1000;
+const INBOX_SNAPSHOT_VERSION = 1;
+const INBOX_SNAPSHOT_INDEX_KEY = 'mgh:inbox:snapshots:v1:index';
+const INBOX_SNAPSHOT_PREFIX = 'mgh:inbox:snapshot:v1:';
+const INBOX_BOOT_SNAPSHOT_KEY = 'mgh:inbox:boot-snapshot:v1';
+
+type MailCacheEntry = { messages: Message[]; hasMore: boolean; page: number; savedAt: number };
+
+function snapshotStorageKey(cacheKey: string): string {
+	let hash = 0;
+	for (let i = 0; i < cacheKey.length; i++) {
+		hash = (hash * 31 + cacheKey.charCodeAt(i)) >>> 0;
+	}
+	return `${INBOX_SNAPSHOT_PREFIX}${hash.toString(36)}`;
+}
+
+function sanitizeMessagesForSnapshot(messages: Message[]): Message[] {
+	return messages.map((mail) => ({
+		...mail,
+		attachments: [],
+		html: undefined,
+		text: null,
+		detailLoaded: false,
+		snippet: (mail.snippet || '').slice(0, 200),
+	}));
+}
+
+function readInboxSnapshot(cacheKey: string): MailCacheEntry | null {
+	if (typeof window === 'undefined') return null;
+	try {
+		const raw = window.sessionStorage.getItem(snapshotStorageKey(cacheKey));
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (parsed?.version !== INBOX_SNAPSHOT_VERSION) return null;
+		if (!Array.isArray(parsed.messages)) return null;
+		if (typeof parsed.savedAt !== 'number' || Date.now() - parsed.savedAt > INBOX_SNAPSHOT_TTL) return null;
 		return {
-			id: `msg_${i + 1}`,
-			subject: `Anfrage ${i + 1} – Angebot und Lieferzeit`,
-			fromName: `Kontakt ${i + 1}`,
-			fromEmail: `kontakt${i + 1}@example.com`,
-			createdAt: new Date(now - i * 3600_000).toISOString(),
-			hasAttachments,
-			attachmentsCount,
-			attachments: hasAttachments
-				? Array.from({ length: attachmentsCount }).map((__, j) => ({
-						id: `att_${i + 1}_${j + 1}`,
-						filename: `bild_${j + 1}.jpg`,
-						mimeType: 'image/jpeg',
-						url: `/api/attachments/${i + 1}_${j + 1}`,
-				  }))
-				: [],
-			lang: Math.random() > 0.2 ? 'DE' : 'EN',
-			assignedTo: Math.random() > 0.5 ? `ORD-${1000 + i}` : null,
-			isRead: Math.random() > 0.5,
-			snippet: 'Hallo, wir interessieren uns für Ihr Produkt. Können Sie uns ein Angebot und die aktuelle Lieferzeit senden?',
-			html: `<p>Hallo,</p><p>wir interessieren uns für Ihr Produkt. Können Sie uns ein Angebot und die aktuelle Lieferzeit senden?</p><p>Beste Grüße</p>`,
-			threadId: `thr_${Math.floor(i / 3) + 1}`,
-			leadId: Math.random() > 0.8 ? `lead_${200 + i}` : null,
+			messages: sanitizeMessagesForSnapshot(parsed.messages),
+			hasMore: Boolean(parsed.hasMore),
+			page: Number(parsed.page || 1),
+			savedAt: parsed.savedAt,
 		};
-	});
+	} catch {
+		return null;
+	}
+}
+
+function writeInboxSnapshot(cacheKey: string, entry: MailCacheEntry) {
+	if (typeof window === 'undefined') return;
+	try {
+		const key = snapshotStorageKey(cacheKey);
+		const payload = {
+			version: INBOX_SNAPSHOT_VERSION,
+			messages: sanitizeMessagesForSnapshot(entry.messages),
+			hasMore: entry.hasMore,
+			page: entry.page,
+			savedAt: entry.savedAt,
+		};
+		window.sessionStorage.setItem(key, JSON.stringify(payload));
+
+		const rawIndex = window.sessionStorage.getItem(INBOX_SNAPSHOT_INDEX_KEY);
+		const existingIndex = rawIndex ? JSON.parse(rawIndex) : [];
+		const index = Array.isArray(existingIndex) ? existingIndex.filter((item) => item !== key) : [];
+		index.unshift(key);
+		for (const staleKey of index.slice(12)) {
+			window.sessionStorage.removeItem(staleKey);
+		}
+		window.sessionStorage.setItem(INBOX_SNAPSHOT_INDEX_KEY, JSON.stringify(index.slice(0, 12)));
+	} catch {
+		// Browser storage is a speed-up only. If it fails, the inbox still loads from the API.
+	}
+}
+
+function readInboxBootSnapshot(): MailCacheEntry | null {
+	if (typeof window === 'undefined') return null;
+	try {
+		const raw = window.sessionStorage.getItem(INBOX_BOOT_SNAPSHOT_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (parsed?.version !== INBOX_SNAPSHOT_VERSION) return null;
+		if (!Array.isArray(parsed.messages)) return null;
+		if (typeof parsed.savedAt !== 'number' || Date.now() - parsed.savedAt > INBOX_SNAPSHOT_TTL) return null;
+		return {
+			messages: sanitizeMessagesForSnapshot(parsed.messages),
+			hasMore: Boolean(parsed.hasMore),
+			page: Number(parsed.page || 1),
+			savedAt: parsed.savedAt,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function writeInboxBootSnapshot(entry: MailCacheEntry) {
+	if (typeof window === 'undefined') return;
+	try {
+		window.sessionStorage.setItem(INBOX_BOOT_SNAPSHOT_KEY, JSON.stringify({
+			version: INBOX_SNAPSHOT_VERSION,
+			messages: sanitizeMessagesForSnapshot(entry.messages),
+			hasMore: entry.hasMore,
+			page: entry.page,
+			savedAt: entry.savedAt,
+		}));
+	} catch {
+		// Optional start-up speed-up only.
+	}
+}
+
+function clearInboxSnapshots() {
+	if (typeof window === 'undefined') return;
+	try {
+		const rawIndex = window.sessionStorage.getItem(INBOX_SNAPSHOT_INDEX_KEY);
+		const index = rawIndex ? JSON.parse(rawIndex) : [];
+		if (Array.isArray(index)) {
+			for (const key of index) {
+				if (typeof key === 'string' && key.startsWith(INBOX_SNAPSHOT_PREFIX)) {
+					window.sessionStorage.removeItem(key);
+				}
+			}
+		}
+		window.sessionStorage.removeItem(INBOX_SNAPSHOT_INDEX_KEY);
+		window.sessionStorage.removeItem(INBOX_BOOT_SNAPSHOT_KEY);
+	} catch {
+		// Ignore snapshot cleanup errors; stale snapshots expire quickly.
+	}
+}
+
+function mapMailToMessage(m: any, accountLabels: Record<string, string>, detailLoaded = true): Message {
+	const attachments = (m.attachments || []).map((a: any) => ({
+		id: a.id,
+		filename: a.filename,
+		mimeType: a.mimeType || null,
+		url: `/api/attachments/${a.id}`,
+		cid: a.cid || null,
+		size: a.size,
+	}));
+	const attachmentsCount =
+		typeof m.attachmentsCount === 'number'
+			? m.attachmentsCount
+			: attachments.length;
+
+	return {
+		id: m.id,
+		subject: m.subject || 'Ohne Betreff',
+		fromName: m.fromName || m.fromEmail || '–',
+		fromEmail: m.fromEmail || '',
+		accountId: m.accountId || null,
+		accountLabel: m.accountId ? (accountLabels[m.accountId] || null) : null,
+		toName: m.toName || null,
+		toEmail: m.toEmail || null,
+		folder: m.folder || null,
+		createdAt: m.date || new Date().toISOString(),
+		hasAttachments: m.hasAttachments !== undefined ? !!m.hasAttachments : attachmentsCount > 0,
+		attachmentsCount,
+		attachments,
+		lang: detectLang((m.text || m.html || '')),
+		assignedTo: m.orderId || null,
+		isRead: m.isRead !== undefined ? m.isRead : false,
+		snippet: (m.text || '').slice(0, 200),
+		text: m.text || null,
+		html: m.html || undefined,
+		threadId: m.threadId || undefined,
+		leadId: m.leadId || null,
+		threadCount: m.threadCount || undefined,
+		threadHasUnread: m.threadHasUnread || undefined,
+		detailLoaded,
+	};
 }
 
 export default function InboxPage() {
+	const searchParams = useSearchParams();
 	const [loading, setLoading] = useState(true);
 	const [messages, setMessages] = useState<Message[]>([]);
+	const [hasMore, setHasMore] = useState(false);
+	const [loadingMore, setLoadingMore] = useState(false);
+	const [page, setPage] = useState(1);
 	const [q, setQ] = useState('');
+	const [debouncedQ, setDebouncedQ] = useState('');
 	const [filter, setFilter] = useState<InboxFilter>('all');
+	const [folder, setFolder] = useState<string>('INBOX');
+	const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+	const [focusKey, setFocusKey] = useState<string>('all');
+	const [accounts, setAccounts] = useState<MailAccountTab[]>([]);
+	const [accountsLoading, setAccountsLoading] = useState(true);
+	const [accountsError, setAccountsError] = useState<string | null>(null);
+	const [settingsAccountId, setSettingsAccountId] = useState<string | null>(null);
+	const [unreadPerAccount, setUnreadPerAccount] = useState<Record<string, number>>({});
+	const [searchIncludeTrash, setSearchIncludeTrash] = useState(true);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [isClosingSettings, setIsClosingSettings] = useState(false);
+	const settingsCloseTimerRef = useRef<number | null>(null);
+	const settingsMounted = !!settingsAccountId;
+	const settingsOpen = settingsMounted && !isClosingSettings;
 	const lastClickedRef = useRef<string | null>(null);
 	const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+	const [listOpen, setListOpen] = useState<boolean>(true);
+	const [foldersOpen, setFoldersOpen] = useState<boolean>(false);
 	const [replyOpen, setReplyOpen] = useState<boolean>(false);
-	
+	const [syncing, setSyncing] = useState(false);
+	const [remoteSyncRunning, setRemoteSyncRunning] = useState(false);
+	const [remoteFullSyncRunning, setRemoteFullSyncRunning] = useState(false);
+	const [remoteSyncTotalAccounts, setRemoteSyncTotalAccounts] = useState(0);
+	const [remoteSyncCompletedAccounts, setRemoteSyncCompletedAccounts] = useState(0);
+	const [remoteSyncCurrentFolder, setRemoteSyncCurrentFolder] = useState<string | null>(null);
+	const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
+	const [listWidth, setListWidth] = useState<number>(DEFAULT_LIST_WIDTH);
+	const [isResizingList, setIsResizingList] = useState(false);
+	const [settingsWidth, setSettingsWidth] = useState<number>(DEFAULT_SETTINGS_WIDTH);
+	const [isResizingSettings, setIsResizingSettings] = useState(false);
+	const [composeHandled, setComposeHandled] = useState(false);
+	const mailCacheRef = useRef(new Map<string, MailCacheEntry>());
+	const listAbortRef = useRef<AbortController | null>(null);
+	const listRequestSeqRef = useRef(0);
+	const bootSnapshotAppliedRef = useRef(false);
+	const detailRequestIdsRef = useRef(new Set<string>());
+	const accountLabelMapRef = useRef<Record<string, string>>({});
+	const composeTo = useMemo(() => (searchParams.get('to') || '').trim().toLowerCase(), [searchParams]);
 
+	const accountLabelMap = useMemo(() => {
+		return accounts.reduce<Record<string, string>>((acc, account) => {
+			acc[account.id] = account.profile?.displayName || account.name || account.email;
+			return acc;
+		}, {});
+	}, [accounts]);
 
-	// SSE subscribe
+	const focusedAccountIds = useMemo(() => {
+		if (focusKey === 'all') return accounts.map((a) => a.id);
+		return accounts.some((a) => a.id === focusKey) ? [focusKey] : [];
+	}, [focusKey, accounts]);
+	const focusedAccountIdsKey = focusedAccountIds.join(',');
+
+	const focusLabel = useMemo(() => {
+		if (focusKey === 'all') return 'Alle Eingänge';
+		return accountLabelMap[focusKey] || 'Postfach';
+	}, [focusKey, accountLabelMap]);
+
 	useEffect(() => {
-		const ev = new EventSource('/api/inbox/events');
-		ev.addEventListener('message.created', (e: MessageEvent) => {
-			try {
-				const payload = JSON.parse((e as any).data);
-				// refetch latest mail or minimally inject placeholder
-				setMessages((prev) => [{
-					id: payload.id,
-					subject: 'Neue Nachricht',
-					fromName: '–',
-					fromEmail: '',
-					createdAt: payload.createdAt,
-					hasAttachments: false,
-					attachmentsCount: 0,
-					lang: 'DE',
-					assignedTo: null,
-					isRead: false,
-					snippet: '',
-					threadId: payload.threadId,
-				}, ...prev]);
-			} catch {}
+		accountLabelMapRef.current = accountLabelMap;
+		setMessages((prev) => prev.map((mail) => ({
+			...mail,
+			accountLabel: mail.accountId ? (accountLabelMap[mail.accountId] || null) : null,
+		})));
+		mailCacheRef.current.forEach((entry, key) => {
+			mailCacheRef.current.set(key, {
+				...entry,
+				messages: entry.messages.map((mail) => ({
+					...mail,
+					accountLabel: mail.accountId ? (accountLabelMap[mail.accountId] || null) : null,
+				})),
+			});
 		});
-		return () => ev.close();
+	}, [accountLabelMap]);
+
+	// Debounce: API-Aufruf erst 350ms nach dem letzten Tastendruck
+	useEffect(() => {
+		const t = setTimeout(() => setDebouncedQ(q), 350);
+		return () => clearTimeout(t);
+	}, [q]);
+
+	useEffect(() => {
+		const snapshot = readInboxBootSnapshot();
+		if (!snapshot || snapshot.messages.length === 0) return;
+		bootSnapshotAppliedRef.current = true;
+		setMessages(snapshot.messages);
+		setHasMore(snapshot.hasMore);
+		setPage(snapshot.page);
+		setLoading(false);
 	}, []);
 
-	useEffect(() => {
-		let active = true;
-		(async () => {
+	const fetchMails = useCallback(async (showLoading = false, pageNumber = 1, append = false) => {
+		const cacheKey = [
+			folder,
+			debouncedQ.trim(),
+			searchIncludeTrash ? 'trash' : 'no-trash',
+			filter,
+			focusedAccountIdsKey,
+		].join('|');
+		const requestId = ++listRequestSeqRef.current;
+		listAbortRef.current?.abort();
+		const controller = new AbortController();
+		listAbortRef.current = controller;
+		const canApply = () => requestId === listRequestSeqRef.current && !controller.signal.aborted;
+		const withCurrentAccountLabels = (items: Message[]) => items.map((mail) => ({
+			...mail,
+			accountLabel: mail.accountId ? (accountLabelMapRef.current[mail.accountId] || null) : null,
+		}));
+
+		const cachedEntry = !append && pageNumber === 1 ? mailCacheRef.current.get(cacheKey) : null;
+		const cached = cachedEntry && Date.now() - cachedEntry.savedAt <= INBOX_CACHE_TTL ? cachedEntry : null;
+		if (cachedEntry && !cached) mailCacheRef.current.delete(cacheKey);
+		const snapshot = !cached && !append && pageNumber === 1 ? readInboxSnapshot(cacheKey) : null;
+		const warmEntry = cached || snapshot;
+		if (warmEntry) {
+			setMessages(withCurrentAccountLabels(warmEntry.messages));
+			setHasMore(warmEntry.hasMore);
+			setPage(warmEntry.page);
+			setLoading(false);
+		} else if (showLoading && !append) {
 			setLoading(true);
-			try {
-				const res = await fetch('/api/mails');
-				if (!active) return;
-				if (res.ok) {
-					const mails = await res.json();
-											const mapped: Message[] = mails.map((m: any) => ({
-						id: m.id,
-						subject: m.subject || 'Ohne Betreff',
-						fromName: m.fromName || m.fromEmail || '–',
-						fromEmail: m.fromEmail || '',
-						createdAt: m.date || new Date().toISOString(),
-						hasAttachments: m.hasAttachments !== undefined ? !!m.hasAttachments : (m.attachments?.length || 0) > 0,
-						attachmentsCount: (m.attachments?.length) || 0,
-						attachments: (m.attachments || []).map((a: any) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType || null, url: `/api/attachments/${a.id}` })),
-						lang: detectLang((m.text || m.html || '')), 
-						assignedTo: m.orderId || null,
-						isRead: m.isRead !== undefined ? m.isRead : false, // Default to unread (isRead: false) if not specified
-						snippet: (m.text || '').slice(0, 200),
-						html: m.html || undefined,
-						threadId: m.threadId || undefined,
-						leadId: m.leadId || null,
-					}));
-					setMessages(mapped);
-				}
-			} finally {
-				if (active) setLoading(false);
+		}
+		if (!append) setLoadingMore(false);
+		if (append) setLoadingMore(true);
+		try {
+			const trimmedQ = debouncedQ.trim();
+			const isSearching = trimmedQ.length > 0;
+			const params = new URLSearchParams({ group: 'thread' });
+			params.set('summary', '1');
+			params.set('paginate', '1');
+			params.set('page', String(pageNumber));
+			params.set('limit', String(PAGE_SIZE));
+			params.set('filter', filter);
+			if (focusedAccountIdsKey.length > 0) {
+				params.set('accountIds', focusedAccountIdsKey);
 			}
-		})();
+			if (isSearching) {
+				params.set('q', trimmedQ);
+				params.set('folder', 'all');
+				if (searchIncludeTrash) params.set('includeTrash', '1');
+			} else {
+				params.set('folder', folder);
+			}
+			const res = await fetch(`/api/mails?${params}`, { signal: controller.signal });
+			if (!canApply()) return;
+			if (res.ok) {
+				const data = await res.json();
+				if (!canApply()) return;
+				const mails = Array.isArray(data) ? data : (data.items || []);
+				const next: Message[] = mails.map((mail: any) => mapMailToMessage(mail, accountLabelMapRef.current, false));
+				setMessages((prev) => {
+					if (!append) return next;
+					const seen = new Set(prev.map((m) => m.id));
+					const appended = next.filter((m) => !seen.has(m.id));
+					return [...prev, ...appended];
+				});
+				const nextHasMore = Array.isArray(data) ? false : !!data.hasMore;
+				setHasMore(nextHasMore);
+				setPage(pageNumber);
+				if (!append && pageNumber === 1) {
+					const cacheEntry: MailCacheEntry = {
+						messages: next,
+						hasMore: nextHasMore,
+						page: pageNumber,
+						savedAt: Date.now(),
+					};
+					mailCacheRef.current.set(cacheKey, cacheEntry);
+					writeInboxSnapshot(cacheKey, cacheEntry);
+					if (focusKey === 'all' && folder === 'INBOX' && debouncedQ.trim() === '' && filter === 'all') {
+						writeInboxBootSnapshot(cacheEntry);
+					}
+					if (mailCacheRef.current.size > 20) {
+						const oldestKey = Array.from(mailCacheRef.current.entries())
+							.sort((a, b) => a[1].savedAt - b[1].savedAt)[0]?.[0];
+						if (oldestKey) mailCacheRef.current.delete(oldestKey);
+					}
+				}
+			}
+		} catch (error: any) {
+			if (error?.name !== 'AbortError') {
+				// Keep the warm snapshot visible if the background refresh fails.
+			}
+		} finally {
+			if (canApply()) {
+				if (!append) setLoading(false);
+				if (append) setLoadingMore(false);
+				if (listAbortRef.current === controller) listAbortRef.current = null;
+			}
+		}
+	}, [folder, debouncedQ, searchIncludeTrash, filter, focusedAccountIdsKey, focusKey]);
+
+	const fetchUnreadCounts = useCallback(async () => {
+		try {
+			const res = await fetch('/api/mails/unread-count');
+			if (res.ok) {
+				const data = await res.json();
+				if (data.perAccount) setUnreadPerAccount(data.perAccount);
+			}
+		} catch { /* ignore */ }
+	}, []);
+
+	const fetchSyncStatus = useCallback(async () => {
+		try {
+			const res = await fetch('/api/mail/sync');
+			if (!res.ok) return;
+			const data = await res.json();
+			setRemoteSyncRunning(Boolean(data?.running));
+			setRemoteFullSyncRunning(Boolean(data?.running && data?.fullSync));
+			setRemoteSyncTotalAccounts(Number(data?.totalAccounts || 0));
+			setRemoteSyncCompletedAccounts(Number(data?.completedAccounts || 0));
+			setRemoteSyncCurrentFolder(data?.currentFolder || null);
+		} catch {
+			// ignore network glitches
+		}
+	}, []);
+
+	const loadAccounts = useCallback(async () => {
+		setAccountsLoading(true);
+		setAccountsError(null);
+		try {
+			const res = await fetch('/api/mail-accounts');
+			if (!res.ok) throw new Error(`mail-accounts ${res.status}`);
+			const data = await res.json();
+			const active = Array.isArray(data) ? data.filter((a: MailAccountTab) => a.isActive) : [];
+			setAccounts(active);
+			if (active.length === 0) {
+				setAccountsError('Keine aktiven Postfaecher gefunden.');
+				return;
+			}
+
+			const def = active.find((a: MailAccountTab) => a.isDefault) ?? active[0];
+			setActiveAccountId((prev) => prev ?? def.id);
+			setFocusKey((prev) => prev || 'all');
+
+			Promise.all(active.map((a: MailAccountTab) =>
+				fetch(`/api/mail-accounts/${a.id}/profile`)
+					.then((resp) => (resp.ok ? resp.json() : null))
+					.then((profile) => ({ id: a.id, profile }))
+			)).then((profiles) => {
+				setAccounts((prev) => prev.map((account) => {
+					const profileEntry = profiles.find((item) => item.id === account.id);
+					return profileEntry ? { ...account, profile: profileEntry.profile } : account;
+				}));
+			}).catch(() => {});
+		} catch {
+			setAccounts([]);
+			setAccountsError('Postfaecher konnten nicht geladen werden.');
+		} finally {
+			setAccountsLoading(false);
+		}
+	}, []);
+
+	// Load accounts and profiles
+	useEffect(() => {
+		void loadAccounts();
+		fetchUnreadCounts();
+	}, [loadAccounts, fetchUnreadCounts]);
+
+	const doSync = useCallback(async () => {
+		if (syncing) return;
+		setSyncing(true);
+		try {
+			const syncScope = {
+				accountIds: focusedAccountIdsKey ? focusedAccountIdsKey.split(',').filter(Boolean) : [],
+				folders: [folder || 'INBOX'],
+			};
+			const res = await fetch('/api/mail/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(syncScope),
+			});
+			if (res.status === 409) {
+				const data = await res.json().catch(() => null);
+				setRemoteSyncRunning(Boolean(data?.running));
+				setRemoteFullSyncRunning(Boolean(data?.running && data?.fullSync));
+				setRemoteSyncTotalAccounts(Number(data?.totalAccounts || 0));
+				setRemoteSyncCompletedAccounts(Number(data?.completedAccounts || 0));
+				setRemoteSyncCurrentFolder(data?.currentFolder || null);
+				return;
+			}
+			mailCacheRef.current.clear();
+			clearInboxSnapshots();
+			await fetchMails();
+			await fetchUnreadCounts();
+			await fetchSyncStatus();
+			setLastSyncTime(new Date());
+		} catch { /* Sync-Fehler still ignorieren */ }
+		finally { setSyncing(false); }
+	}, [syncing, focusedAccountIdsKey, folder, fetchMails, fetchUnreadCounts, fetchSyncStatus]);
+
+	const closeSettingsPanel = useCallback(() => {
+		if (!settingsMounted || isClosingSettings) return;
+		setIsClosingSettings(true);
+		if (settingsCloseTimerRef.current) {
+			window.clearTimeout(settingsCloseTimerRef.current);
+		}
+		settingsCloseTimerRef.current = window.setTimeout(() => {
+			setSettingsAccountId(null);
+			setIsClosingSettings(false);
+		}, 180);
+	}, [settingsMounted, isClosingSettings]);
+
+	// SSE: neue Mails live nachladen
+	useEffect(() => {
+		const ev = new EventSource('/api/inbox/events');
+		ev.addEventListener('message.created', async (e: MessageEvent) => {
+			try {
+				JSON.parse(e.data);
+				// Re-fetch current inbox view to respect active folder/account/filter,
+				// instead of blindly appending event mails from other scopes.
+				mailCacheRef.current.clear();
+				clearInboxSnapshots();
+				await fetchMails(false, 1, false);
+				await fetchUnreadCounts();
+			} catch { /* SSE-Fehler ignorieren */ }
+		});
+		return () => ev.close();
+	}, [fetchMails, fetchUnreadCounts]);
+
+	// Initial load
+	useEffect(() => {
+		if (accountsLoading) {
+			if (!bootSnapshotAppliedRef.current) setLoading(true);
+			return;
+		}
+		fetchMails(true, 1, false);
+	}, [accountsLoading, fetchMails]);
+
+	useEffect(() => {
 		return () => {
-			active = false;
+			listAbortRef.current?.abort();
 		};
 	}, []);
 
+	// Auto-Sync alle 3 Minuten
+	useEffect(() => {
+		const timer = setInterval(() => { doSync(); }, AUTO_SYNC_INTERVAL);
+		return () => clearInterval(timer);
+	}, [doSync]);
+
+	// Polling für laufende (auch extern gestartete) Synchronisation.
+	useEffect(() => {
+		void fetchSyncStatus();
+		const timer = setInterval(() => { void fetchSyncStatus(); }, 5000);
+		return () => clearInterval(timer);
+	}, [fetchSyncStatus]);
+
+	useEffect(() => {
+		setSelectedId(null);
+	}, [folder, focusKey]);
+
+	useEffect(() => {
+		setComposeHandled(false);
+	}, [composeTo]);
+
 	const filtered = useMemo(() => {
 		let arr = messages;
-		if (q) {
+		// When debouncedQ is set, the server already filtered — no client-side re-filter needed.
+		// Only apply local filter for instant feedback while still typing (q !== debouncedQ).
+		if (q && q === debouncedQ) {
+			// server already filtered, trust results
+		} else if (q) {
+			// Still debouncing: apply quick client-side filter on already-loaded messages
 			const term = q.toLowerCase();
 			arr = arr.filter((m) =>
 				(m.subject && m.subject.toLowerCase().includes(term)) ||
@@ -130,10 +574,14 @@ export default function InboxPage() {
 		}
 		switch (filter) {
 			case 'assigned':
+			case 'with_order':
 				arr = arr.filter((m) => !!m.assignedTo);
 				break;
 			case 'unassigned':
 				arr = arr.filter((m) => !m.assignedTo);
+				break;
+			case 'unread':
+				arr = arr.filter((m) => !m.isRead || !!m.threadHasUnread);
 				break;
 			case 'with_attachments':
 				arr = arr.filter((m) => m.hasAttachments);
@@ -141,15 +589,84 @@ export default function InboxPage() {
 			default:
 		}
 		return arr;
-	}, [messages, q, filter]);
+	}, [messages, q, debouncedQ, filter]);
 
 	useEffect(() => {
-		if (!selectedId && filtered.length > 0) {
+		if (!composeTo || composeHandled || filtered.length === 0) return;
+		const match = filtered.find((m) => {
+			const from = (m.fromEmail || '').trim().toLowerCase();
+			const to = (m.toEmail || '').trim().toLowerCase();
+			return from === composeTo || to === composeTo;
+		});
+		if (!match) return;
+		setSelectedId(match.id);
+		setReplyOpen(true);
+		setListOpen(true);
+		setComposeHandled(true);
+		if (typeof window !== 'undefined') {
+			const url = new URL(window.location.href);
+			url.searchParams.delete('compose');
+			url.searchParams.delete('to');
+			window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+		}
+	}, [composeTo, composeHandled, filtered]);
+
+	const filterCounts = useMemo(() => {
+		return {
+			all: messages.length,
+			unread: messages.filter((m) => !m.isRead || !!m.threadHasUnread).length,
+			with_order: messages.filter((m) => !!m.assignedTo).length,
+			unassigned: messages.filter((m) => !m.assignedTo).length,
+			with_attachments: messages.filter((m) => !!m.hasAttachments).length,
+		};
+	}, [messages]);
+
+	useEffect(() => {
+		if (filtered.length === 0) {
+			if (selectedId) setSelectedId(null);
+			return;
+		}
+		if (!selectedId || !filtered.some((mail) => mail.id === selectedId)) {
 			setSelectedId(filtered[0].id);
 		}
 	}, [filtered, selectedId]);
 
 	const selected = useMemo(() => filtered.find((m) => m.id === selectedId) || null, [filtered, selectedId]);
+
+	useEffect(() => {
+		if (!selectedId) return;
+		const current = messages.find((m) => m.id === selectedId);
+		if (!current || current.detailLoaded || detailRequestIdsRef.current.has(selectedId)) return;
+
+		let cancelled = false;
+		detailRequestIdsRef.current.add(selectedId);
+
+		(async () => {
+			try {
+				const res = await fetch(`/api/mails/${encodeURIComponent(selectedId)}`);
+				if (!res.ok) return;
+				const data = await res.json();
+				if (cancelled) return;
+				const detailed = mapMailToMessage(data, accountLabelMap, true);
+				setMessages((prev) => prev.map((mail) => (mail.id === selectedId ? { ...mail, ...detailed } : mail)));
+				mailCacheRef.current.forEach((entry, key) => {
+					if (!entry.messages.some((mail) => mail.id === selectedId)) return;
+					mailCacheRef.current.set(key, {
+						...entry,
+						messages: entry.messages.map((mail) => (mail.id === selectedId ? { ...mail, ...detailed } : mail)),
+					});
+				});
+			} catch {
+				// Detail-Nachladen ist eine Komfortverbesserung; die Listenansicht bleibt nutzbar.
+			} finally {
+				detailRequestIdsRef.current.delete(selectedId);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [selectedId, messages, accountLabelMap]);
 
 	function toggleSelect(id: string, withShift: boolean) {
 		setSelectedIds((prev) => {
@@ -173,6 +690,8 @@ export default function InboxPage() {
 		const ids = Array.from(selectedIds);
 		if (ids.length === 0) return;
 		setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, isRead: read } : m)));
+		mailCacheRef.current.clear();
+		clearInboxSnapshots();
 		await fetch('/api/inbox/update-meta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageIds: ids, meta: { read } }) });
 	}
 
@@ -180,6 +699,8 @@ export default function InboxPage() {
 		const ids = Array.from(selectedIds);
 		if (ids.length === 0) return;
 		setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, starred } : m)));
+		mailCacheRef.current.clear();
+		clearInboxSnapshots();
 		await fetch('/api/inbox/update-meta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageIds: ids, meta: { starred } }) });
 	}
 
@@ -187,14 +708,37 @@ export default function InboxPage() {
 		const ids = Array.from(selectedIds);
 		if (ids.length === 0) return;
 		setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, tags: Array.from(new Set([...(m.tags || []), tag])) } : m)));
+		mailCacheRef.current.clear();
+		clearInboxSnapshots();
 		await fetch('/api/inbox/update-meta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageIds: ids, meta: { tags: [tag] } }) });
 	}
 
+	const handleMessageMoved = useCallback((mailId: string, movedFolder: string) => {
+		const keepInCurrentView = isTrashFolderName(folder) || (q.trim().length > 0 && searchIncludeTrash);
+		mailCacheRef.current.clear();
+		clearInboxSnapshots();
+		detailRequestIdsRef.current.delete(mailId);
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			next.delete(mailId);
+			return next;
+		});
+		setMessages((prev) => {
+			const updated = prev.map((m) => (m.id === mailId ? { ...m, folder: movedFolder } : m));
+			return keepInCurrentView ? updated : updated.filter((m) => m.id !== mailId);
+		});
+		if (!keepInCurrentView) {
+			setSelectedId((prev) => (prev === mailId ? null : prev));
+		}
+		void fetchUnreadCounts();
+	}, [fetchUnreadCounts, folder, q, searchIncludeTrash]);
+
+	// Hotkeys
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
-			if (e.target && (e.target as HTMLElement).tagName.toLowerCase() === 'input') return;
+			const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+			if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable) return;
 			if (e.key === 'm') bulkMarkRead(true);
-			if (e.key === 'a') {/* open assign UI later */}
 			if (e.key === 't') bulkTag('tag');
 			if (e.key === 's') bulkStar(true);
 		}
@@ -202,9 +746,10 @@ export default function InboxPage() {
 		return () => window.removeEventListener('keydown', onKey);
 	}, [selectedIds]);
 
-	// keyboard: Enter to open preview focus
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
+			const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+			if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable) return;
 			if (e.key === 'Enter' && selectedId) {
 				const el = document.getElementById('inbox-preview');
 				(el as HTMLElement | null)?.focus();
@@ -214,35 +759,221 @@ export default function InboxPage() {
 		return () => window.removeEventListener('keydown', onKey);
 	}, [selectedId]);
 
+	// Nach dem Senden: Liste + Thread aktualisieren
+	useEffect(() => {
+		function onMailSent() {
+			mailCacheRef.current.clear();
+			clearInboxSnapshots();
+			fetchMails();
+		}
+		window.addEventListener('mail-sent', onMailSent);
+		return () => window.removeEventListener('mail-sent', onMailSent);
+	}, [fetchMails]);
+
+	// Einstellungen-Panel bleibt offen bis der User explizit auf ✕ klickt.
+
+	useEffect(() => {
+		if (!isResizingList) return;
+		const previousUserSelect = document.body.style.userSelect;
+		document.body.style.userSelect = 'none';
+		const onPointerMove = (event: PointerEvent) => {
+			setListWidth((prev) => {
+				const next = prev + event.movementX;
+				return Math.max(MIN_LIST_WIDTH, Math.min(MAX_LIST_WIDTH, next));
+			});
+		};
+		const onPointerUp = () => setIsResizingList(false);
+		window.addEventListener('pointermove', onPointerMove);
+		window.addEventListener('pointerup', onPointerUp, { once: true });
+		return () => {
+			document.body.style.userSelect = previousUserSelect;
+			window.removeEventListener('pointermove', onPointerMove);
+			window.removeEventListener('pointerup', onPointerUp);
+		};
+	}, [isResizingList]);
+
+	useEffect(() => {
+		if (!isResizingSettings) return;
+		const previousUserSelect = document.body.style.userSelect;
+		document.body.style.userSelect = 'none';
+		const onPointerMove = (event: PointerEvent) => {
+			setSettingsWidth((prev) => {
+				const next = prev + event.movementX;
+				return Math.max(MIN_SETTINGS_WIDTH, Math.min(MAX_SETTINGS_WIDTH, next));
+			});
+		};
+		const onPointerUp = () => setIsResizingSettings(false);
+		window.addEventListener('pointermove', onPointerMove);
+		window.addEventListener('pointerup', onPointerUp, { once: true });
+		return () => {
+			document.body.style.userSelect = previousUserSelect;
+			window.removeEventListener('pointermove', onPointerMove);
+			window.removeEventListener('pointerup', onPointerUp);
+		};
+	}, [isResizingSettings]);
+
+	useEffect(() => {
+		return () => {
+			if (settingsCloseTimerRef.current) {
+				window.clearTimeout(settingsCloseTimerRef.current);
+			}
+		};
+	}, []);
+
 	return (
 		<div className="h-full bg-slate-900 text-slate-200 border border-slate-800 rounded-lg overflow-hidden flex flex-col" aria-busy={loading} aria-live="polite">
-			<InboxToolbar q={q} onChangeQ={setQ} filter={filter} onChangeFilter={setFilter} />
+			<InboxToolbar
+				q={q}
+				onChangeQ={(val) => { setQ(val); }}
+				filter={filter} onChangeFilter={setFilter}
+				syncing={syncing || remoteSyncRunning}
+				syncLabel={
+					remoteSyncRunning
+						? `${remoteFullSyncRunning ? 'Vollsync' : 'Sync'} läuft${remoteSyncCurrentFolder ? ` · ${remoteSyncCurrentFolder}` : ''}…`
+						: undefined
+				}
+				syncProgress={{
+					completedAccounts: remoteSyncCompletedAccounts,
+					totalAccounts: remoteSyncTotalAccounts,
+				}}
+				onSync={doSync}
+				lastSyncTime={lastSyncTime}
+				searchActive={q.trim().length > 0}
+				searchIncludeTrash={searchIncludeTrash}
+				onToggleIncludeTrash={() => setSearchIncludeTrash(v => !v)}
+				filterCounts={filterCounts}
+				focusLabel={focusLabel}
+			/>
 			<div className="flex-1 flex overflow-hidden min-h-0">
-				<div className="w-[24rem] min-w-[20rem] max-w-[26rem] resize-x overflow-auto border-r border-slate-800 h-full">
-					{loading ? (
-						<div role="status" aria-label="Laden" className="divide-y divide-slate-800">
-							{Array.from({ length: 8 }).map((_, i) => (
-								<RowSkeleton key={i} />
-							))}
+				{/* Ordner-Sidebar links */}
+				<FolderSidebar
+					activeAccountId={focusedAccountIds[0] || activeAccountId}
+					activeFolder={folder}
+					onSelectFolder={(f) => { setFolder(f); setSelectedId(null); }}
+					accounts={accounts}
+					accountsLoading={accountsLoading}
+					accountsError={accountsError}
+					focusKey={focusKey}
+					foldersOpen={foldersOpen}
+					onSelectFocus={(key) => {
+						if (key === focusKey) {
+							setFoldersOpen((prev) => (key === 'all' ? false : !prev));
+							return;
+						}
+						setFocusKey(key);
+						if (key !== 'all') setActiveAccountId(key);
+						setFolder('INBOX');
+						setSelectedId(null);
+						setFoldersOpen(key !== 'all');
+					}}
+					onOpenSettings={(accountId) => {
+						if (settingsAccountId === accountId && settingsMounted && !isClosingSettings) {
+							closeSettingsPanel();
+							return;
+						}
+						if (settingsCloseTimerRef.current) {
+							window.clearTimeout(settingsCloseTimerRef.current);
+							settingsCloseTimerRef.current = null;
+						}
+						setIsClosingSettings(false);
+						setSettingsAccountId(accountId);
+						setListOpen(true);
+					}}
+					onRetryAccounts={loadAccounts}
+					unreadPerAccount={unreadPerAccount}
+				/>
+
+				{listOpen && (
+					settingsMounted ? (
+						<div
+							className={`relative border-r border-slate-800 h-full flex-shrink-0 overflow-hidden ${isResizingSettings ? '' : 'transition-[width] duration-180 ease-out'}`}
+							style={{ width: `${settingsWidth}px` }}
+						>
+							<button
+								type="button"
+								data-inbox-settings-resize-handle="true"
+								onPointerDown={(e) => {
+									e.preventDefault();
+									setIsResizingSettings(true);
+								}}
+								className="absolute top-0 right-0 h-full w-2 translate-x-1/2 cursor-col-resize z-30 group"
+								aria-label="Breite der Einstellungen anpassen"
+								title="Breite anpassen"
+							>
+								<span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-transparent group-hover:bg-sky-500/45 group-active:bg-sky-400/60 transition-colors" />
+							</button>
+							<InboxAccountSettingsPanel
+								account={accounts.find((a) => a.id === settingsAccountId) || null}
+								open={settingsOpen}
+								onClose={closeSettingsPanel}
+							/>
 						</div>
-					) : filtered.length === 0 ? (
-						<EmptyState title="Kein Treffer" subtitle="Passen Sie Suche oder Filter an." />
 					) : (
-						<InboxList
-							messages={filtered}
-							selectedId={selectedId}
-							onSelect={setSelectedId}
+						<div
+							className={`relative overflow-auto border-r border-slate-800 h-full flex-shrink-0 ${isResizingList ? '' : 'transition-[width] duration-150 ease-out'}`}
+							style={{ width: `${listWidth}px` }}
+						>
+							<button
+								type="button"
+								onPointerDown={(e) => {
+									e.preventDefault();
+									setIsResizingList(true);
+								}}
+								className="absolute top-0 right-0 h-full w-2 translate-x-1/2 cursor-col-resize z-20 group"
+								aria-label="Breite der Nachrichtenliste anpassen"
+								title="Breite anpassen"
+							>
+								<span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-transparent group-hover:bg-sky-500/50 group-active:bg-sky-400/70 transition-colors" />
+							</button>
+							{loading ? (
+								<div role="status" aria-label="Laden" className="divide-y divide-slate-800">
+									{Array.from({ length: 8 }).map((_, i) => (
+										<RowSkeleton key={i} />
+									))}
+								</div>
+							) : filtered.length === 0 ? (
+								<EmptyState title="Kein Treffer" subtitle="Passen Sie Suche oder Filter an." />
+							) : (
+								<div className="h-full flex flex-col">
+									<div className="flex-1 min-h-0">
+										<InboxList
+											messages={filtered}
+											selectedId={selectedId}
+											onSelect={setSelectedId}
+											showAccountBadge={focusKey === 'all'}
+										/>
+									</div>
+									{hasMore && (
+										<div className="p-2 border-t border-slate-800 bg-slate-950">
+											<button
+												type="button"
+												disabled={loadingMore}
+												onClick={() => fetchMails(false, page + 1, true)}
+												className="w-full rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-slate-300 text-xs py-1.5 transition-colors"
+											>
+												{loadingMore ? 'Lädt…' : 'Mehr laden'}
+											</button>
+										</div>
+									)}
+								</div>
+							)}
+						</div>
+					)
+				)}
+
+				<div className="flex-1 h-full overflow-hidden">
+					{filtered.length === 0 ? (
+						<EmptyState
+							title={loading ? 'Posteingang wird geladen' : 'Nichts ausgewählt'}
+							subtitle={loading ? 'Nachrichten werden geladen.' : 'Wählen Sie links eine Mail aus.'}
 						/>
-					)}
-				</div>
-				<div className="flex-1 h-full relative overflow-hidden">
-					{loading ? (
-						<div className="p-6 text-slate-400">Vorschau wird geladen…</div>
-					) : filtered.length === 0 ? (
-						<EmptyState title="Nichts ausgewählt" subtitle="Wählen Sie links eine Mail aus." />
 					) : (
 						<InboxPreview
 							message={selected}
+							replyOpen={replyOpen}
+							onReplyToggle={() => setReplyOpen((v) => !v)}
+							accountId={selected?.accountId || activeAccountId}
+							onMessageMoved={handleMessageMoved}
 							onLeadLinked={(leadId) => {
 								if (!selected) return;
 								setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, leadId } : m)));
@@ -253,28 +984,17 @@ export default function InboxPage() {
 							}}
 						/>
 					)}
-					{/* Toggle-Button für Nachricht (links unten) */}
-					<button
-						className={`absolute bottom-4 left-4 z-10 rounded border px-3 py-2 text-xs hover:bg-slate-800 shadow-lg transition-colors ${
-							replyOpen 
-								? 'border-slate-600 bg-slate-800 text-slate-300' 
-								: 'border-emerald-600 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30'
-						}`}
-						onClick={() => setReplyOpen((v) => !v)}
-						title={replyOpen ? 'Antwort schließen' : 'Auf diese Mail antworten'}
-					>
-						{replyOpen ? '✉ Schließen' : '✉ Nachricht'}
-					</button>
-
-					{/* Toggle-Button für die Seitenleiste (rechts unten) */}
-					<button
-						className="absolute bottom-4 right-4 z-10 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs hover:bg-slate-800 shadow-lg"
-						onClick={() => setSidebarOpen((v) => !v)}
-						title={sidebarOpen ? 'Auftragsverwaltung schließen' : 'Auftragsverwaltung öffnen'}
-					>
-						{sidebarOpen ? '📋 Schließen' : '📋 Öffnen'}
-					</button>
 				</div>
+
+				<button
+					type="button"
+					className="w-5 flex-shrink-0 flex items-center justify-center bg-slate-900 border-l border-slate-800 hover:bg-slate-800 transition-colors text-slate-500 hover:text-slate-300 text-[10px]"
+					onClick={() => setSidebarOpen((v) => !v)}
+					title={sidebarOpen ? 'Sidebar einklappen' : 'Sidebar ausklappen'}
+				>
+					{sidebarOpen ? '▶' : '◀'}
+				</button>
+
 				<DatasheetSidebar
 					message={selected}
 					isOpen={sidebarOpen}
@@ -284,35 +1004,8 @@ export default function InboxPage() {
 						setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, assignedTo: orderId } : m)));
 					}}
 				/>
-
-				{/* Reply Composer Modal */}
-				{replyOpen && selected && (
-					<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
-						<div className="w-full max-w-4xl bg-slate-900 border-t border-slate-700 p-4 max-h-[80vh] overflow-y-auto">
-							<div className="flex items-center justify-between mb-4">
-								<h3 className="text-lg font-semibold">Antwort auf: {selected.subject || 'Ohne Betreff'}</h3>
-								<button
-									onClick={() => setReplyOpen(false)}
-									className="text-slate-400 hover:text-slate-200"
-								>
-									✕
-								</button>
-							</div>
-							
-							<ReplyComposer
-								open={replyOpen}
-								onClose={() => setReplyOpen(false)}
-								threadId={selected.threadId || selected.id}
-								defaultBody={''}
-								parsedFields={[]}
-								initialLangGuess={(selected.lang as any) || 'DE'}
-							/>
-						</div>
-					</div>
-				)}
 			</div>
+
 		</div>
 	);
 }
-
-

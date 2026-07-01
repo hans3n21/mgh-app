@@ -4,6 +4,7 @@ type WooSyncMode = 'full' | 'deposit' | 'balance';
 interface CreateWooOptions {
   mode?: WooSyncMode;
   amountCents?: number; // optional, falls angegeben wird dieser Betrag verwendet
+  depositAmountCents?: number; // optionaler Anzahlungsbetrag
   customLabel?: string; // optionaler Zusatz für Fee-Namen (z.B. Extrakosten-Grund)
 }
 
@@ -84,19 +85,22 @@ export async function createWooOrderForInternal(orderId: string, options: Create
     baseCents = Math.round(sumEuro * 100);
   }
 
-  // Anzahlung/Restzahlung: immer 50% des Endbetrags, auch wenn amountCents übergeben wurde
+  // Anzahlung/Restzahlung: Anzahlung optional explizit, sonst 50%-Fallback
   let totalCents = baseCents ?? 0; // gewünschter Brutto-Endbetrag des jeweiligen Schritts
-  if (mode === 'deposit' || mode === 'balance') {
+  if (mode === 'deposit' && options.depositAmountCents != null) {
+    totalCents = options.depositAmountCents;
+  } else if (mode === 'deposit' || mode === 'balance') {
     totalCents = Math.round(totalCents * 0.5);
   }
 
   let feeNameMode = 'Werkstattauftrag';
-  if (mode === 'deposit') feeNameMode = 'Anzahlung 50%';
+  if (mode === 'deposit') feeNameMode = options.depositAmountCents != null ? 'Anzahlung' : 'Anzahlung 50%';
   if (mode === 'balance') feeNameMode = 'Restzahlung';
 
   const composedName = `${feeNameMode} · ${label}${model ? ' – ' + model : ''}${secondary ? ' · ' + secondary : ''}${options.customLabel ? ' · ' + options.customLabel : ''} · ${order.id}`;
 
   const payload: any = {
+    created_via: 'MGH-App',
     payment_method: 'bacs',
     payment_method_title: 'Banküberweisung',
     set_paid: false,
@@ -120,28 +124,43 @@ export async function createWooOrderForInternal(orderId: string, options: Create
       postcode: postalCode,
       country,
     },
-    fee_lines: [{ name: composedName, total: totalCents != null ? (totalCents / 100).toFixed(2) : '0' }],
-    meta_data: [{ key: 'internal_order_id', value: order.id }],
+    meta_data: [
+      { key: 'internal_order_id', value: order.id },
+      { key: '_wc_order_attribution_source_type', value: 'utm' },
+      { key: '_wc_order_attribution_utm_source', value: 'MGH-App' },
+      { key: '_wc_order_attribution_utm_medium', value: 'internal-app' },
+      { key: '_wc_order_attribution_utm_campaign', value: 'workshop-order' },
+      { key: '_wc_order_attribution_session_entry', value: 'MGH-App' },
+    ],
   };
 
   const endpoint = `${base.replace(/\/$/, '')}/wp-json/wc/v3/orders`;
   const productIdEnv = sanitizeEnv(process.env.WC_PRODUCT_ID_WORKORDER);
 
-  // Baue Positionsdaten: bevorzugt line_items mit Produkt, sonst fee_lines
-  let bodyPayload: any = { ...payload };
-  // Optional: Betrag als Brutto behandeln und in Netto+Steuer aufsplitten
-  const forceGrossToNet = sanitizeEnv(process.env.WC_FORCE_GROSS_TO_NET) === 'true';
+  // Baue Positionsdaten: bevorzugt line_items mit Produkt, sonst fee_lines.
+  // App-Betraege sind Endpreise inkl. MwSt.; WooCommerce erwartet hier Netto + Steuer.
+  const bodyPayload: any = { ...payload };
+  const grossToNetSetting = sanitizeEnv(process.env.WC_FORCE_GROSS_TO_NET);
+  const forceGrossToNet = grossToNetSetting !== 'false';
   const vatRate = (() => {
     const s = sanitizeEnv(process.env.WC_VAT_RATE);
     const n = s ? parseFloat(s) : 0.19;
     return isNaN(n) ? 0.19 : n;
   })();
+  const formatCents = (cents: number) => (cents / 100).toFixed(2);
+
   let netCents = totalCents;
   let taxCents = 0;
   if (forceGrossToNet) {
     netCents = Math.round(totalCents / (1 + vatRate));
     taxCents = totalCents - netCents;
   }
+
+  bodyPayload.fee_lines = [{
+    name: composedName,
+    total: formatCents(forceGrossToNet ? netCents : totalCents),
+    ...(forceGrossToNet ? { total_tax: formatCents(taxCents) } : {}),
+  }];
 
   if (productIdEnv && totalCents != null) {
     const productId = parseInt(productIdEnv, 10);
@@ -151,8 +170,12 @@ export async function createWooOrderForInternal(orderId: string, options: Create
         product_id: productId,
         quantity: 1,
         name: composedName,
-        total: ((forceGrossToNet ? netCents : totalCents) / 100).toFixed(2),
-        ...(forceGrossToNet ? { total_tax: (taxCents / 100).toFixed(2) } : {}),
+        subtotal: formatCents(forceGrossToNet ? netCents : totalCents),
+        total: formatCents(forceGrossToNet ? netCents : totalCents),
+        ...(forceGrossToNet ? {
+          subtotal_tax: formatCents(taxCents),
+          total_tax: formatCents(taxCents),
+        } : {}),
       }];
     }
   }

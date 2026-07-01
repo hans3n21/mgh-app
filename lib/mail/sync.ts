@@ -2,32 +2,87 @@ import { simpleParser, type ParsedMail, type AddressObject } from 'mailparser';
 import type { FetchMessageObject } from 'imapflow';
 import { prisma } from '@/lib/prisma';
 import { getImapClient } from './client';
-import { saveAttachment } from './attachments';
 import { computeThreadId } from './threading';
 import { findCustomerForEmail } from './customer';
 import { parseMail } from './parseMail';
+import linkMailArtifactsToOrder from './linkArtifacts';
+import { extractAndStore } from './extraction';
+import { stripQuotedContent } from './stripQuotedContent';
 import type { MailAccount } from '@prisma/client';
 
 const BATCH_SIZE = 10;
+
+export type FolderSyncResult = {
+	folder: string;
+	success: boolean;
+	processed: number;
+	error?: string;
+};
+
+export type AccountSyncResult = {
+	accountId: string;
+	accountEmail: string;
+	success: boolean;
+	folders: FolderSyncResult[];
+};
+
+export type MailSyncResult = {
+	success: boolean;
+	accounts: AccountSyncResult[];
+	totalProcessed: number;
+	errorCount: number;
+};
+
+export type MailSyncProgress = {
+	totalAccounts: number;
+	completedAccounts: number;
+	currentAccountId: string | null;
+	currentAccountEmail: string | null;
+	currentFolder: string | null;
+	totalProcessed: number;
+	errorCount: number;
+};
+
+type SyncOptions = {
+	onProgress?: (progress: MailSyncProgress) => void;
+	accountIds?: string[];
+	folders?: string[];
+};
+
+function extractOrderIdFromSubject(subject: string): string | null {
+	// Supports both "[ORD-2026-001]" and "ORD-2026-001" in subject lines.
+	const match = subject.match(/(?:\[)?\b(ORD-\d{4}-\d{3,})\b(?:\])?/i);
+	return match?.[1]?.toUpperCase() ?? null;
+}
 
 /**
  * Public helper used by scripts and API routes.
  * Currently just syncs all active accounts and returns a simple status object.
  */
-export async function syncMails() {
-	await syncAllAccounts();
-
+export async function syncMails(options?: SyncOptions) {
+	const accounts = await syncAllAccounts(options);
+	const totalProcessed = accounts.reduce(
+		(sum, account) => sum + account.folders.reduce((fSum, folder) => fSum + folder.processed, 0),
+		0
+	);
+	const errorCount = accounts.reduce(
+		(sum, account) => sum + account.folders.filter((f) => !f.success).length,
+		0
+	);
 	return {
-		success: true,
+		success: errorCount === 0,
+		accounts,
+		totalProcessed,
+		errorCount,
 	};
 }
 
 /**
  * Guarded variant for API usage – logs errors and rethrows for HTTP handling.
  */
-export async function guardedSyncMails() {
+export async function guardedSyncMails(options?: SyncOptions) {
 	try {
-		return await syncMails();
+		return await syncMails(options);
 	} catch (error) {
 		console.error('guardedSyncMails: sync failed', error);
 		throw error;
@@ -37,35 +92,105 @@ export async function guardedSyncMails() {
 /**
  * Main entry point: Syncs all active accounts.
  */
-export async function syncAllAccounts() {
+export async function syncAllAccounts(options?: SyncOptions) {
+	const accountIds = options?.accountIds?.filter(Boolean) ?? [];
 	const accounts = await prisma.mailAccount.findMany({
-		where: { isActive: true },
+		where: {
+			isActive: true,
+			...(accountIds.length > 0 ? { id: { in: accountIds } } : {}),
+		},
 	});
+	const results: AccountSyncResult[] = [];
+	let totalProcessed = 0;
+	let errorCount = 0;
 
-	for (const account of accounts) {
+	const reportProgress = (
+		completedAccounts: number,
+		currentAccount: MailAccount | null,
+		currentFolder: string | null
+	) => {
+		options?.onProgress?.({
+			totalAccounts: accounts.length,
+			completedAccounts,
+			currentAccountId: currentAccount?.id ?? null,
+			currentAccountEmail: currentAccount?.email ?? null,
+			currentFolder,
+			totalProcessed,
+			errorCount,
+		});
+	};
+
+	reportProgress(0, null, null);
+
+	for (let i = 0; i < accounts.length; i++) {
+		const account = accounts[i];
 		try {
-			await syncAccount(account);
+			const accountResult = await syncAccount(account, (folderResult) => {
+				totalProcessed += folderResult.processed;
+				if (!folderResult.success) errorCount += 1;
+				reportProgress(i, account, folderResult.folder);
+			}, options?.folders);
+			results.push(accountResult);
+			reportProgress(i + 1, account, null);
 		} catch (error) {
 			console.error(`Error syncing account ${account.email}:`, error);
+			errorCount += 1;
+			results.push({
+				accountId: account.id,
+				accountEmail: account.email,
+				success: false,
+				folders: [{
+					folder: 'ACCOUNT',
+					success: false,
+					processed: 0,
+					error: error instanceof Error ? error.message : String(error),
+				}],
+			});
+			reportProgress(i + 1, account, null);
 		}
 	}
+	return results;
 }
 
 /**
  * Syncs INBOX, Sent, and Trash for a specific account.
  */
-export async function syncAccount(account: MailAccount) {
-	const folders = ['INBOX', 'Sent', 'Trash']; // Standard folders, might need mapping
+export async function syncAccount(
+	account: MailAccount,
+	onFolderDone?: (result: FolderSyncResult) => void,
+	requestedFolders?: string[]
+) {
+	const folders = (requestedFolders && requestedFolders.length > 0)
+		? Array.from(new Set(requestedFolders.filter(Boolean)))
+		: ['INBOX', 'Sent', 'Trash']; // Standard folders, might need mapping
 	// Note: 'Sent' might be 'Sent Items' or similar depending on server. 
 	// For now assuming standard names or handled by imapflow/server capability.
+	const folderResults: FolderSyncResult[] = [];
 
 	for (const folder of folders) {
 		try {
-			await syncFolder(account, folder);
+			const result = await syncFolder(account, folder);
+			folderResults.push(result);
+			onFolderDone?.(result);
 		} catch (error) {
 			console.error(`Error syncing folder ${folder} for ${account.email}:`, error);
+			const failedResult: FolderSyncResult = {
+				folder,
+				success: false,
+				processed: 0,
+				error: error instanceof Error ? error.message : String(error),
+			};
+			folderResults.push(failedResult);
+			onFolderDone?.(failedResult);
 		}
 	}
+
+	return {
+		accountId: account.id,
+		accountEmail: account.email,
+		success: folderResults.every((f) => f.success),
+		folders: folderResults,
+	} satisfies AccountSyncResult;
 }
 
 /**
@@ -82,10 +207,16 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 		const cursor = await prisma.systemSetting.findUnique({ where: { key: cursorKey } });
 
 		let lastUid = 0;
+		const currentUidValidity = client.mailbox ? (client.mailbox as any).uidValidity : undefined;
 		if (cursor?.value) {
 			try {
 				const parsed = JSON.parse(cursor.value);
-				lastUid = parsed.lastUid || 0;
+				// Wenn UIDVALIDITY sich geändert hat, sind alte UIDs ungültig → Cursor ignorieren
+				if (currentUidValidity && parsed.uidValidity && String(parsed.uidValidity) !== String(currentUidValidity)) {
+					lastUid = 0; // Erzwinge kompletten Neuabruf
+				} else {
+					lastUid = parsed.lastUid || 0;
+				}
 			} catch { }
 		}
 
@@ -94,45 +225,71 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 		// If lastUid is 0, fetch all (or maybe limit to recent if mailbox is huge? 
 		// For now, let's assume we want everything initially, but maybe batched)
 
-		// Check if there are any messages
-		if (!client.mailbox || client.mailbox.exists === 0) return;
+		if (!client.mailbox || client.mailbox.exists === 0) {
+			// Auch bei leerem Ordner Reconcile ausführen (markiert alle lokalen Mails als gelöscht)
+			await reconcileFolder(client, account.id, folderName);
+			return { folder: folderName, success: true, processed: 0 } satisfies FolderSyncResult;
+		}
 
-		// We use a generator to fetch
-		const fetchRange = `${lastUid + 1}:*`;
+		// Prüfe ob es überhaupt UIDs über dem Cursor gibt, bevor wir FETCH aufrufen.
+		// Manche Server (z.B. lima-city) werfen einen Fehler bei ungültigen UID-Ranges.
+		const nextUid = lastUid + 1;
+		const mailboxUidNext = (client.mailbox as any)?.uidNext;
+		if (mailboxUidNext && nextUid >= mailboxUidNext) {
+			// Keine neuen Nachrichten – Reconcile trotzdem ausführen!
+			// Sonst würden verschobene Mails (z.B. INBOX → Papierkorb in Outlook) nie aus der App verschwinden.
+			await reconcileFolder(client, account.id, folderName);
+			return { folder: folderName, success: true, processed: 0 } satisfies FolderSyncResult;
+		}
 
-		// If lastUid is very old or invalid, this might fetch nothing if UIDs reset (UIDVALIDITY).
-		// Ideally we check UIDVALIDITY, but for simplicity here we assume persistence.
-		// If fetchRange is invalid (e.g. lastUid > max), imapflow handles it gracefully usually.
+		const fetchRange = `${nextUid}:*`;
 
-		const messageGenerator = client.fetch(fetchRange, {
-			envelope: true,
-			source: true, // We need source to parse
-			uid: true,
-			flags: true,
-			internalDate: true,
-		});
+		const messageGenerator = client.fetch(
+			fetchRange,
+			{
+				envelope: true,
+				source: true, // We need source to parse
+				uid: true,
+				flags: true,
+				internalDate: true,
+			},
+			{ uid: true } // Forces UID FETCH instead of sequence-number FETCH
+		);
 
 		let maxUidSeen = lastUid;
-
-		for await (const message of messageGenerator) {
-			try {
-				await ingestMessage(account, message, folderName);
-				if (message.uid > maxUidSeen) {
-					maxUidSeen = message.uid;
+		let processed = 0;
+		try {
+			for await (const message of messageGenerator) {
+				try {
+					await ingestMessage(account, message, folderName);
+					processed += 1;
+					if (message.uid > maxUidSeen) {
+						maxUidSeen = message.uid;
+					}
+				} catch (err) {
+					console.error(`Failed to ingest message UID ${message.uid} in ${folderName}:`, err);
 				}
-			} catch (err) {
-				console.error(`Failed to ingest message UID ${message.uid} in ${folderName}:`, err);
 			}
+		} catch (err: any) {
+			throw err;
 		}
 
-		// Update cursor
+		// Update cursor (inkl. UIDVALIDITY für zukünftige Prüfung, falls vom Server bereitgestellt)
 		if (maxUidSeen > lastUid) {
+			const cursorValue: Record<string, unknown> = { lastUid: maxUidSeen };
+			if (currentUidValidity) cursorValue.uidValidity = String(currentUidValidity);
 			await prisma.systemSetting.upsert({
 				where: { key: cursorKey },
-				update: { value: JSON.stringify({ lastUid: maxUidSeen }) },
-				create: { key: cursorKey, value: JSON.stringify({ lastUid: maxUidSeen }) },
+				update: { value: JSON.stringify(cursorValue) },
+				create: { key: cursorKey, value: JSON.stringify(cursorValue) },
 			});
 		}
+
+		// Reconcile: mark locally stored mails as deleted if they no longer exist on the server.
+		// We fetch all UIDs currently in this folder from the server and compare against DB.
+		await reconcileFolder(client, account.id, folderName);
+
+		return { folder: folderName, success: true, processed } satisfies FolderSyncResult;
 
 	} finally {
 		lock.release();
@@ -155,7 +312,10 @@ async function ingestMessage(
 	const parsed = await simpleParser(source);
 
 	// Extract key fields
-	const messageId = parsed.messageId || message.envelope.messageId || `no-id-${message.uid}-${Date.now()}`;
+	// IMPORTANT: Fallback must be stable across sync runs, otherwise mails without
+	// Message-ID create duplicates on every full/incremental resync.
+	const stableFallbackMessageId = `no-id-${account.id}-${folderName}-${message.uid}`;
+	const messageId = parsed.messageId || message.envelope.messageId || stableFallbackMessageId;
 	const subject = parsed.subject || '(No Subject)';
 
 	// Helper to extract address
@@ -171,11 +331,24 @@ async function ingestMessage(
 	const fromEmail = fromArr[0] || '';
 	const fromName = (parsed.from && !Array.isArray(parsed.from) && parsed.from.value[0]?.name) || '';
 
+	// Primary recipient (for display in sent folder)
+	const toAddr = parsed.to && !Array.isArray(parsed.to) ? parsed.to.value[0] : null;
+	const toEmail = toAddr?.address || null;
+	const toName = toAddr?.name || null;
+
 	const to = getAddress(parsed.to);
 	const cc = getAddress(parsed.cc);
 	const bcc = getAddress(parsed.bcc);
 
-	const date = parsed.date || new Date();
+	const parsedDate = parsed.date instanceof Date && !Number.isNaN(parsed.date.getTime()) ? parsed.date : null;
+	const internalDate = message.internalDate instanceof Date && !Number.isNaN(message.internalDate.getTime())
+		? message.internalDate
+		: null;
+	const envelopeDateCandidate = (message.envelope as any)?.date;
+	const envelopeDate = envelopeDateCandidate instanceof Date && !Number.isNaN(envelopeDateCandidate.getTime())
+		? envelopeDateCandidate
+		: null;
+	const date = parsedDate ?? internalDate ?? envelopeDate ?? new Date();
 	const text = parsed.text;
 	const html = parsed.html || text; // Fallback
 	const snippet = text?.substring(0, 200);
@@ -190,15 +363,12 @@ async function ingestMessage(
 	// 1. Customer Linking
 	const customer = await findCustomerForEmail(fromEmail);
 
-	// 2. Order Linking (Regex)
-	// Look for [ORD-XXXX] in subject
+	// 2. Order Linking (Subject)
+	// Supports order id in subject with and without brackets.
 	let orderId: string | null = null;
-	const orderMatch = subject.match(/\[ORD-([A-Za-z0-9-]+)\]/);
-	if (orderMatch) {
-		// Verify order exists? 
-		// For speed, we might just trust it or do a quick check. 
-		// Let's do a quick check to ensure referential integrity.
-		const exists = await prisma.order.findUnique({ where: { id: orderMatch[1] } });
+	const subjectOrderId = extractOrderIdFromSubject(subject);
+	if (subjectOrderId) {
+		const exists = await prisma.order.findUnique({ where: { id: subjectOrderId } });
 		if (exists) orderId = exists.id;
 	}
 
@@ -212,12 +382,44 @@ async function ingestMessage(
 		orderId = threadResult.orderId;
 	}
 
+	// 3b. Fallback: Mail von gleicher Adresse wie order.customer.email → Auftrag verlinken (nur INBOX)
+	if (!orderId && fromEmail && folderName === 'INBOX') {
+		const orderByCustomerEmail = await prisma.order.findFirst({
+			where: {
+				customer: {
+					email: { equals: fromEmail, mode: 'insensitive' },
+				},
+			},
+			orderBy: { createdAt: 'desc' },
+			select: { id: true },
+		});
+		if (orderByCustomerEmail) {
+			orderId = orderByCustomerEmail.id;
+		}
+	}
+
 	// 4. Upsert Mail
 	// We use upsert to handle "moves" (e.g. Inbox -> Trash).
-	// If messageId exists, we update the folder and UID.
+	// Composite unique key (accountId, messageId) ensures per-account identity.
 	const mail = await prisma.mail.upsert({
-		where: { messageId },
+		where: { accountId_messageId: { accountId: account.id, messageId } },
 		update: {
+			subject,
+			fromEmail,
+			fromName,
+			toEmail,
+			toName,
+			to: JSON.stringify(to),
+			cc: JSON.stringify(cc),
+			bcc: JSON.stringify(bcc),
+			text,
+			html,
+			snippet,
+			date,
+			inReplyTo,
+			references: JSON.stringify(references),
+			threadId: threadResult.threadId,
+			isRead: message.flags ? message.flags.has('\\Seen') : false,
 			folder: folderName,
 			uid: message.uid,
 			// If we found new links (e.g. orderId), update them. 
@@ -234,6 +436,8 @@ async function ingestMessage(
 			subject,
 			fromEmail,
 			fromName,
+			toEmail,
+			toName,
 			to: JSON.stringify(to),
 			cc: JSON.stringify(cc),
 			bcc: JSON.stringify(bcc),
@@ -250,38 +454,132 @@ async function ingestMessage(
 		},
 	});
 
-	// 5. Handle Attachments
+	// 4b. If this mail resolves an order for a thread, propagate to all thread mails.
+	// This ensures INBOX/Sent/Trash entries of the same conversation show up on the order.
+	if (orderId && threadResult.threadId) {
+		await prisma.mail.updateMany({
+			where: {
+				threadId: threadResult.threadId,
+				orderId: null,
+			},
+			data: { orderId },
+		});
+	}
+
+	// 5. Handle Attachments — only metadata, no file storage.
+	// Files are fetched on-demand from IMAP when the attachment is accessed.
+	// They get persisted permanently only when the mail is linked to an order
+	// (see linkArtifacts.ts → persistAttachmentsForMail).
 	if (parsed.attachments && parsed.attachments.length > 0) {
 		for (const att of parsed.attachments) {
-			// Check if already saved? 
-			// We can check DB for this mailId + filename + size
+			const filename = att.filename || 'unnamed';
+			const size = att.size;
+			const mimeType = att.contentType;
+			const cid = att.cid ?? null;
+
 			const existing = await prisma.attachment.findFirst({
-				where: {
-					mailId: mail.id,
-					filename: att.filename || 'unnamed',
-					size: att.size,
-				}
+				where: cid
+					? {
+						mailId: mail.id,
+						cid,
+					}
+					: {
+						mailId: mail.id,
+						filename,
+						size,
+						mimeType,
+					}
 			});
 
 			if (!existing) {
-				const saved = await saveAttachment(
-					att.content,
-					att.filename || 'unnamed',
-					mail.id,
-					att.contentType
-				);
-
 				await prisma.attachment.create({
 					data: {
 						mailId: mail.id,
-						filename: saved.filename,
-						path: saved.path,
-						size: saved.size,
-						mimeType: saved.mimeType,
-						cid: att.cid,
+						filename,
+						size,
+						mimeType,
+						cid,
+						// No path — file not stored yet.
+						isPersisted: false,
+						imapFolder: folderName,
+						imapUid: message.uid,
 					}
+				});
+			} else if (existing.imapFolder !== folderName || existing.imapUid !== message.uid) {
+				// Message moves between folders can change UID on many IMAP servers.
+				// Keep attachment fetch pointers in sync so on-demand loading keeps working.
+				await prisma.attachment.update({
+					where: { id: existing.id },
+					data: {
+						imapFolder: folderName,
+						imapUid: message.uid,
+					},
 				});
 			}
 		}
+	}
+
+	// 6. Entity-Extraktion — only on the FRESH content (no quoted history).
+	// Quoted sections carry PII from previous messages / senders; running
+	// extraction on them would silently attach that foreign PII to this mail
+	// record, which is a data-protection issue.
+	try {
+		const { freshContent } = stripQuotedContent(mail.text ?? '');
+		await extractAndStore(mail.id, freshContent, mail.html);
+	} catch (extractErr) {
+		console.error(`Entity extraction failed for mail ${mail.id}:`, extractErr);
+	}
+
+	// 7. Bei verlinktem Auftrag: Nachricht + Anhänge in Kommunikationsverlauf eintragen
+	if (mail.orderId) {
+		try {
+			await linkMailArtifactsToOrder(mail.id, mail.orderId);
+		} catch (linkErr) {
+			console.error(`Failed to link mail ${mail.id} to order ${mail.orderId}:`, linkErr);
+		}
+	}
+}
+
+/**
+ * Reconcile: compare the server's current UIDs in the folder with our local DB.
+ * Mails that exist locally (as this folder, not deleted) but are absent from the
+ * server get marked as isDeleted so they disappear from the inbox view.
+ * Existing order/customer links on those mails are intentionally preserved.
+ */
+async function reconcileFolder(
+	client: Awaited<ReturnType<typeof getImapClient>>,
+	accountId: string,
+	folderName: string
+) {
+	try {
+		// Fetch all UIDs present on the server for this folder.
+		const raw = await client.search({ all: true }, { uid: true });
+		const serverUids: number[] = Array.isArray(raw) ? raw.map((u) => Number(u)) : [];
+		const serverUidSet = new Set(serverUids);
+
+		// Find all non-deleted local mails for this account + folder.
+		const localMails = await prisma.mail.findMany({
+			where: {
+				accountId,
+				folder: folderName,
+				isDeleted: false,
+			},
+			select: { id: true, uid: true },
+		});
+
+		const missingIds = localMails
+			.filter((m) => m.uid > 0 && !serverUidSet.has(m.uid))
+			.map((m) => m.id);
+
+		if (missingIds.length > 0) {
+			await prisma.mail.updateMany({
+				where: { id: { in: missingIds } },
+				data: { isDeleted: true },
+			});
+			console.log(`[reconcile] ${folderName}@${accountId}: marked ${missingIds.length} mails as deleted`);
+		}
+	} catch (err) {
+		// Reconcile is best-effort; never abort a successful sync because of a reconcile error.
+		console.warn(`[reconcile] Failed for ${folderName}@${accountId}:`, err);
 	}
 }

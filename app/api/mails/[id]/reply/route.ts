@@ -1,53 +1,86 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { sendMail } from '@/lib/mail/sendMail';
+import { replyToMail } from '@/lib/mail/actions';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
-const AttachmentSchema = z.object({ id: z.string().optional(), name: z.string().optional(), content: z.string().optional(), contentType: z.string().optional() });
+const AttachmentSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  content: z.string().optional(),
+  contentType: z.string().optional(),
+});
+
 const Body = z.object({
   to: z.string().email().optional(),
   cc: z.string().email().array().optional(),
   subject: z.string().min(1),
   text: z.string().min(1),
-  html: z.string().optional(), // HTML-Version
+  html: z.string().optional(),
   attachments: AttachmentSchema.array().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const mail = await prisma.mail.findUnique({ where: { id } });
+    const mail = await prisma.mail.findUnique({ where: { id }, include: { account: true } });
     if (!mail) return NextResponse.json({ error: 'Mail not found' }, { status: 404 });
+    if (!mail.account) return NextResponse.json({ error: 'Kein Mail-Account zugeordnet' }, { status: 400 });
+
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const senderId = (session?.user as any)?.id || null;
 
     const bodyRaw = await req.json().catch(() => ({}));
     const body = Body.parse(bodyRaw);
 
     const to = body.to || mail.fromEmail || undefined;
-    // prepare attachments: if id provided, resolve to path; if content provided, decode
-    const atts: Array<{ filename: string; content?: Buffer; contentType?: string | null; path?: string }> = [];
+    if (!to) return NextResponse.json({ error: 'Kein Empfänger' }, { status: 400 });
+
+    const atts: Array<{ filename: string; content: Buffer; contentType: string }> = [];
     for (const a of body.attachments || []) {
       if (a.id) {
         const att = await prisma.attachment.findUnique({ where: { id: a.id } });
-        if (att) atts.push({ filename: att.filename, path: att.path, contentType: att.mimeType || undefined });
+        if (att?.path) {
+          const fs = await import('fs/promises');
+          try {
+            const buf = await fs.readFile(att.path);
+            atts.push({ filename: att.filename, content: buf, contentType: att.mimeType || 'application/octet-stream' });
+          } catch {
+            /* Datei nicht gefunden -- überspringen */
+          }
+        }
       } else if (a.name && a.content) {
-        const buf = Buffer.from(a.content, 'base64');
-        atts.push({ filename: a.name, content: buf, contentType: a.contentType || undefined });
+        atts.push({
+          filename: a.name,
+          content: Buffer.from(a.content, 'base64'),
+          contentType: a.contentType || 'application/octet-stream',
+        });
       }
     }
 
-    // try send; if no SMTP configured, sendMail will noop
-    await sendMail({ to: to!, cc: body.cc, subject: body.subject, text: body.text, html: body.html, inReplyTo: mail.messageId, attachments: atts });
+    const sentMail = await replyToMail({
+      accountId: mail.account.id,
+      senderId: senderId || 'system',
+      orderId: mail.orderId || undefined,
+      customerId: mail.customerId || undefined,
+      to: [to],
+      cc: body.cc,
+      subject: body.subject,
+      html: body.html || body.text.replace(/\n/g, '<br>'),
+      text: body.text,
+      inReplyToMessageId: mail.messageId,
+      attachments: atts.length > 0 ? atts : undefined,
+    });
 
-    // if linked to order, store as staff message for traceability
-    if (mail.orderId) {
-      await prisma.message.create({ data: { orderId: mail.orderId, body: body.text, senderType: 'staff' } });
-    }
-    return NextResponse.json({ ok: true, mode: process.env.SMTP_HOST ? 'sent' : 'dry-run' });
+    return NextResponse.json({ ok: true, mode: 'sent', mailId: sentMail.id });
   } catch (e) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: 'Invalid body', details: e.issues }, { status: 400 });
     console.error('mail reply error', e);
-    return NextResponse.json({ error: 'Server error' }, { status: 500 });
+    const msg = e instanceof Error ? e.message : 'Server error';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-
-

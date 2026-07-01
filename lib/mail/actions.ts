@@ -2,6 +2,8 @@ import { prisma } from '@/lib/prisma';
 import { getImapClient, getSmtpTransport } from './client';
 import { saveAttachment } from './attachments';
 import { computeThreadId } from './threading';
+import linkMailArtifactsToOrder, { unlinkMailArtifactsFromOrder } from './linkArtifacts';
+import { isTrashFolderName, resolveTrashFolderFromList } from './folders';
 import type { Mail } from '@prisma/client';
 import { simpleParser } from 'mailparser';
 
@@ -22,6 +24,52 @@ interface ReplyOptions {
         content: Buffer;
         contentType: string;
     }[];
+}
+
+function normalizeThreadSubject(subject: string | null | undefined): string {
+    if (!subject) return '';
+    let value = subject.trim();
+    // Strip common reply/forward prefixes repeatedly: RE:, AW:, WG:, FW:, FWD:
+    const prefixPattern = /^((re|aw|wg|fw|fwd)\s*:\s*)+/i;
+    while (prefixPattern.test(value)) {
+        value = value.replace(prefixPattern, '').trim();
+    }
+    return value.toLowerCase();
+}
+
+function safeParseRecipientList(raw: unknown): string[] {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.filter((v): v is string => typeof v === 'string').map(v => v.toLowerCase());
+    if (typeof raw !== 'string') return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+            return parsed.filter((v): v is string => typeof v === 'string').map(v => v.toLowerCase());
+        }
+    } catch {
+        // ignore JSON parse errors
+    }
+    return [];
+}
+
+function hasParticipantOverlap(
+    baseFrom: string | null | undefined,
+    baseTo: unknown,
+    candidateFrom: string | null | undefined,
+    candidateTo: unknown
+): boolean {
+    const a = new Set<string>([
+        ...(baseFrom ? [baseFrom.toLowerCase()] : []),
+        ...safeParseRecipientList(baseTo),
+    ]);
+    const b = new Set<string>([
+        ...(candidateFrom ? [candidateFrom.toLowerCase()] : []),
+        ...safeParseRecipientList(candidateTo),
+    ]);
+    for (const item of Array.from(a)) {
+        if (b.has(item)) return true;
+    }
+    return false;
 }
 
 /**
@@ -98,9 +146,15 @@ export async function replyToMail(options: ReplyOptions): Promise<Mail> {
                     path: saved.path,
                     size: saved.size,
                     mimeType: saved.mimeType,
+                    isPersisted: true,
                 },
             });
         }
+    }
+
+    // 5b. Wenn Auftrag verknüpft: Anhänge als OrderImages im Kommunikationsbereich verlinken
+    if (sentMail.orderId && options.attachments?.length) {
+        await linkMailArtifactsToOrder(sentMail.id, sentMail.orderId);
     }
 
     // 6. Append to IMAP Sent
@@ -121,8 +175,9 @@ export async function replyToMail(options: ReplyOptions): Promise<Mail> {
 
     // 7. Inbox Zero: Move Original to Trash
     if (options.inReplyToMessageId) {
-        const original = await prisma.mail.findUnique({
-            where: { messageId: options.inReplyToMessageId },
+        // Scope to this account so we don't accidentally move a mail from another account.
+        const original = await prisma.mail.findFirst({
+            where: { accountId: account.id, messageId: options.inReplyToMessageId },
         });
 
         if (original && original.folder === 'INBOX' && original.accountId === account.id) {
@@ -140,25 +195,53 @@ export async function replyToMail(options: ReplyOptions): Promise<Mail> {
 /**
  * Moves a mail to a different folder (IMAP + DB).
  */
-export async function moveMail(mailId: string, targetFolder: string): Promise<void> {
+export async function moveMail(mailId: string, targetFolder: string): Promise<{ folder: string }> {
     const mail = await prisma.mail.findUniqueOrThrow({
         where: { id: mailId },
         include: { account: true },
     });
 
+    if (mail.orderId) {
+        try {
+            await linkMailArtifactsToOrder(mail.id, mail.orderId);
+        } catch (error) {
+            console.warn(`[mail] Could not persist artifacts before moving mail ${mail.id}:`, error);
+        }
+    }
+
     const client = await getImapClient(mail.account);
+    let resolvedTargetFolder = targetFolder;
+    if (isTrashFolderName(targetFolder)) {
+        try {
+            const folders = await (client as any).list({ pattern: '*' });
+            resolvedTargetFolder = resolveTrashFolderFromList(Array.isArray(folders) ? folders : [], 'Trash');
+        } catch (error) {
+            console.warn(`[mail] Could not resolve trash folder for account ${mail.accountId}:`, error);
+            resolvedTargetFolder = 'Trash';
+        }
+    }
+
+    if (mail.folder === resolvedTargetFolder) {
+        await prisma.mail.update({
+            where: { id: mailId },
+            data: { folder: resolvedTargetFolder },
+        });
+        return { folder: resolvedTargetFolder };
+    }
 
     const lock = await client.getMailboxLock(mail.folder);
     try {
-        await client.messageMove(mail.uid.toString(), targetFolder);
+        await client.messageMove(mail.uid.toString(), resolvedTargetFolder, { uid: true });
     } finally {
         lock.release();
     }
 
     await prisma.mail.update({
         where: { id: mailId },
-        data: { folder: targetFolder },
+        data: { folder: resolvedTargetFolder },
     });
+
+    return { folder: resolvedTargetFolder };
 }
 
 /**
@@ -169,19 +252,104 @@ export async function assignMailToOrder(
     orderId: string | null,
     customerId: string | null
 ): Promise<Mail> {
+    const previous = await prisma.mail.findUnique({
+        where: { id: mailId },
+        select: { orderId: true, threadId: true },
+    });
+
+    if (previous?.orderId && previous.orderId !== orderId) {
+        await unlinkMailArtifactsFromOrder(mailId, previous.orderId);
+    }
+
     const updated = await prisma.mail.update({
         where: { id: mailId },
         data: {
             orderId,
             customerId,
         },
+        include: { attachments: true },
     });
 
+    const mailIdsToLink = new Set<string>([mailId]);
+
     if (updated.threadId && orderId) {
+        const threadMails = await prisma.mail.findMany({
+            where: { threadId: updated.threadId },
+            select: { id: true, orderId: true },
+        });
+        for (const threadMail of threadMails) {
+            mailIdsToLink.add(threadMail.id);
+            if (threadMail.orderId && threadMail.orderId !== orderId) {
+                await unlinkMailArtifactsFromOrder(threadMail.id, threadMail.orderId);
+            }
+        }
+
         await prisma.mail.updateMany({
             where: { threadId: updated.threadId },
             data: { orderId },
         });
+    }
+
+    // Fallback conversation linking by normalized subject + participants.
+    // This catches cases where mail headers (Message-ID/In-Reply-To/References)
+    // are incomplete and threads are split, e.g. subjects with AW/RE prefixes.
+    if (orderId) {
+        const baseMail = await prisma.mail.findUnique({
+            where: { id: mailId },
+            select: {
+                id: true,
+                accountId: true,
+                subject: true,
+                fromEmail: true,
+                to: true,
+                date: true,
+            },
+        });
+        if (baseMail) {
+            const normalizedBaseSubject = normalizeThreadSubject(baseMail.subject);
+            if (normalizedBaseSubject) {
+                const windowStart = new Date(baseMail.date);
+                windowStart.setMonth(windowStart.getMonth() - 12);
+                const windowEnd = new Date(baseMail.date);
+                windowEnd.setMonth(windowEnd.getMonth() + 12);
+
+                const candidates = await prisma.mail.findMany({
+                    where: {
+                        accountId: baseMail.accountId,
+                        orderId: null,
+                        date: { gte: windowStart, lte: windowEnd },
+                    },
+                    select: {
+                        id: true,
+                        subject: true,
+                        fromEmail: true,
+                        to: true,
+                    },
+                });
+
+                const relatedIds = candidates
+                    .filter((candidate) => {
+                        if (candidate.id === baseMail.id) return false;
+                        if (normalizeThreadSubject(candidate.subject) !== normalizedBaseSubject) return false;
+                        return hasParticipantOverlap(baseMail.fromEmail, baseMail.to, candidate.fromEmail, candidate.to);
+                    })
+                    .map((candidate) => candidate.id);
+
+                if (relatedIds.length > 0) {
+                    await prisma.mail.updateMany({
+                        where: { id: { in: relatedIds }, orderId: null },
+                        data: { orderId },
+                    });
+                    relatedIds.forEach((id) => mailIdsToLink.add(id));
+                }
+            }
+        }
+    }
+
+    if (orderId) {
+        for (const linkedMailId of Array.from(mailIdsToLink)) {
+            await linkMailArtifactsToOrder(linkedMailId, orderId);
+        }
     }
 
     return updated;

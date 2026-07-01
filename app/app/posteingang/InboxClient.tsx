@@ -28,6 +28,26 @@ type Order = { id: string; title: string };
 
 type Filter = 'all' | 'assigned' | 'unassigned' | 'with_attachments';
 
+const isImageAttachment = (attachment: Attachment) =>
+	(attachment.mimeType || '').toLowerCase().startsWith('image/');
+
+const fileIcon = (attachment: Attachment) => {
+	const mime = (attachment.mimeType || '').toLowerCase();
+	const ext = (attachment.filename || '').split('.').pop()?.toLowerCase() || '';
+	if (mime.includes('pdf') || ext === 'pdf') return '📄';
+	if (mime.includes('word') || ['doc', 'docx'].includes(ext)) return '📝';
+	if (mime.includes('spreadsheet') || ['xls', 'xlsx', 'csv'].includes(ext)) return '📊';
+	if (mime.includes('zip') || ['zip', 'rar', '7z'].includes(ext)) return '📦';
+	return '📎';
+};
+
+const formatSize = (size: number | null | undefined) => {
+	if (size == null) return '';
+	if (size < 1024) return `${size} B`;
+	if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+	return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export default function InboxClient() {
 	const [mails, setMails] = useState<Mail[]>([]);
 	const [q, setQ] = useState('');
@@ -83,6 +103,11 @@ export default function InboxClient() {
 			setSavingAssign(false);
 		}
 	}
+
+	const imageAttachments = useMemo(
+		() => selected?.attachments.filter(isImageAttachment) || [],
+		[selected]
+	);
 
 	return (
 		<div className="p-4 space-y-4">
@@ -276,16 +301,39 @@ export default function InboxClient() {
 										<div className="text-sm text-slate-400">Keine Anhänge</div>
 									) : (
 										<div className="flex flex-wrap gap-2">
-											{selected.attachments.map((a, idx) => (
-												<button
-													key={a.id}
-													onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
-													className="group relative h-20 w-20 overflow-hidden rounded border border-slate-700 bg-slate-800"
-													title={a.filename}
-												>
-													<img src={`/api/attachments/${a.id}`} className="h-full w-full object-cover" />
-													<span className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/30 text-white text-xs">Ansehen</span>
-												</button>
+											{selected.attachments.map((a) => (
+												isImageAttachment(a) ? (
+													<button
+														key={a.id}
+														onClick={() => {
+															const imageIndex = imageAttachments.findIndex((img) => img.id === a.id);
+															setLightboxIndex(imageIndex >= 0 ? imageIndex : 0);
+															setLightboxOpen(true);
+														}}
+														className="group relative h-20 w-20 overflow-hidden rounded border border-slate-700 bg-slate-800"
+														title={a.filename}
+													>
+														<img src={`/api/attachments/${a.id}`} className="h-full w-full object-cover" />
+														<span className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-black/30 text-white text-xs">Ansehen</span>
+													</button>
+												) : (
+													<a
+														key={a.id}
+														href={`/api/attachments/${a.id}`}
+														target="_blank"
+														rel="noopener noreferrer"
+														className="w-56 rounded border border-slate-700 bg-slate-800 px-3 py-2 hover:border-sky-500"
+														title={a.filename}
+													>
+														<div className="flex items-center gap-2">
+															<span>{fileIcon(a)}</span>
+															<span className="truncate text-sm">{a.filename}</span>
+														</div>
+														<div className="mt-1 text-xs text-slate-400">
+															{a.mimeType || 'Datei'}{a.size != null ? ` · ${formatSize(a.size)}` : ''}
+														</div>
+													</a>
+												)
 											))}
 										</div>
 									)}
@@ -296,7 +344,7 @@ export default function InboxClient() {
 				</div>
 				{lightboxOpen && (
 					<ImageCarouselModal
-						images={selected.attachments.map((a) => ({ id: a.id, path: `/api/attachments/${a.id}`, comment: a.filename, scope: undefined, attach: true, position: 0 }))}
+						images={imageAttachments.map((a) => ({ id: a.id, path: `/api/attachments/${a.id}`, comment: a.filename, scope: undefined, attach: true, position: 0 }))}
 						index={lightboxIndex}
 						scopes={[]}
 						onClose={() => setLightboxOpen(false)}
