@@ -64,7 +64,9 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
     { href: '/app/posteingang', label: 'Posteingang', badge: unreadCount > 0 ? unreadCount : undefined },
     { href: '/app/orders', label: 'Aufträge' },
     { href: '/app/customers', label: 'Kunden' },
+    { href: '/app/label-generator', label: 'Labelgenerator' },
     { href: '/app/prices', label: 'Preise' },
+    { href: '/app/wissen', label: 'Wissen' },
     { href: '/app/procurement', label: 'Einkauf' },
     { href: '/app/settings', label: 'Einstellungen' },
   ];
@@ -98,11 +100,6 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <input
-            placeholder="Suchen (Auftrag, Kunde, Typ)"
-            className="hidden md:block rounded-lg bg-slate-900 border border-slate-700 px-3 py-1.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-600"
-          />
-          
           <div className="flex items-center gap-2">
             <CreateOrderButton customers={customers} users={users} />
             <span className="text-sm text-slate-400">{user.name}</span>

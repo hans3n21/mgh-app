@@ -1,4 +1,11 @@
 import UserManagement from '@/components/UserManagement';
+import BackupManagement from '@/components/BackupManagement';
+import MailAccountManagement from '@/components/MailAccountManagement';
+import ReplyTemplateManagement from '@/components/ReplyTemplateManagement';
+import SpeechSettings from '@/components/SpeechSettings';
+import UpdateTemplateSettings from '@/components/UpdateTemplateSettings';
+import AiSettings from '@/components/AiSettings';
+import TelephonySettings from '@/components/TelephonySettings';
 
 export default function SettingsPage() {
   return (
@@ -7,17 +14,19 @@ export default function SettingsPage() {
       
       <UserManagement />
       
-      <div className="rounded-xl border border-slate-800 p-3">
-        <div className="font-semibold">Allgemein</div>
-        <div className="text-sm text-slate-400 mt-2">Platzhalter – weitere Einstellungen folgen.</div>
-      </div>
-      <div className="rounded-xl border border-slate-800 p-3">
-        <div className="font-semibold">System</div>
-        <ul className="text-xs text-slate-400 list-disc ml-5 mt-2">
-          <li>Node & Next.js laufen – prüfen Sie die Konsole für Details.</li>
-          <li>Prisma SQLite: file:./dev.db</li>
-        </ul>
-      </div>
+      <MailAccountManagement />
+      
+      <ReplyTemplateManagement />
+
+      <UpdateTemplateSettings />
+
+      <SpeechSettings />
+
+      <AiSettings />
+
+      <TelephonySettings />
+      
+      <BackupManagement />
     </section>
   );
 }

@@ -23,6 +23,12 @@ const navItems = [
     icon: '👥'
   },
   {
+    id: 'label-generator',
+    label: 'Labels',
+    href: '/app/label-generator',
+    icon: '🏷️'
+  },
+  {
     id: 'procurement',
     label: 'Beschaffung',
     href: '/app/procurement',
@@ -33,6 +39,12 @@ const navItems = [
     label: 'Preise',
     href: '/app/prices',
     icon: '💰'
+  },
+  {
+    id: 'knowledge',
+    label: 'Wissen',
+    href: '/app/wissen',
+    icon: 'W'
   },
   {
     id: 'settings',

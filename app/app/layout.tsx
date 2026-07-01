@@ -6,6 +6,7 @@ import Navigation from '@/components/Navigation';
 import SessionProvider from '@/components/SessionProvider';
 import GlobalMobileNav from '@/components/GlobalMobileNav';
 import FeedbackButton from '@/components/FeedbackButton';
+import { ensureDailyBackup } from '@/lib/backup-auto';
 
 export default async function AppLayout({
   children,
@@ -16,6 +17,15 @@ export default async function AppLayout({
 
   if (!session) {
     redirect('/signin');
+  }
+
+  // Automatisches tägliches Backup (non-blocking, läuft im Hintergrund)
+  // Nur im Production-Modus oder wenn explizit aktiviert
+  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_AUTO_BACKUP === 'true') {
+    ensureDailyBackup().catch((error) => {
+      // Silent fail - Backup-Fehler sollten die App nicht blockieren
+      console.error('Auto-backup error:', error);
+    });
   }
 
   // Daten für CreateOrderButton laden
@@ -40,7 +50,7 @@ export default async function AppLayout({
 
   return (
     <SessionProvider session={session}>
-      <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="min-h-screen min-w-0 bg-slate-950 text-slate-100 overflow-x-hidden">
         <Navigation user={session.user} customers={customers} users={users} />
         <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
           {children}
