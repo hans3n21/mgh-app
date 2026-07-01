@@ -9,7 +9,7 @@ const createUserSchema = z.object({
   name: z.string().min(1, 'Name ist erforderlich'),
   email: z.string().email('Gültige E-Mail-Adresse erforderlich'),
   password: z.string().min(6, 'Passwort muss mindestens 6 Zeichen haben'),
-  role: z.enum(['admin', 'staff']).default('staff'),
+  role: z.enum(['admin', 'admin_no_feedback', 'staff']).default('staff'),
 });
 
 export async function GET() {
@@ -17,9 +17,18 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     
     // Nur Admins können Benutzer verwalten
-    if (!session || session.user?.role !== 'admin') {
+    if (!session) {
+      console.error('GET /api/users: No session found');
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Unauthorized - No session' },
+        { status: 401 }
+      );
+    }
+
+    if (session.user?.role !== 'admin' && session.user?.role !== 'admin_no_feedback') {
+      console.error(`GET /api/users: Insufficient permissions. Role: ${session.user?.role}`);
+      return NextResponse.json(
+        { error: `Unauthorized - Role: ${session.user?.role}` },
         { status: 401 }
       );
     }
@@ -45,8 +54,9 @@ export async function GET() {
     return NextResponse.json(users);
   } catch (error) {
     console.error('Error fetching users:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to fetch users' },
+      { error: `Failed to fetch users: ${errorMessage}` },
       { status: 500 }
     );
   }
@@ -57,7 +67,7 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     
     // Nur Admins können Benutzer erstellen
-    if (!session || session.user?.role !== 'admin') {
+    if (!session || (session.user?.role !== 'admin' && session.user?.role !== 'admin_no_feedback')) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
