@@ -7,7 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { z } from 'zod';
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().min(1), // Nicht mehr nur email, sondern auch Name möglich
   password: z.string().min(1),
 });
 
@@ -21,16 +21,24 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: 'credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        email: { label: 'E-Mail oder Name', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
         try {
           const { email, password } = loginSchema.parse(credentials);
           
-          const user = await prisma.user.findUnique({
+          // Versuche zuerst mit E-Mail, dann mit Name zu finden
+          let user = await prisma.user.findUnique({
             where: { email },
           });
+          
+          // Wenn nicht gefunden, versuche mit Name
+          if (!user) {
+            user = await prisma.user.findFirst({
+              where: { name: email },
+            });
+          }
           
           if (!user) {
             return null;

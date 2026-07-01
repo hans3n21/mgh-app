@@ -69,13 +69,13 @@ export default function SignIn() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">E-Mail</label>
+              <label className="block text-sm font-medium mb-2">E-Mail oder Name</label>
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-600"
-                placeholder="E-Mail eingeben"
+                placeholder="E-Mail oder Name eingeben"
                 required
               />
             </div>
