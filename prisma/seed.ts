@@ -217,17 +217,36 @@ async function main() {
 
     // Pickguards (Service/Preise)
     { category: 'Pickguards', label: 'XL Pickguard', description: 'Bsp.: Tele Deluxe, Precision Bass, Jazzmaster, Flying V 67er', priceText: 'Standard 149 € | Sparkle 169 € | Tortoise/Pearl/Special 189 €', mainCategory: 'Pickguards' },
-    { category: 'Pickguards', label: 'L Pickguard', description: 'Bsp.: Stratocaster, Jaguar, Telecaster Standard, Jazz Bass, Duo Sonic', priceText: 'Standard 89 € | Sparkle 95 € | Tortoise/Pearl/Special 129 €', mainCategory: 'Pickguards' },
-    { category: 'Pickguards', label: 'M Pickguard', description: 'Bsp.: Firebird, SG klein, Explorer, Flying V 58er', priceText: 'Standard 49 € | Sparkle 55 € | Tortoise/Pearl/Special 69 €', mainCategory: 'Pickguards' },
-    { category: 'Pickguards', label: 'S Pickguard', description: 'Bsp.: Les Paul, ES 335, Gretsch', priceText: 'Standard 28 € | Sparkle 30 € | Tortoise/Pearl/Special 39 €', mainCategory: 'Pickguards' },
+    { category: 'Pickguards', label: 'L Pickguard', description: 'Bsp.: Stratocaster, Jaguar, Telecaster Standard, Jazz Bass, Duo Sonic, Melody Maker', priceText: 'Standard 89 € | Sparkle 110 € | Tortoise/Pearl/Special 149 €', mainCategory: 'Pickguards' },
+    { category: 'Pickguards', label: 'M Pickguard', description: 'Bsp.: Firebird, SG klein, Explorer, Flying V 58er', priceText: 'Standard 59 € | Sparkle 65 € | Tortoise/Pearl/Special 79 €', mainCategory: 'Pickguards' },
+    { category: 'Pickguards', label: 'S Pickguard', description: 'Bsp.: Les Paul, ES 335, Gretsch', priceText: 'Standard 38 € | Sparkle 40 € | Tortoise/Pearl/Special 49 €', mainCategory: 'Pickguards' },
 
     // Trussrodcover
-    { category: 'Trussrodcover', label: 'Trussrodcover', description: 'Unbedruckt / Bedruckt', priceText: 'Unbedruckt 5 € | Bedruckt 20 €', mainCategory: 'Pickguards' },
+    { category: 'Trussrodcover', label: 'Trussrodcover', description: 'Unbedruckt / Bedruckt', priceText: 'Unbedruckt 8 € | Bedruckt 22 €', mainCategory: 'Pickguards' },
 
     // Backplates & Rahmen
     { category: 'Backplates & Rahmen', label: 'Backplate (groß)', description: 'Bsp.: Tremolodeckel, PRS E-Fach', unit: '€', price: 15, mainCategory: 'Pickguards' },
     { category: 'Backplates & Rahmen', label: 'Backplate (klein)', description: 'Bsp.: Les Paul Toggle', unit: '€', price: 5, mainCategory: 'Pickguards' },
-    { category: 'Backplates & Rahmen', label: 'Pickuprahmen', description: 'Bsp.: Humbucker, Singlecoil, Minihumbucker', priceText: 'ab 5 €', mainCategory: 'Pickguards' }
+    { category: 'Backplates & Rahmen', label: 'Pickuprahmen', description: 'Bsp.: Humbucker, Singlecoil, Minihumbucker', priceText: 'ab 5 €', mainCategory: 'Pickguards' },
+
+    // Pickguard Zusatzoptionen und Services
+    { category: 'Pickguard Zusatzoptionen', label: 'Neue Fraesung', description: 'Anpassung fuer neue Pickup-Positionen oder Elektronik', unit: '€', price: 20, mainCategory: 'Pickguards' },
+    { category: 'Pickguard Zusatzoptionen', label: 'Fraesung weglassen', description: 'Zugedeckte oder entfernte Fraesungen', priceText: 'kein Aufpreis', mainCategory: 'Pickguards' },
+    { category: 'Pickguard Zusatzoptionen', label: 'Shielding', description: 'Anbringen einer Abschirmung', unit: '€', price: 15, mainCategory: 'Pickguards' },
+    { category: 'Pickguard Zusatzoptionen', label: 'Bedrucken einfarbig', description: 'Einfarbige Schriftzuege oder Grafiken', priceText: 'auf Anfrage', mainCategory: 'Pickguards' },
+    { category: 'Pickguard Zusatzoptionen', label: 'Sondermaterialien', description: 'z. B. Aluminium, Carbon', priceText: 'auf Anfrage', mainCategory: 'Pickguards' },
+    { category: 'Pickguard Zusatzoptionen', label: 'Vektorisierung', description: 'Umwandlung einer Vorlage in ein digitales Format', unit: '€', price: 10, mainCategory: 'Pickguards' },
+
+    // Versand / Porto
+    { category: 'Versandkosten', label: 'Porto/Verpackung Deutschland', description: 'Klein-Paket / Rueckversand innerhalb Deutschlands', priceText: '6,95 EUR', mainCategory: 'Versand' },
+    { category: 'Versandkosten', label: 'Porto/Verpackung EU Versandzone 1', description: 'Klein-Paket in EU-Laender, Versandzone 1', priceText: '18 EUR | versandkostenfrei ab 150 EUR Warenwert', mainCategory: 'Versand' },
+    { category: 'Versandkosten', label: 'Porto/Verpackung Europa Nicht-EU Versandzone 2', description: 'Klein-Paket in Europa Nicht-EU, z. B. Schweiz, Norwegen, UK, Liechtenstein', priceText: '38 EUR | versandkostenfrei ab 150 EUR Warenwert', mainCategory: 'Versand' },
+    { category: 'Versandkosten', label: 'Porto/Verpackung Weltweit Versandzone 3', description: 'Klein-Paket weltweit, z. B. USA, Kanada, Australien', priceText: '48 EUR | keine Freigrenze hinterlegt', mainCategory: 'Versand' },
+    { category: 'Gitarrenversand', label: 'Gitarrenversand Deutschland', description: 'Gitarrenversand innerhalb Deutschlands bis 25.000 EUR Versicherungswert', priceText: 'kostenlos bis 25.000 EUR Versicherungswert', mainCategory: 'Versand' },
+    { category: 'Gitarrenversand', label: 'Gitarrenversand EU Versandzone 1', description: 'Gitarrenversand in EU-Laender, Versandzone 1, bis 3.000 EUR Versicherungswert', priceText: '60 EUR bis 3.000 EUR Versicherungswert', mainCategory: 'Versand' },
+    { category: 'Gitarrenversand', label: 'Gitarrenversand Europa Nicht-EU Versandzone 2', description: 'Gitarrenversand in Europa Nicht-EU, z. B. Schweiz, Norwegen, UK, Liechtenstein, bis 3.000 EUR Versicherungswert', priceText: '79 EUR bis 3.000 EUR Versicherungswert', mainCategory: 'Versand' },
+    { category: 'Gitarrenversand', label: 'Gitarrenversand Weltweit Versandzone 3', description: 'Gitarrenversand weltweit, z. B. USA, Kanada, Australien, bis 3.000 EUR Versicherungswert', priceText: '106 EUR bis 3.000 EUR Versicherungswert', mainCategory: 'Versand' },
+    { category: 'Versandmarke', label: 'Versandmarke Einsendung Deutschland', description: 'Service fuer die Einsendung einer Vorlage innerhalb Deutschlands; Adresse des Kunden erforderlich', priceText: 'ab 69 EUR Auftragswert moeglich', mainCategory: 'Versand' }
   ];
 
   for (const item of priceItems) {

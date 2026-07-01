@@ -10,6 +10,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum AiTone {
+  PROFESSIONAL
+  FRIENDLY
+  CASUAL
+  SHORT
+  EMPATHIC
+}
+
+enum AiFormality {
+  DU
+  SIE
+  AUTO
+}
+
 enum OrderType {
   GUITAR
   BODY
@@ -34,6 +48,7 @@ enum OrderStatus {
 
 enum Role {
   admin
+  admin_no_feedback
   staff
 }
 
@@ -55,6 +70,11 @@ model User {
   // Mail System
   mailAccounts MailAccount[]
   sentMails    Mail[]        @relation("UserSentMails")
+  orderViews   OrderView[]
+
+  // Tasks
+  tasksAssigned OrderTask[] @relation("TaskAssignee")
+  tasksCreated  OrderTask[] @relation("TaskCreator")
 }
 
 model Customer {
@@ -90,9 +110,27 @@ model Order {
   // Abrechnung
   finalAmountCents Int?
   paymentStatus    String        @default("open") // open | deposit | paid
+  paymentMethod    String?       // paypal | direktueberweisung (wenn bezahlt)
+  depositAmountCents Int?
   extras           OrderExtra[]
   mails            Mail[]
   datasheets       Datasheet[]
+  views            OrderView[]
+  tasks            OrderTask[]
+  fieldSuggestions OrderFieldSuggestion[]
+}
+
+model OrderView {
+  id             String    @id @default(cuid())
+  orderId        String
+  userId         String
+  lastSeenAt     DateTime  @default(now())
+  acknowledgedAt DateTime?
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, userId])
+  @@index([userId])
 }
 
 model OrderSpecKV {
@@ -172,6 +210,24 @@ model OrderExtra {
   @@index([orderId])
 }
 
+model OrderTask {
+  id          String    @id @default(cuid())
+  orderId     String
+  assigneeId  String
+  creatorId   String
+  title       String
+  note        String?
+  status      String    @default("open") // open | done
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  assignee    User      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  creator     User      @relation("TaskCreator", fields: [creatorId], references: [id])
+
+  @@index([assigneeId])
+  @@index([orderId])
+}
+
 model ProcurementItem {
   id         String    @id @default(cuid())
   name       String
@@ -243,7 +299,12 @@ model MailAccount {
   isDefault Boolean  @default(false)
   isActive  Boolean  @default(true)
   
-  mails     Mail[]
+  mails            Mail[]
+  profile          MailAccountProfile?
+  aiProfile        AiProfile?
+  emailTemplates   EmailTemplate[]
+  knowledgeEntries KnowledgeEntry[]
+  companyData      CompanyData[]
   // Optional: Link to specific staff user
   userId    String?
   user      User?    @relation(fields: [userId], references: [id])
@@ -252,9 +313,24 @@ model MailAccount {
   updatedAt DateTime @updatedAt
 }
 
+model MailAccountProfile {
+  id               String   @id @default(cuid())
+  mailAccountId    String   @unique
+  mailAccount      MailAccount @relation(fields: [mailAccountId], references: [id], onDelete: Cascade)
+  displayName      String?
+  aiSystemPrompt   String?  @db.Text
+  backgroundInfo   String?  @db.Text
+  defaultLanguage  String   @default("de")
+  defaultOrderType String?
+  templateIds      String[]
+  pinnedFolders    String[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
 model Mail {
   id             String       @id @default(cuid())
-  messageId      String       @unique
+  messageId      String
   threadId       String?      // Root message ID for conversation grouping
   
   // Multi-Account Context
@@ -269,7 +345,9 @@ model Mail {
   subject        String?
   fromEmail      String
   fromName       String?
-  to             Json         // Array of strings
+  toEmail        String?      // Primary recipient email (for display in sent folder)
+  toName         String?      // Primary recipient name
+  to             Json         // Array of strings (all recipients)
   cc             Json?
   bcc            Json?
   text           String?      @db.Text
@@ -290,6 +368,7 @@ model Mail {
   sender         User?        @relation("UserSentMails", fields: [senderId], references: [id])
 
   attachments    Attachment[]
+  extraction     MailExtraction?
   
   isRead         Boolean      @default(false)
   isDeleted      Boolean      @default(false)
@@ -297,14 +376,17 @@ model Mail {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
+  // Per-account unique constraint (messageId is unique within one mail account)
+  @@unique([accountId, messageId])
+
   // Performance Indices
-  @@index([accountId])
   @@index([orderId])
   @@index([folder])
   @@index([threadId])
   @@index([customerId])
   @@index([fromEmail])
   @@index([date])
+  @@index([accountId, folder, isDeleted, date])
 }
 
 model Attachment {
@@ -314,10 +396,41 @@ model Attachment {
   filename    String
   mimeType    String?
   size        Int
-  path        String   // e.g. "2025/11/uuid-file.jpg"
+  path        String?  // Blob URL or local path — null when not yet persisted
   cid         String?  // Content-ID for inline images
-  
+
+  // On-demand fetch: set during sync so we can re-fetch from IMAP when not persisted
+  isPersisted Boolean  @default(false)
+  imapFolder  String?  // e.g. "INBOX" — folder the source mail lives in
+  imapUid     Int?     // IMAP UID of the source message
+
   createdAt   DateTime @default(now())
+}
+
+model MailExtraction {
+  id        String   @id @default(cuid())
+  mailId    String   @unique
+  mail      Mail     @relation(fields: [mailId], references: [id], onDelete: Cascade)
+  entities  Json
+  createdAt DateTime @default(now())
+
+  @@index([mailId])
+}
+
+model OrderFieldSuggestion {
+  id         String    @id @default(cuid())
+  orderId    String
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  field      String
+  value      String
+  mailId     String?
+  status     String    @default("suggested")
+  acceptedBy String?
+  acceptedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([orderId])
+  @@index([mailId])
 }
 
 model SystemSetting {
@@ -366,4 +479,93 @@ model ReplyTemplate {
   
   @@index([lang])
   @@index([key])
+}
+
+model AiProfile {
+  id                    String      @id @default(cuid())
+  mailAccountId         String      @unique
+  mailAccount           MailAccount @relation(fields: [mailAccountId], references: [id], onDelete: Cascade)
+  tone                  AiTone      @default(FRIENDLY)
+  formality             AiFormality @default(DU)
+  signatureName         String      @default("")
+  customInstructions    String?     @db.Text
+  businessContext       String?     @db.Text
+  generatedStyleProfile String?     @db.Text
+  preferredModel        String      @default("gpt-4o-mini")
+  preferredProvider     String      @default("openai")
+  apiKey                String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+}
+
+model EmailTemplate {
+  id            String      @id @default(cuid())
+  mailAccountId String
+  mailAccount   MailAccount @relation(fields: [mailAccountId], references: [id], onDelete: Cascade)
+  key           String
+  name          String
+  subject       String?
+  body          String      @db.Text
+  placeholders  String[]
+  isActive      Boolean     @default(true)
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([mailAccountId, key])
+  @@index([mailAccountId])
+}
+
+model KnowledgeEntry {
+  id            String      @id @default(cuid())
+  mailAccountId String
+  mailAccount   MailAccount @relation(fields: [mailAccountId], references: [id], onDelete: Cascade)
+  title         String
+  keywords      String[]
+  content       String      @db.Text
+  category      String?
+  isActive      Boolean     @default(true)
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([mailAccountId])
+}
+
+model GlobalKnowledgeEntry {
+  id          String   @id @default(cuid())
+  title       String
+  keywords    String[]
+  content     String   @db.Text
+  category    String?
+  status      String   @default("review")
+  kiFreigabe  Boolean  @default(false)
+  isActive    Boolean  @default(false)
+  sourcePath  String?
+  sortOrder   Int      @default(0)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, kiFreigabe, isActive])
+  @@index([category])
+  @@index([sortOrder])
+}
+
+model CompanyData {
+  id            String      @id @default(cuid())
+  mailAccountId String
+  mailAccount   MailAccount @relation(fields: [mailAccountId], references: [id], onDelete: Cascade)
+  key           String      // z.B. "iban", "telefon", "firmenname", "signatur_de"
+  label         String      // Anzeigename, z.B. "Bankverbindung (IBAN)"
+  value         String      @db.Text
+  isSecret      Boolean     @default(true)  // true = geht NIE in den KI-Prompt
+  category      String?     // "kontakt", "bank", "signatur", "sonstiges"
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([mailAccountId, key])
+  @@index([mailAccountId])
 }
