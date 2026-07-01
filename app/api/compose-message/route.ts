@@ -1,91 +1,189 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { anonymizeText, deanonymizeText } from '@/lib/pii/anonymize';
+import { prisma } from '@/lib/prisma';
+import { callAI } from '@/lib/ai/chat';
+import { auth } from '@/lib/auth';
+import {
+  formatPriceItem,
+  isPriceQuestion,
+  matchPriceItems,
+  type MatchedPriceItem,
+  type PricePromptItem,
+} from '@/lib/ai/price-matcher';
+
+async function getAccountProfile(accountId?: string) {
+  if (!accountId) return null;
+  try {
+    return await prisma.mailAccountProfile.findUnique({ where: { mailAccountId: accountId } });
+  } catch { return null; }
+}
+
+function buildPricePromptSection(priceHits: MatchedPriceItem[], hasPriceQuestion: boolean) {
+  if (priceHits.length > 0) {
+    const priceText = priceHits
+      .map((hit, i) => {
+        const categoryPath = [hit.item.mainCategory, hit.item.category].filter(Boolean).join(' / ');
+        const description = hit.item.description?.trim() ? ` - ${hit.item.description.trim()}` : '';
+        return `${i + 1}. ${hit.item.label}${categoryPath ? ` (${categoryPath})` : ''}: ${formatPriceItem(hit.item)}${description}`;
+      })
+      .join('\n');
+
+    return (
+      `\n\nAktuelle Preislisten-Eintraege aus PriceItem:\n${priceText}\n` +
+      'Verwende fuer konkrete Preise ausschliesslich diese aktiven PriceItem-Eintraege. ' +
+      'Leite Preise nicht aus Hintergrundwissen, alten Prompt-Texten oder KnowledgeEntry ab. ' +
+      'Wenn die passende Position oder wichtige Details fehlen, frage nach statt einen Preis zu raten.'
+    );
+  }
+
+  if (hasPriceQuestion) {
+    return (
+      '\n\nEs wurde eine Preisfrage erkannt, aber keine passende aktive PriceItem-Position gefunden. ' +
+      'Nenne keinen geratenen Preis und leite keinen Preis aus Hintergrundwissen oder KnowledgeEntry ab. ' +
+      'Frage nach den fehlenden Details oder verweise auf eine individuelle Pruefung.'
+    );
+  }
+
+  return '';
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/**
- * API Route für Text-Verschönerung via N8N
- *
- * Nimmt rohen Text (z.B. Stichpunkte) und gibt schön formatierten Text zurück.
- * Nutzt N8N Webhook mit LLM (Claude/GPT/Ollama) für die Transformation.
- */
 export async function POST(request: NextRequest) {
   try {
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
-
-    // Check if N8N is configured
-    if (!n8nWebhookUrl) {
-      return NextResponse.json(
-        {
-          error: 'N8N integration not configured',
-          fallback: true,
-          text: null
-        },
-        { status: 200 } // Not an error, just not configured
-      );
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
-    const { text, customerName, orderTitle, language = 'de' } = body;
+    const { text, mode = 'reply', customerName, orderTitle, language = 'de', mailId, accountId, originalMailText, userName } = body;
 
     if (!text || typeof text !== 'string') {
+      return NextResponse.json({ error: 'Text is required' }, { status: 400 });
+    }
+
+    const priceLookupText = `${text} ${typeof originalMailText === 'string' ? originalMailText : ''}`;
+    const hasPriceQuestion = isPriceQuestion(priceLookupText);
+    const priceItemsPromise: Promise<PricePromptItem[]> = hasPriceQuestion
+      ? prisma.priceItem.findMany({
+          where: { active: true },
+          orderBy: [
+            { mainCategory: 'asc' },
+            { category: 'asc' },
+            { label: 'asc' },
+          ],
+          select: {
+            id: true,
+            mainCategory: true,
+            category: true,
+            label: true,
+            description: true,
+            unit: true,
+            price: true,
+            min: true,
+            max: true,
+            priceText: true,
+            active: true,
+          },
+        })
+      : Promise.resolve([]);
+
+    const [profile, priceItems] = await Promise.all([
+      getAccountProfile(accountId),
+      priceItemsPromise,
+    ]);
+    const priceHits = hasPriceQuestion ? matchPriceItems(priceLookupText, priceItems) : [];
+    const pricePromptSection = buildPricePromptSection(priceHits, hasPriceQuestion);
+    const { anonymizedText, tokenMap } = await anonymizeText(text, mailId);
+
+    // originalMailText ebenfalls anonymisieren (gleiche mailId → gleiche Entities)
+    let anonymizedOriginal: string | undefined;
+    let mergedTokenMap = { ...tokenMap };
+    if (originalMailText && typeof originalMailText === 'string') {
+      const { anonymizedText: anonOrig, tokenMap: origMap } = await anonymizeText(originalMailText, mailId);
+      anonymizedOriginal = anonOrig;
+      // Beide Maps mergen – bullets-Map hat Vorrang bei Konflikten
+      mergedTokenMap = { ...origMap, ...tokenMap };
+    }
+
+    const langLabel = language === 'en' ? 'English' : 'Deutsch';
+
+    const addContextToken = (label: string, value?: string) => {
+      const trimmed = value?.trim();
+      if (!trimmed) return null;
+
+      let index = 1;
+      let placeholder = `{{${label}_${index}}}`;
+      while (mergedTokenMap[placeholder]) {
+        index += 1;
+        placeholder = `{{${label}_${index}}}`;
+      }
+
+      mergedTokenMap[placeholder] = trimmed;
+      return placeholder;
+    };
+
+    const customerPlaceholder = addContextToken('NAME', customerName);
+    const orderPlaceholder = addContextToken('ORDER', orderTitle);
+    const userPlaceholder = addContextToken('USER', userName);
+
+    const contextParts: string[] = [];
+    if (customerPlaceholder) contextParts.push(`Kunde: ${customerPlaceholder}`);
+    if (orderPlaceholder) contextParts.push(`Auftrag: ${orderPlaceholder}`);
+    const context = contextParts.length > 0 ? `\n\nKontext: ${contextParts.join(', ')}` : '';
+
+    let systemPrompt: string;
+    let userPrompt: string;
+
+    if (mode === 'bullets') {
+      // Stichpunkte → fertiger Fließtext für eine E-Mail-Antwort
+      const nameRules = [
+        customerPlaceholder ? `Sprich den Kunden mit ${customerPlaceholder} an.` : 'Beginne mit einer passenden Anrede.',
+        userPlaceholder ? `Schließe mit ${userPlaceholder} als Absender ab (Grußformel + Name).` : 'Keine Grußformel nötig.',
+      ].join(' ');
+
+      systemPrompt = profile?.aiSystemPrompt
+        ? `${profile.aiSystemPrompt}\n\nFormuliere die folgenden Stichpunkte zu einem professionellen E-Mail-Antworttext auf ${langLabel}. ${nameRules}`
+        : `Du bist ein hilfreicher Mitarbeiter in einem Handwerksbetrieb. Formuliere die folgenden Stichpunkte zu einem professionellen, fließenden E-Mail-Antworttext auf ${langLabel}. Schreibe in vollständigen Sätzen. ${nameRules}`;
+      if (profile?.backgroundInfo) systemPrompt += `\n\nHintergrundwissen: ${profile.backgroundInfo}`;
+      systemPrompt += pricePromptSection;
+
+      const originalContext = anonymizedOriginal
+        ? `\n\nZur Orientierung – die ursprüngliche Nachricht des Kunden (nur als Kontext, nicht wiederholen):\n"""\n${anonymizedOriginal.slice(0, 800)}\n"""`
+        : '';
+      userPrompt = `Formuliere folgende Stichpunkte zu einem professionellen Antworttext:${context}${originalContext}\n\nStichpunkte:\n${anonymizedText}`;
+    } else {
+      // Standard: Antwort auf eine eingegangene Nachricht verfassen
+      systemPrompt = profile?.aiSystemPrompt
+        ? `${profile.aiSystemPrompt}\n\nVerfasse eine Antwort auf ${langLabel}. Antworte direkt, ohne Einleitung.`
+        : `Du bist ein hilfreicher Mitarbeiter. Verfasse eine professionelle Antwort auf ${langLabel}. Antworte direkt, ohne Einleitung.`;
+      if (profile?.backgroundInfo) systemPrompt += `\n\nHintergrundwissen: ${profile.backgroundInfo}`;
+      systemPrompt += pricePromptSection;
+      userPrompt = `Verfasse eine Antwort auf folgende Nachricht:${context}\n\n${anonymizedText}`;
+    }
+
+    const aiResult = await callAI({
+      systemPrompt,
+      userPrompt,
+      temperature: 0.5,
+    });
+
+    if (!aiResult.configured) {
       return NextResponse.json(
-        { error: 'Text is required' },
-        { status: 400 }
+        { error: aiResult.reason, fallback: false, text: null },
+        { status: 503 }
       );
     }
 
-    console.log('📝 Sending text to N8N for composition:', text.slice(0, 100));
-
-    // Call N8N webhook
-    const n8nResponse = await fetch(n8nWebhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        rawText: text,
-        customerName: customerName || null,
-        orderTitle: orderTitle || null,
-        language,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-
-    if (!n8nResponse.ok) {
-      const errorText = await n8nResponse.text();
-      console.error('❌ N8N webhook error:', n8nResponse.status, errorText);
-      return NextResponse.json(
-        {
-          error: 'Text composition failed',
-          details: errorText,
-          fallback: true,
-          text: null
-        },
-        { status: n8nResponse.status }
-      );
-    }
-
-    const result = await n8nResponse.json();
-    console.log('✅ N8N composition successful');
-
-    // Expected N8N response format:
-    // { formattedText: "...", subject: "..." }
-    return NextResponse.json({
-      text: result.formattedText || result.text || text,
-      subject: result.subject || null,
-      originalText: text,
-    });
+    const rehydrated = deanonymizeText(aiResult.text, mergedTokenMap);
+    return NextResponse.json({ text: rehydrated, subject: null, originalText: text, source: 'ai' });
 
   } catch (error) {
-    console.error('❌ Compose-message error:', error);
+    console.error('Compose-message error:', error);
     return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : String(error),
-        fallback: true,
-        text: null
-      },
+      { error: 'Internal server error', details: error instanceof Error ? error.message : String(error), fallback: true, text: null },
       { status: 500 }
     );
   }
