@@ -8,9 +8,10 @@ type Props = {
   onChange: (v: string) => void;
   placeholder?: string;
   hasError?: boolean;
+  disabled?: boolean;
 };
 
-export default function AutoFillInput({ fieldKey, value, onChange, placeholder, hasError }: Props) {
+export default function AutoFillInput({ fieldKey, value, onChange, placeholder, hasError, disabled }: Props) {
   const listId = `dl-${fieldKey}`;
   const options = (AUTOFILL_OPTIONS[fieldKey] || []).filter(Boolean);
 
@@ -20,6 +21,7 @@ export default function AutoFillInput({ fieldKey, value, onChange, placeholder, 
         list={listId}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
         onDragOver={(e) => {
           e.preventDefault();
           e.currentTarget.classList.add('border-emerald-500', 'bg-emerald-500/5');
@@ -37,9 +39,9 @@ export default function AutoFillInput({ fieldKey, value, onChange, placeholder, 
           }
         }}
         placeholder={placeholder}
-        className={`w-full rounded bg-slate-950 border px-2 py-1.5 text-sm transition-colors ${
-          hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600 hover:border-slate-700'
-        }`}
+        className={`w-full rounded bg-slate-950/70 border px-2 py-1.5 text-sm transition-colors ${
+          hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-700/75 focus:border-slate-500 hover:border-slate-600'
+        } disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed`}
         title="Text hierhin ziehen oder eingeben"
       />
       {options.length > 0 && (

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import PhoneLink from '@/components/PhoneLink';
 
 interface OrderHeaderProps {
   orderId: string;
@@ -73,9 +74,9 @@ export default function OrderHeader({
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 p-3">
-      <div className="flex items-center gap-2">
-        <Link href="/app/orders" className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800">
+    <div className="sticky top-0 z-40 flex flex-col gap-3 border-b border-slate-800 bg-slate-900/95 p-3 backdrop-blur sm:static sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:bg-transparent sm:backdrop-blur-none">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Link href="/app/orders" className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800">
           Aufträge
         </Link>
         <span className="text-sm text-slate-500">/</span>
@@ -115,11 +116,11 @@ export default function OrderHeader({
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 group">
-            <h2 className="text-lg font-semibold">{orderTitle}</h2>
+          <div className="group flex min-w-0 items-center gap-2">
+            <h2 className="min-w-0 text-base font-semibold leading-snug text-slate-100 sm:text-lg">{orderTitle}</h2>
             <button
               onClick={() => setIsEditing(true)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-sky-400 p-1"
+              className="shrink-0 p-1 text-slate-400 transition-opacity hover:text-sky-400 sm:opacity-0 sm:group-hover:opacity-100"
               title="Auftragsname bearbeiten"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,40 +129,39 @@ export default function OrderHeader({
             </button>
           </div>
         )}
-        <div className="text-xs rounded-full border border-slate-700 px-2 py-0.5 text-slate-300">
+        <div className="shrink-0 rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300">
           {typeLabel}
         </div>
       </div>
 
       {/* Kunde-Info oben rechts */}
-      <div className="flex items-center gap-3">
-        <div className="text-sm font-medium text-slate-200">{customer.name}</div>
+      <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
+        <div className="min-w-0 truncate text-sm font-medium text-slate-200">{customer.name}</div>
         <div className="flex items-center gap-2">
           {customer.email && (
-            <a
-              href={`mailto:${customer.email}`}
+            <Link
+              href={`/app/posteingang?compose=1&to=${encodeURIComponent(customer.email)}`}
               className="text-slate-400 hover:text-sky-400 transition-colors"
-              title={`E-Mail an ${customer.name}: ${customer.email}`}
+              title={`Im Postfach antworten: ${customer.email}`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
-            </a>
+            </Link>
           )}
           {customer.phone && (
-            <a
-              href={`tel:${customer.phone}`}
+            <PhoneLink
+              phone={customer.phone}
               className="text-slate-400 hover:text-green-400 transition-colors"
               title={`Anrufen: ${customer.phone}`}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>
-            </a>
+            </PhoneLink>
           )}
         </div>
       </div>
     </div>
   );
 }
-

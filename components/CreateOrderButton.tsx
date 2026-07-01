@@ -38,7 +38,15 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
   const [assigneeId, setAssigneeId] = useState(users[0]?.id || '');
   const [mode, setMode] = useState<'new' | 'existing'>('existing');
   const [customerId, setCustomerId] = useState(customers[0]?.id || '');
-  const [newCustomer, setNewCustomer] = useState({ name: '', email: '', phone: '' });
+  const [newCustomer, setNewCustomer] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    addressLine1: '',
+    postalCode: '',
+    city: '',
+    country: 'DE',
+  });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -223,6 +231,38 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                     value={newCustomer.phone}
                     onChange={(e) =>
                       setNewCustomer({ ...newCustomer, phone: e.target.value })
+                    }
+                  />
+                  <input
+                    className="sm:col-span-3 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
+                    placeholder="Adresse (Straße + Hausnummer)"
+                    value={newCustomer.addressLine1}
+                    onChange={(e) =>
+                      setNewCustomer({ ...newCustomer, addressLine1: e.target.value })
+                    }
+                  />
+                  <input
+                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
+                    placeholder="PLZ"
+                    value={newCustomer.postalCode}
+                    onChange={(e) =>
+                      setNewCustomer({ ...newCustomer, postalCode: e.target.value })
+                    }
+                  />
+                  <input
+                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
+                    placeholder="Ort"
+                    value={newCustomer.city}
+                    onChange={(e) =>
+                      setNewCustomer({ ...newCustomer, city: e.target.value })
+                    }
+                  />
+                  <input
+                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
+                    placeholder="Land (z. B. DE)"
+                    value={newCustomer.country}
+                    onChange={(e) =>
+                      setNewCustomer({ ...newCustomer, country: e.target.value })
                     }
                   />
                 </div>

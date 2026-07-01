@@ -2,6 +2,37 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getPresetForOrderType, getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
 
+const KEY_ALIASES: Record<string, string> = {
+  korpus_finish: 'body_surface_treatment',
+  body_finish: 'body_surface_treatment',
+  body_ginish: 'body_surface_treatment',
+  body_finish_type: 'body_surface_treatment',
+  has_top: 'body_has_top',
+  top_enabled: 'body_has_top',
+  decke: 'body_has_top',
+};
+
+function normalizeIncomingSpecs(input: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(input)) {
+    const key = KEY_ALIASES[rawKey] ?? rawKey;
+    const value = String(rawValue ?? '');
+    const existing = out[key] ?? '';
+    // Bei Doppelwerten längeren/nicht-leeren Wert bevorzugen.
+    out[key] = value.trim().length >= existing.trim().length ? value : existing;
+  }
+
+  // Body Finish und Korpus-Finish als semantisch gleich behandeln:
+  // wenn einer fehlt, den vorhandenen übernehmen.
+  const finishBody = (out.finish_body ?? '').trim();
+  const bodyFinish = (out.body_surface_treatment ?? '').trim();
+  if (finishBody && !bodyFinish) out.body_surface_treatment = out.finish_body;
+  if (bodyFinish && !finishBody) out.finish_body = out.body_surface_treatment;
+
+  return out;
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -57,10 +88,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Accept only string values
-    const candidate = Object.fromEntries(
+    const rawCandidate = Object.fromEntries(
       Object.entries(body as Record<string, unknown>)
         .filter(([, v]) => typeof v === 'string') as [string, string][]
     );
+    const candidate = normalizeIncomingSpecs(rawCandidate);
 
     // Fetch order type
     const order = await prisma.order.findUnique({ where: { id }, select: { type: true } });

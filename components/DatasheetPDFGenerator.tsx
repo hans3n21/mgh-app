@@ -11,16 +11,27 @@ interface OrderSpec {
   value: string;
 }
 
+interface AttachImage {
+  id: string;
+  path: string;
+  comment?: string;
+  position?: number;
+}
+
 interface DatasheetPDFGeneratorProps {
   orderId: string;
   orderTitle: string;
   orderType: string;
   customerName: string;
+  orderCreatedAt?: string | Date;
   specs: OrderSpec[];
   activeCategories: Set<string>;
   assigneeName?: string; // Name des zugewiesenen Gitarrenbauers
   finalAmount?: string; // Preis des Auftrags
   paymentStatus?: string; // Zahlungsstatus: 'open' | 'deposit' | 'paid'
+  paymentMethod?: string; // Zahlungsart: 'paypal' | 'direktueberweisung'
+  depositAmount?: string; // Anzahlungsbetrag in Euro
+  attachImages?: AttachImage[]; // Als Anhang markierte Bilder für Seite 2
   onPDFGenerated?: (pdfBlob: Blob, filename: string) => void;
   buttonText?: string;
   datasheetVersion?: number;
@@ -98,6 +109,43 @@ async function addEagleBackground(pdf: jsPDF, pageWidth: number, pageHeight: num
   }
 }
 
+// Hilfsfunktion: Bild laden, Format + Dimensionen ermitteln (für Seitenverhältnis)
+async function loadImageForPdf(path: string): Promise<{ data: string; format: 'JPEG' | 'PNG' | 'GIF' | 'WEBP'; width: number; height: number } | null> {
+  try {
+    let dataUrl: string;
+    if (path.startsWith('data:image/')) {
+      dataUrl = path;
+    } else {
+      const url = path.startsWith('/') ? `${typeof window !== 'undefined' ? window.location.origin : ''}${path}` : path;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+    const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!match) return null;
+    const ext = match[1].toLowerCase();
+    const format = (ext === 'jpeg' || ext === 'jpg') ? 'JPEG' : ext === 'png' ? 'PNG' : ext === 'gif' ? 'GIF' : ext === 'webp' ? 'WEBP' : 'JPEG';
+    const data = match[2];
+
+    // Dimensionen ermitteln, um Seitenverhältnis zu wahren (kein Stauchen)
+    const { width, height } = await new Promise<{ width: number; height: number }>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => resolve({ width: 1, height: 1 }); // Fallback
+      img.src = dataUrl;
+    });
+    return { data, format, width, height };
+  } catch {
+    return null;
+  }
+}
+
 // Fallback: Text-Wasserzeichen
 function addTextWatermark(pdf: jsPDF, pageWidth: number, pageHeight: number) {
   console.log('🔄 Erstelle Text-Wasserzeichen als Fallback');
@@ -132,11 +180,15 @@ export default function DatasheetPDFGenerator({
   orderTitle,
   orderType,
   customerName,
+  orderCreatedAt,
   specs,
   activeCategories,
   assigneeName,
   finalAmount,
   paymentStatus,
+  paymentMethod,
+  depositAmount,
+  attachImages = [],
   onPDFGenerated,
   buttonText = 'Datenblatt als PDF',
   datasheetVersion,
@@ -224,7 +276,10 @@ export default function DatasheetPDFGenerator({
       pdf.setFont('helvetica', 'normal');
       
       // Header-Tabelle für Auftragsinformationen
-      const createdAtRaw = resolvedCreatedAt ?? undefined;
+      const createdAtRaw =
+        (paymentStatus === 'deposit' || paymentStatus === 'paid')
+          ? (resolvedUpdatedAt ?? datasheetUpdatedAt ?? orderCreatedAt ?? resolvedCreatedAt ?? undefined)
+          : (orderCreatedAt ?? resolvedCreatedAt ?? undefined);
       const updatedAtRaw = resolvedUpdatedAt ?? datasheetUpdatedAt;
       const createdAtLabel = createdAtRaw
         ? new Date(createdAtRaw).toLocaleDateString('de-DE')
@@ -266,7 +321,7 @@ export default function DatasheetPDFGenerator({
           const checkboxSpacing = 20;
           let checkboxX = priceX + pdf.getTextWidth(row[3]) + 5;
           
-          // Wenn bezahlt: nur "Bezahlt" anzeigen
+          // Wenn bezahlt: nur "Bezahlt" anzeigen (+ optional Zahlungsart)
           if (paymentStatus === 'paid') {
             // Checkbox für "Bezahlt"
             pdf.setLineWidth(0.3);
@@ -277,7 +332,14 @@ export default function DatasheetPDFGenerator({
             pdf.line(checkboxX + 1.2, checkboxY + 2.5, checkboxX + 2.5, checkboxY + 0.5);
             pdf.setFont('helvetica', 'normal');
             pdf.setFontSize(9);
-            pdf.text('Bezahlt', checkboxX + checkboxSize + 2, y);
+            const bezahltLabel = 'Bezahlt';
+            pdf.text(bezahltLabel, checkboxX + checkboxSize + 2, y);
+            // Zahlungsart neben Bezahlt anzeigen
+            if (paymentMethod === 'paypal' || paymentMethod === 'direktueberweisung') {
+              const methodLabel = paymentMethod === 'paypal' ? 'PayPal' : 'Direktüberweisung';
+              const methodX = checkboxX + checkboxSize + 2 + pdf.getTextWidth(bezahltLabel) + 4;
+              pdf.text(`(${methodLabel})`, methodX, y);
+            }
           } 
           // Wenn angezahlt (und nicht bezahlt): nur "Angezahlt" anzeigen
           else if (paymentStatus === 'deposit') {
@@ -290,7 +352,13 @@ export default function DatasheetPDFGenerator({
             pdf.line(checkboxX + 1.2, checkboxY + 2.5, checkboxX + 2.5, checkboxY + 0.5);
             pdf.setFont('helvetica', 'normal');
             pdf.setFontSize(9);
-            pdf.text('Angezahlt', checkboxX + checkboxSize + 2, y);
+            const depositLabel = depositAmount ? `Angezahlt (${depositAmount} €)` : 'Angezahlt';
+            pdf.text(depositLabel, checkboxX + checkboxSize + 2, y);
+            if (paymentMethod === 'paypal' || paymentMethod === 'direktueberweisung') {
+              const methodLabel = paymentMethod === 'paypal' ? 'PayPal' : 'Direktüberweisung';
+              const methodX = checkboxX + checkboxSize + 2 + pdf.getTextWidth(depositLabel) + 4;
+              pdf.text(`(${methodLabel})`, methodX, y);
+            }
           }
           // Wenn open oder undefined: beide Checkboxen leer anzeigen
           else {
@@ -333,7 +401,14 @@ export default function DatasheetPDFGenerator({
             return spec.value !== 'Nein' && spec.value !== 'nein' && spec.value !== 'no';
           }
           // Checkbox-Felder: Nur anzeigen wenn aktiviert
-          if (spec.key === 'pickguard' || spec.key === 'battery_compartment') {
+          if (
+            spec.key === 'pickguard' ||
+            spec.key === 'battery_compartment' ||
+            spec.key === 'pickup_mount_direct' ||
+            spec.key === 'pickup_mount_frame' ||
+            spec.key === 'customer_provides_body' ||
+            spec.key === 'customer_provides_neck'
+          ) {
             return spec.value !== 'Nein' && spec.value !== 'nein' && spec.value !== 'no';
           }
           if (spec.key === 'spokewheel') {
@@ -342,16 +417,123 @@ export default function DatasheetPDFGenerator({
           return true;
         });
       
+      const finishKeys = new Set([
+        'finish_body',
+        'finish_neck',
+        'headstock_finish',
+        'body_surface_treatment',
+        'headstock_logo',
+        'headstock_logo_notes',
+      ]);
+      const finishFieldOrder = [
+        'finish_body',
+        'finish_neck',
+        'headstock_finish',
+        'headstock_logo',
+        'headstock_logo_notes',
+        'electronics',
+        'pickups',
+        'elektronikparts',
+        'hardware_color',
+        'strap_pins',
+        'strings',
+        'tuning',
+        'notes',
+      ];
+      const hasTopMaterial = validSpecs.some((spec) => spec.key === 'body_top');
+      const isTruthySpecValue = (value?: string) => {
+        const normalized = (value || '').trim().toLowerCase();
+        return normalized === 'ja' || normalized === 'true' || normalized === '1' || normalized === 'yes';
+      };
+
       // Verwende die definierten Kategorien aus order-presets
       const categories = getCategoriesForOrderType(orderType);
       
       categories.forEach(category => {
         const fieldsInCategory = getFieldsForCategory(orderType, category);
-        const categorySpecs = validSpecs.filter(spec => fieldsInCategory.includes(spec.key));
+        let categorySpecs = validSpecs.filter(spec => fieldsInCategory.includes(spec.key));
+        if (category === 'body') {
+          const directMountEnabled = isTruthySpecValue(
+            validSpecs.find((spec) => spec.key === 'pickup_mount_direct')?.value,
+          );
+          const frameMountEnabled = isTruthySpecValue(
+            validSpecs.find((spec) => spec.key === 'pickup_mount_frame')?.value,
+          );
+          const mountSuffix = [
+            directMountEnabled ? 'Direct Mount' : null,
+            frameMountEnabled ? 'Frame Mount' : null,
+          ].filter(Boolean) as string[];
+
+          categorySpecs = categorySpecs
+            .filter((spec) => spec.key !== 'pickup_mount_direct' && spec.key !== 'pickup_mount_frame')
+            .map((spec) => {
+              if (spec.key !== 'pickups_routes' || mountSuffix.length === 0) {
+                return spec;
+              }
+              return {
+                ...spec,
+                value: `${spec.value} · ${mountSuffix.join(', ')}`,
+              };
+            });
+
+          if (hasTopMaterial) {
+            categorySpecs = categorySpecs.filter((spec) => spec.key !== 'body_has_top');
+          }
+        }
+
+        // Finish-Felder in PDF immer unter "Finish" bündeln.
+        if (category !== 'finish') {
+          categorySpecs = categorySpecs.filter(spec => !finishKeys.has(spec.key));
+        } else {
+          const specMap = new Map(categorySpecs.map((spec) => [spec.key, spec]));
+          const bodyFinishFromBody = validSpecs.find((spec) => spec.key === 'body_surface_treatment');
+          if (!specMap.has('finish_body') && bodyFinishFromBody) {
+            specMap.set('finish_body', {
+              ...bodyFinishFromBody,
+              key: 'finish_body',
+            });
+          }
+          const headstockLogo = validSpecs.find((spec) => spec.key === 'headstock_logo');
+          const headstockLogoNotes = validSpecs.find((spec) => spec.key === 'headstock_logo_notes');
+          if (!specMap.has('headstock_logo') && headstockLogo) {
+            specMap.set('headstock_logo', headstockLogo);
+          }
+          if (!specMap.has('headstock_logo_notes') && headstockLogoNotes) {
+            specMap.set('headstock_logo_notes', headstockLogoNotes);
+          }
+          const orderedFinishSpecs = fieldsInCategory
+            .map((fieldKey) => specMap.get(fieldKey))
+            .filter((spec): spec is typeof categorySpecs[number] => Boolean(spec));
+          categorySpecs = orderedFinishSpecs;
+        }
+
         if (categorySpecs.length > 0) {
           specsByCategory[CATEGORY_LABELS[category]] = categorySpecs;
         }
       });
+
+      // Für Einzelaufträge (BODY/NECK) trotzdem einen Finish-Block erzeugen,
+      // wenn Finish-relevante Felder vorhanden sind.
+      if (!categories.includes('finish')) {
+        const finishSpecMap = new Map(
+          validSpecs
+            .filter((spec) => finishKeys.has(spec.key))
+            .map((spec) => [spec.key, spec]),
+        );
+        const bodyFinishFromBody = validSpecs.find((spec) => spec.key === 'body_surface_treatment');
+        if (!finishSpecMap.has('finish_body') && bodyFinishFromBody) {
+          finishSpecMap.set('finish_body', {
+            ...bodyFinishFromBody,
+            key: 'finish_body',
+          });
+        }
+        const fallbackFinishSpecs = finishFieldOrder
+          .map((fieldKey) => finishSpecMap.get(fieldKey))
+          .filter((spec): spec is typeof specs[number] => Boolean(spec));
+        if (fallbackFinishSpecs.length > 0) {
+          specsByCategory[CATEGORY_LABELS.finish] = fallbackFinishSpecs;
+        }
+      }
 
       if (Object.keys(specsByCategory).length === 0) {
         pdf.setFontSize(10);
@@ -460,6 +642,66 @@ export default function DatasheetPDFGenerator({
         currentY = currentColumnY;
       }
 
+      // Seite 2: Als Anhang markierte Bilder (wenn vorhanden) – ohne Wasserzeichen für klare Darstellung
+      if (attachImages.length > 0) {
+        const sortedAttach = [...attachImages].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        pdf.addPage('l', 'a4' as any);
+        // Kein Adler-Hintergrund auf Anhänge-Seite – Bilder sollen nicht „getaucht“/verblasst wirken
+        let attachY = 15;
+        pdf.setFontSize(16);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Anhänge – Auftragsbilder', margin, attachY);
+        attachY += 10;
+
+        const imgMargin = 8;
+        const captionHeight = 8;
+        const maxImgWidth = (usableWidth - imgMargin) / 2;
+        const maxImgHeight = Math.min(165, pageHeight - attachY - captionHeight - 15);
+        const rowHeight = maxImgHeight + captionHeight;
+        let imgCol = 0;
+        let imgRowY = attachY;
+
+        for (const img of sortedAttach) {
+          const loaded = await loadImageForPdf(img.path);
+          if (!loaded) continue;
+
+          if (imgRowY + maxImgHeight > pageHeight - 20) {
+            pdf.addPage('l', 'a4' as any);
+            imgRowY = 15;
+            imgCol = 0;
+          }
+          const imgX = margin + imgCol * (maxImgWidth + imgMargin);
+          const scale = Math.min(maxImgWidth / loaded.width, maxImgHeight / loaded.height);
+          const drawW = loaded.width * scale;
+          const drawH = loaded.height * scale;
+          const offsetX = (maxImgWidth - drawW) / 2;
+          const offsetY = (maxImgHeight - drawH) / 2;
+          const drawX = imgX + offsetX;
+          const drawY = imgRowY + offsetY;
+          try {
+            // PNG/WebP können Transparenz haben – neutraler grauer Hintergrund für weiße Symbole
+            if (loaded.format === 'PNG' || loaded.format === 'WEBP') {
+              pdf.setFillColor(200, 200, 200);
+              pdf.rect(drawX, drawY, drawW, drawH, 'F');
+            }
+            pdf.addImage(loaded.data, loaded.format, drawX, drawY, drawW, drawH);
+            if (img.comment?.trim()) {
+              pdf.setFontSize(8);
+              pdf.setFont('helvetica', 'normal');
+              const caption = img.comment.trim().substring(0, 50) + (img.comment.length > 50 ? '…' : '');
+              pdf.text(caption, imgX, imgRowY + maxImgHeight + 4, { maxWidth: maxImgWidth });
+            }
+          } catch {
+            // Bild konnte nicht eingebettet werden – überspringen
+          }
+
+          imgCol++;
+          if (imgCol >= 2) {
+            imgCol = 0;
+            imgRowY += rowHeight;
+          }
+        }
+      }
 
       // PDF als Blob generieren
       const pdfBlob = pdf.output('blob');

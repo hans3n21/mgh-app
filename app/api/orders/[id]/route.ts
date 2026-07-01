@@ -8,6 +8,8 @@ const updateOrderSchema = z.object({
   title: z.string().optional(),
   finalAmountCents: z.number().int().nonnegative().nullable().optional(),
   paymentStatus: z.enum(['open','deposit','paid']).optional(),
+  paymentMethod: z.enum(['paypal', 'direktueberweisung']).nullable().optional(),
+  depositAmountCents: z.number().int().nonnegative().nullable().optional(),
 });
 
 interface RouteParams { params: Promise<{ id: string }> }

@@ -3,17 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-
-const STATUS_LABEL = {
-  intake: 'Eingang',
-  quote: 'Angebot',
-  in_progress: 'In Arbeit',
-  finishing: 'Finish',
-  setup: 'Setup',
-  awaiting_customer: 'Warten auf Kunde',
-  complete: 'Fertig',
-  design_review: 'Designprüfung',
-} as const;
+import { WORKFLOW_STATUS_CLASS, WORKFLOW_STATUS_LABEL, normalizeWorkflowStatus } from '@/lib/order-status';
 
 const TYPE_LABEL = {
   GUITAR: 'Gitarrenbau',
@@ -30,7 +20,7 @@ interface Order {
   id: string;
   title: string;
   type: keyof typeof TYPE_LABEL;
-  status: keyof typeof STATUS_LABEL;
+  status: string;
   createdAt: string;
   customer: {
     id: string;
@@ -48,21 +38,12 @@ interface OpenOrdersModalProps {
   onOrderAssigned?: () => void;
 }
 
-function StatusBadge({ status }: { status: keyof typeof STATUS_LABEL | string }) {
-  const map: Record<string, string> = {
-    intake: 'bg-slate-800 text-slate-300 border-slate-700',
-    quote: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
-    in_progress: 'bg-blue-900/30 text-blue-300 border-blue-700/50',
-    finishing: 'bg-purple-900/30 text-purple-300 border-purple-700/50',
-    setup: 'bg-cyan-900/30 text-cyan-300 border-cyan-700/50',
-    awaiting_customer: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
-    complete: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
-    design_review: 'bg-fuchsia-900/30 text-fuchsia-300 border-fuchsia-700/50',
-  };
+function StatusBadge({ status }: { status: string }) {
+  const normalized = normalizeWorkflowStatus(status);
 
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border ${map[String(status)] || 'bg-slate-800 text-slate-300 border-slate-700'}`}>
-      {STATUS_LABEL[String(status) as keyof typeof STATUS_LABEL] || String(status)}
+    <span className={`text-xs px-2 py-0.5 rounded-full border ${WORKFLOW_STATUS_CLASS[normalized]}`}>
+      {WORKFLOW_STATUS_LABEL[normalized]}
     </span>
   );
 }

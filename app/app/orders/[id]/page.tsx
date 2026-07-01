@@ -32,7 +32,7 @@ interface PageProps {
 
 export default async function OrderDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const [order, users, session] = await Promise.all([
+  const [order, users, session, tasks] = await Promise.all([
     prisma.order.findUnique({
       where: { id },
       include: {
@@ -42,6 +42,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
         items: { include: { priceItem: true } },
         images: true,
         messages: { include: { sender: true } },
+        mails: { include: { attachments: true } },
       },
     }),
     prisma.user.findMany({
@@ -49,7 +50,39 @@ export default async function OrderDetailPage({ params }: PageProps) {
       orderBy: { name: 'asc' },
     }),
     getServerSession(authOptions),
+    prisma.orderTask.findMany({
+      where: { orderId: id },
+      include: {
+        assignee: { select: { id: true, name: true } },
+        creator: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
   ]);
+
+  const currentUserId = session?.user?.id;
+
+  let hasUnreadComm = false;
+  if (order && currentUserId) {
+    const view = await prisma.orderView.findUnique({
+      where: { orderId_userId: { orderId: id, userId: currentUserId } },
+      select: { acknowledgedAt: true },
+    });
+    const acked = view?.acknowledgedAt;
+
+    const lastMsg = order.messages[order.messages.length - 1]?.createdAt;
+    const lastMail = order.mails?.[order.mails.length - 1]?.date;
+    const latestActivity = lastMsg && lastMail
+      ? (new Date(lastMsg) > new Date(lastMail) ? new Date(lastMsg) : new Date(lastMail))
+      : lastMsg ? new Date(lastMsg) : lastMail ? new Date(lastMail) : null;
+    hasUnreadComm = latestActivity != null && (!acked || new Date(latestActivity) > acked);
+
+    prisma.orderView.upsert({
+      where: { orderId_userId: { orderId: id, userId: currentUserId } },
+      update: { lastSeenAt: new Date() },
+      create: { orderId: id, userId: currentUserId },
+    }).catch(() => {});
+  }
 
   if (!order) {
     return (
@@ -63,7 +96,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
   }
 
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden">
+    <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 sm:rounded-2xl">
       <OrderHeader
         orderId={order.id}
         orderTitle={order.title}
@@ -72,11 +105,17 @@ export default async function OrderDetailPage({ params }: PageProps) {
         customer={order.customer}
       />
 
-      <div className="p-4">
+      <div className="p-3 sm:p-4">
         <OrderDetailClient 
           order={order} 
           users={users} 
-          currentUserId={session?.user?.id || ''} 
+          currentUserId={session?.user?.id || ''}
+          hasUnreadComm={hasUnreadComm}
+          initialTasks={tasks.map(t => ({
+            ...t,
+            createdAt: t.createdAt.toISOString(),
+            completedAt: t.completedAt?.toISOString() ?? null,
+          }))}
         />
       </div>
     </section>

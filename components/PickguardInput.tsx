@@ -5,9 +5,10 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   hasError?: boolean;
+  disabled?: boolean;
 };
 
-export default function PickguardInput({ value, onChange, hasError }: Props) {
+export default function PickguardInput({ value, onChange, hasError, disabled }: Props) {
   const [hasPickguard, setHasPickguard] = useState(false);
   const [pickguardMaterial, setPickguardMaterial] = useState('');
 
@@ -41,7 +42,8 @@ export default function PickguardInput({ value, onChange, hasError }: Props) {
           id="pickguard-checkbox"
           checked={hasPickguard}
           onChange={(e) => handlePickguardChange(e.target.checked)}
-          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
+          disabled={disabled}
+          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
         />
         <label htmlFor="pickguard-checkbox" className="text-sm cursor-pointer">
           Pickguard vorhanden
@@ -53,6 +55,7 @@ export default function PickguardInput({ value, onChange, hasError }: Props) {
           type="text"
           value={pickguardMaterial}
           onChange={(e) => handleMaterialChange(e.target.value)}
+          disabled={disabled}
           onDragOver={(e) => {
             e.preventDefault();
             e.currentTarget.classList.add('border-emerald-500', 'bg-emerald-500/5');
@@ -72,7 +75,7 @@ export default function PickguardInput({ value, onChange, hasError }: Props) {
           placeholder="Pickguard Material (z.B. Kunststoff, Metall)..."
           className={`w-full rounded bg-slate-950 border px-2 py-1.5 text-sm transition-colors ${
             hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600 hover:border-slate-700'
-          }`}
+          } disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed`}
           title="Text hierhin ziehen oder eingeben"
         />
       )}

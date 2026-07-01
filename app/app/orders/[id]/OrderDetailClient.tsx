@@ -3,17 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import OrderDetailTabsNew from '@/components/OrderDetailTabsNew';
-
-const STATUS_LABEL: Record<string, string> = {
-  intake: 'Eingang',
-  quote: 'Angebot',
-  in_progress: 'In Arbeit',
-  finishing: 'Finish',
-  setup: 'Setup',
-  awaiting_customer: 'Warten auf Kunde',
-  complete: 'Fertig',
-  design_review: 'Designprüfung',
-};
+import { normalizeWorkflowStatus, WORKFLOW_STATUSES, WORKFLOW_STATUS_LABEL } from '@/lib/order-status';
 
 interface OrderImageLocal {
   id: string;
@@ -52,24 +42,51 @@ interface Order {
     senderType: string;
     sender?: { id: string; name: string } | null;
   }>;
+  mails?: Array<{
+    id: string;
+    subject: string | null;
+    fromName: string | null;
+    fromEmail: string;
+    text: string | null;
+    html: string | null;
+    date: Date;
+    folder: string;
+    senderId: string | null;
+    attachments: Array<{ id: string; filename: string; mimeType: string | null; size: number }>;
+  }>;
   wcOrderId?: string | null;
   finalAmountCents?: number | null;
   paymentStatus?: string | null;
+  paymentMethod?: string | null;
+  depositAmountCents?: number | null;
+}
+
+interface OrderTaskEntry {
+  id: string;
+  title: string;
+  note: string | null;
+  status: string;
+  completedAt: string | null;
+  createdAt: string;
+  assignee: { id: string; name: string };
+  creator: { id: string; name: string };
 }
 
 interface OrderDetailClientProps {
   order: Order;
   users: Array<{ id: string; name: string }>;
   currentUserId: string;
+  hasUnreadComm?: boolean;
+  initialTasks?: OrderTaskEntry[];
 }
 
 function statusToProgress(status: string): number {
-  const order = ['intake', 'quote', 'in_progress', 'finishing', 'setup', 'awaiting_customer', 'complete'];
-  const index = order.indexOf(status);
-  return Math.round(((index + 1) / order.length) * 100);
+  const normalized = normalizeWorkflowStatus(status);
+  const index = WORKFLOW_STATUSES.indexOf(normalized);
+  return Math.round(((Math.max(index, 0) + 1) / WORKFLOW_STATUSES.length) * 100);
 }
 
-export default function OrderDetailClient({ order: initialOrder, users, currentUserId }: OrderDetailClientProps) {
+export default function OrderDetailClient({ order: initialOrder, users, currentUserId, hasUnreadComm, initialTasks }: OrderDetailClientProps) {
   const [order, setOrder] = useState(initialOrder);
   const [priceItems, setPriceItems] = useState<Array<{
     id: string;
@@ -172,6 +189,42 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     }
   };
 
+  const handlePaymentMethodChange = async (newPaymentMethod: 'paypal' | 'direktueberweisung' | null) => {
+    try {
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentMethod: newPaymentMethod }),
+      });
+
+      if (response.ok) {
+        const updatedOrder = await response.json();
+        setOrder(updatedOrder);
+        router.refresh();
+      }
+    } catch (error) {
+      console.error('Fehler beim PaymentMethod-Update:', error);
+    }
+  };
+
+  const handleDepositAmountChange = async (newDepositAmountCents: number | null) => {
+    try {
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ depositAmountCents: newDepositAmountCents }),
+      });
+
+      if (response.ok) {
+        const updatedOrder = await response.json();
+        setOrder(updatedOrder);
+        router.refresh();
+      }
+    } catch (error) {
+      console.error('Fehler beim DepositAmount-Update:', error);
+    }
+  };
+
   const syncToShop = async (forcedMode?: 'full' | 'deposit' | 'balance') => {
     setSyncing(true);
     try {
@@ -185,10 +238,11 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         }
       }
 
+      const depositAmountCents = order.depositAmountCents ?? undefined;
       const res = await fetch(`/api/orders/${order.id}/woocommerce`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: forcedMode ?? shopMode, amountCents }),
+        body: JSON.stringify({ mode: forcedMode ?? shopMode, amountCents, depositAmountCents }),
       });
       if (res.ok) {
         const updated = await res.json();
@@ -203,28 +257,76 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     }
   };
 
+  const normalizedStatus = normalizeWorkflowStatus(order.status);
   const progress = statusToProgress(order.status);
 
   return (
     <div className="w-full space-y-4">
-      {/* Obere Infozeile ohne Zahnrad */}
-      <div className="text-xs text-slate-400">
-        {order.wcOrderId ? (
-          <span>Im Shop angelegt: Woo ID #{order.wcOrderId}</span>
-        ) : (
-          <span>Noch nicht im Shop angelegt</span>
-        )}
-      </div>
-      {/* Progress Bar */}
-      <div>
-        <div className="text-xs text-slate-400">Status</div>
-        <div className="mt-1 h-2 w-full rounded-full bg-slate-800">
-          <div 
-            className="h-2 rounded-full bg-sky-500 transition-all duration-300" 
-            style={{ width: `${progress}%` }} 
-          />
+      <div className="rounded-xl border border-slate-800/80 bg-slate-950/70 p-3 shadow-inner shadow-black/10 sm:p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Workflow</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-sky-500/15 px-2.5 py-1 text-xs font-medium text-sky-200">
+                {WORKFLOW_STATUS_LABEL[normalizedStatus]}
+              </span>
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                  order.wcOrderId
+                    ? 'bg-emerald-500/15 text-emerald-200'
+                    : 'bg-slate-800 text-slate-300'
+                }`}
+              >
+                {order.wcOrderId ? `Shop #${order.wcOrderId}` : 'Nicht im Shop'}
+              </span>
+            </div>
+          </div>
+          <div className="w-24 shrink-0 pt-0.5">
+            <div className="flex items-center justify-between text-[11px] text-slate-500">
+              <span>Stand</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 rounded-full bg-slate-800">
+              <div
+                className="h-1.5 rounded-full bg-sky-500 transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
         </div>
-        <div className="mt-1 text-xs text-slate-300">{STATUS_LABEL[order.status]}</div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <label className="min-w-0">
+            <span className="mb-1 block text-[11px] font-medium text-slate-500">Status</span>
+            <select
+              value={normalizedStatus}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              className="h-10 w-full rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 text-sm text-slate-100 outline-none transition focus:border-sky-500"
+            >
+              {WORKFLOW_STATUSES.map((statusKey) => (
+                <option key={statusKey} value={statusKey}>
+                  {WORKFLOW_STATUS_LABEL[statusKey]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="min-w-0">
+            <span className="mb-1 block text-[11px] font-medium text-slate-500">Mitarbeiter</span>
+            <select
+              value={order.assigneeId || ''}
+              onChange={(e) => handleAssigneeChange(e.target.value)}
+              className="h-10 w-full rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 text-sm text-slate-100 outline-none transition focus:border-sky-500"
+            >
+              <option value="">Nicht zugewiesen</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {/* Tabs - Vollbreite */}
@@ -253,6 +355,8 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
           } : null,
         }}
         paymentStatus={order.paymentStatus}
+        paymentMethod={order.paymentMethod}
+        depositAmountCents={order.depositAmountCents}
         onStatusChange={handleStatusChange}
         onAssigneeChange={handleAssigneeChange}
         onImagesChange={(images) => {
@@ -265,6 +369,8 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         }}
         onMessagesChange={handleMessagesChange}
         onPaymentStatusChange={handlePaymentStatusChange}
+        onPaymentMethodChange={handlePaymentMethodChange}
+        onDepositAmountChange={handleDepositAmountChange}
         shopMode={shopMode}
         shopAmount={shopAmount}
         amountLocked={order.finalAmountCents != null}
@@ -272,6 +378,8 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
           setShopMode(mode);
           setShopAmount(amount);
         }}
+        hasUnreadComm={hasUnreadComm}
+        initialTasks={initialTasks}
       />
     </div>
   );
