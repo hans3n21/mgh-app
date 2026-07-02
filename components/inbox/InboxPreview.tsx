@@ -4,6 +4,7 @@ import type { Message } from './types';
 import ReplyComposer from './ReplyComposer';
 import ImageCarouselModal, { type CarouselImage } from '@/components/ImageCarouselModal';
 import AnnotatedMailText from './AnnotatedMailText';
+import KnowledgeCaptureButton from './KnowledgeCaptureButton';
 import type { ExtractedEntity } from '@/lib/mail/extraction';
 import { renderMarkdown } from '@/lib/utils/markdown';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
@@ -690,6 +691,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 						<button onClick={() => requestAiAction('translation', 'en')} disabled={translationLoading} className="px-1.5 py-0.5 rounded border border-slate-700 text-[11px] text-slate-400 hover:text-slate-200 disabled:opacity-40">
 							{translationLoading ? '⏳' : 'EN'}
 						</button>
+						<KnowledgeCaptureButton subject={message.subject} mailText={previewText} />
 				</div>
 				<div className="flex-1" />
 			</div>
