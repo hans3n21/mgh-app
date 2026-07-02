@@ -51,6 +51,28 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validatedData = createCustomerSchema.parse(body);
 
+    // Dedupe per E-Mail: Doppelte Submits (z.B. Auftrags-Formular nach
+    // Validierungsfehler erneut abgeschickt) legten denselben Kunden mehrfach
+    // an. Existiert die E-Mail bereits, wird der bestehende Datensatz um neu
+    // mitgelieferte Felder ergänzt und zurückgegeben statt dupliziert.
+    const email = validatedData.email?.trim();
+    if (email) {
+      const existing = await prisma.customer.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' } },
+      });
+      if (existing) {
+        const fillOnly: Record<string, string> = {};
+        for (const key of ['phone', 'addressLine1', 'postalCode', 'city', 'country'] as const) {
+          const incoming = validatedData[key]?.trim();
+          if (incoming && !existing[key]) fillOnly[key] = incoming;
+        }
+        const customer = Object.keys(fillOnly).length > 0
+          ? await prisma.customer.update({ where: { id: existing.id }, data: fillOnly })
+          : existing;
+        return NextResponse.json(customer, { status: 200 });
+      }
+    }
+
     const customer = await prisma.customer.create({
       data: validatedData,
     });

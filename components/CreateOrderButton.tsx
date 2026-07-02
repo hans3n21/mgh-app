@@ -55,16 +55,25 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
     setLoading(true);
 
     try {
+      // Erst ALLE Eingaben validieren, dann anlegen: Vorher wurde der Kunde
+      // schon erstellt, bevor die Titel-Prüfung fehlschlug — beim zweiten
+      // Submit entstand dann ein Kunden-Duplikat (verwaister leerer Datensatz).
+      if (mode === 'new' && !newCustomer.name.trim()) {
+        alert('Bitte Kundennamen eingeben');
+        setLoading(false);
+        return;
+      }
+
+      if (!title.trim()) {
+        alert('Bitte Titel eingeben');
+        setLoading(false);
+        return;
+      }
+
       let finalCustomerId = customerId;
 
       // Neuen Kunden erstellen wenn nötig
       if (mode === 'new') {
-        if (!newCustomer.name.trim()) {
-          alert('Bitte Kundennamen eingeben');
-          setLoading(false);
-          return;
-        }
-
         const customerRes = await fetch('/api/customers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -77,12 +86,6 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
 
         const newCust = await customerRes.json();
         finalCustomerId = newCust.id;
-      }
-
-      if (!title.trim()) {
-        alert('Bitte Titel eingeben');
-        setLoading(false);
-        return;
       }
 
       // Auftrag erstellen
