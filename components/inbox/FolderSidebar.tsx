@@ -1,11 +1,12 @@
 "use client";
 import React, { useCallback, useEffect, useState } from 'react';
-import { isTrashFolderName, normalizeFolderName } from '@/lib/mail/folders';
+import { normalizeFolderName } from '@/lib/mail/folders';
 import type { MailAccountTab } from './AccountSidebar';
 
 interface ImapFolder {
   path: string;
   name: string;
+  delimiter?: string | null;
   specialUse?: string | null;
 }
 
@@ -24,35 +25,73 @@ interface Props {
   unreadPerAccount?: Record<string, number>;
 }
 
-const SPECIAL_FOLDERS: Array<{ match: string; icon: string; label: string }> = [
-  { match: 'inbox',   icon: '📥', label: 'Posteingang' },
-  { match: 'sent',    icon: '📤', label: 'Gesendet' },
-  { match: 'drafts',  icon: '📝', label: 'Entwürfe' },
-  { match: 'junk',    icon: '🚫', label: 'Spam' },
-  { match: 'spam',    icon: '🚫', label: 'Spam' },
-  { match: 'trash',   icon: '🗑', label: 'Papierkorb' },
-  { match: 'deleted', icon: '🗑', label: 'Gelöscht' },
-  { match: 'archive', icon: '📦', label: 'Archiv' },
+const SPECIAL_ROLES: Array<{ role: string; icon: string; label: string; names: string[] }> = [
+  { role: 'inbox',   icon: '📥', label: 'Posteingang', names: ['inbox', 'posteingang'] },
+  { role: 'sent',    icon: '📤', label: 'Gesendet',    names: ['sent', 'sent items', 'sent messages', 'gesendet', 'gesendete elemente'] },
+  { role: 'drafts',  icon: '📝', label: 'Entwürfe',    names: ['drafts', 'entwurfe'] },
+  { role: 'junk',    icon: '🚫', label: 'Spam',        names: ['junk', 'spam'] },
+  { role: 'trash',   icon: '🗑', label: 'Papierkorb',  names: ['trash', 'deleted', 'deleted items', 'deleted messages', 'papierkorb', 'geloschte elemente', 'geloscht'] },
+  { role: 'archive', icon: '📦', label: 'Archiv',      names: ['archive', 'archives', 'archiv'] },
 ];
 
-function folderMatches(path: string, match: string): boolean {
-  const lower = normalizeFolderName(path);
-  const normalizedMatch = normalizeFolderName(match);
-  if (lower.includes(normalizedMatch)) return true;
-  if (match === 'inbox' && lower.includes('posteingang')) return true;
-  if (match === 'sent' && lower.includes('gesendet')) return true;
-  if (match === 'drafts' && lower.includes('entwurfe')) return true;
-  if (match === 'archive' && lower.includes('archiv')) return true;
-  if ((match === 'trash' || match === 'deleted') && isTrashFolderName(path)) return true;
-  return false;
+function splitFolderPath(f: ImapFolder): string[] {
+  const delimiter = f.delimiter && f.delimiter.length === 1 ? f.delimiter : null;
+  const segments = delimiter ? f.path.split(delimiter) : f.path.split(/[/\\]/);
+  return segments.filter(Boolean);
 }
 
-function getFolderMeta(path: string): { icon: string; label: string } {
-  for (const sf of SPECIAL_FOLDERS) {
-    if (folderMatches(path, sf.match)) return { icon: sf.icon, label: sf.label };
+function roleForName(name: string): typeof SPECIAL_ROLES[number] | null {
+  const normalized = normalizeFolderName(name);
+  return SPECIAL_ROLES.find((r) => r.names.includes(normalized)) ?? null;
+}
+
+function roleFromSpecialUse(f: ImapFolder): typeof SPECIAL_ROLES[number] | null {
+  const raw = normalizeFolderName(String(f.specialUse || '')).replace(/\\/g, '');
+  if (!raw) return null;
+  return SPECIAL_ROLES.find((r) => r.role === raw || r.names.includes(raw)) ?? null;
+}
+
+/**
+ * Systemordner werden primaer ueber das IMAP-specialUse-Flag erkannt. Nur wenn kein
+ * anderer Ordner die Rolle bereits per Flag belegt, greift der Namens-Fallback — und
+ * der ausschliesslich fuer Top-Level-Ordner mit exaktem Namen. Substring-Matching
+ * fuehrte vorher dazu, dass verschachtelte Ordner wie "Trash.Spam.Archiv" alle als
+ * identisches "Spam" erschienen.
+ */
+function classifySpecialFolders(folders: ImapFolder[]): Map<string, { icon: string; label: string }> {
+  const special = new Map<string, { icon: string; label: string }>();
+  const claimed = new Set<string>();
+  for (const f of folders) {
+    const role = roleFromSpecialUse(f);
+    if (role) {
+      special.set(f.path, { icon: role.icon, label: role.label });
+      claimed.add(role.role);
+    }
   }
-  const parts = path.split(/[/\\]/);
-  return { icon: '📁', label: parts[parts.length - 1] || path };
+  for (const f of folders) {
+    if (special.has(f.path)) continue;
+    const segments = splitFolderPath(f);
+    if (segments.length !== 1) continue;
+    const role = roleForName(segments[0]);
+    if (role && !claimed.has(role.role)) {
+      special.set(f.path, { icon: role.icon, label: role.label });
+      claimed.add(role.role);
+    }
+  }
+  return special;
+}
+
+/** Verschachtelte Ordner als Breadcrumb anzeigen, z.B. "Papierkorb / Spam / Archiv". */
+function breadcrumbLabel(f: ImapFolder): string {
+  return splitFolderPath(f)
+    .map((seg) => roleForName(seg)?.label ?? seg)
+    .join(' / ');
+}
+
+function getFolderMeta(f: ImapFolder, special: Map<string, { icon: string; label: string }>): { icon: string; label: string } {
+  const meta = special.get(f.path);
+  if (meta) return meta;
+  return { icon: '📁', label: breadcrumbLabel(f) };
 }
 
 function railLabel(label: string): string {
@@ -144,13 +183,9 @@ export default function FolderSidebar({
   }, [activeAccountId, loadedFor, loadFolders]);
 
   // Separate special (known) folders from regular ones, preserve server order
-  const specialPaths = new Set(
-    SPECIAL_FOLDERS.flatMap(sf =>
-      folders.filter(f => folderMatches(f.path, sf.match)).map(f => f.path)
-    )
-  );
-  const specialFolders = folders.filter(f => specialPaths.has(f.path));
-  const regularFolders = folders.filter(f => !specialPaths.has(f.path));
+  const specialMeta = classifySpecialFolders(folders);
+  const specialFolders = folders.filter(f => specialMeta.has(f.path));
+  const regularFolders = folders.filter(f => !specialMeta.has(f.path));
   const pinnedSet = new Set(pinnedFolders);
   const pinnedExisting = folders.filter((f) => pinnedSet.has(f.path));
   const mainAccount = accounts.find((acc) => acc.isDefault) || accounts[0] || null;
@@ -310,7 +345,7 @@ export default function FolderSidebar({
               <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-1">Favoriten</span>
             </div>
             {pinnedExisting.map((f) => {
-              const meta = getFolderMeta(f.path);
+              const meta = getFolderMeta(f, specialMeta);
               return (
                 <FolderButton
                   key={`pin-${f.path}`}
@@ -328,7 +363,7 @@ export default function FolderSidebar({
 
         {/* Bekannte System-Ordner */}
         {specialFolders.filter(f => f.path !== 'INBOX' && !pinnedSet.has(f.path)).map(f => {
-          const meta = getFolderMeta(f.path);
+          const meta = getFolderMeta(f, specialMeta);
           return (
             <FolderButton
               key={f.path}
@@ -346,9 +381,7 @@ export default function FolderSidebar({
           <>
             <div className="mx-3 my-1.5 border-t border-slate-800" />
             {regularFolders.filter((f) => !pinnedSet.has(f.path)).map(f => {
-              const meta = getFolderMeta(f.path);
-              // Indent sub-folders (path contains delimiter)
-              const depth = (f.path.match(/[/\\]/g) || []).length;
+              const meta = getFolderMeta(f, specialMeta);
               return (
                 <FolderButton
                   key={f.path}
@@ -357,7 +390,6 @@ export default function FolderSidebar({
                   path={f.path}
                   active={activeFolder === f.path}
                   onClick={onSelectFolder}
-                  indent={depth}
                 />
               );
             })}
