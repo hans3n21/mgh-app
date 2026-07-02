@@ -1028,6 +1028,9 @@ export default function InboxAccountSettingsPanel({ account, open, onClose }: Pr
             <div className="p-4 space-y-4">
               <div className="text-xs text-slate-400">
                 Wissens-Einträge werden automatisch erkannt wenn Keywords in einer Mail vorkommen und in den KI-Prompt injiziert.
+                Diese Einträge gelten <span className="text-slate-300">nur für dieses Postfach</span> und überschreiben globale
+                Einträge mit gleichem Titel/Kategorie. Allgemeines Wissen für alle Postfächer pflegst du unter{' '}
+                <a href="/app/wissen" className="text-sky-400 hover:underline">Wissen</a> im Hauptmenü.
               </div>
 
               {/* CSV-Import */}

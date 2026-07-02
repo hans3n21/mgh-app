@@ -219,7 +219,11 @@ export default function KnowledgeClient({ initialEntries, migrationReady, canApp
         <div>
           <h1 className="text-xl font-semibold text-slate-100">Wissensbasis</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Globales Firmenwissen fuer KI-Antworten, Suche und interne Pflege.
+            Globales Firmenwissen fuer KI-Antworten, Suche und interne Pflege. Gilt fuer
+            alle Postfaecher und wird per Keyword-Treffer automatisch in den KI-Kontext
+            geladen. Postfach-spezifisches Wissen (ueberschreibt globale Eintraege mit
+            gleichem Titel/Kategorie nur fuer ein Postfach) pflegst du im Posteingang unter
+            Postfach-Einstellungen &rarr; Wissen.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-slate-300">
