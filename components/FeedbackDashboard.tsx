@@ -21,16 +21,14 @@ export default function FeedbackDashboard() {
 
   useEffect(() => {
     loadFeedback();
-  }, [filter]);
+  }, []);
 
   const loadFeedback = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (filter === 'open') params.set('resolved', 'false');
-      if (filter === 'resolved') params.set('resolved', 'true');
-      
-      const response = await fetch(`/api/feedback?${params}`);
+      // Always fetch the full set so the summary counts (offen/erledigt) and all
+      // tab counters are correct immediately, regardless of which tab is active.
+      const response = await fetch('/api/feedback');
       if (response.ok) {
         const data = await response.json();
         setFeedback(data);
@@ -83,6 +81,10 @@ export default function FeedbackDashboard() {
 
   const openFeedback = feedback.filter(f => !f.resolved);
   const resolvedFeedback = feedback.filter(f => f.resolved);
+  const visibleFeedback =
+    filter === 'open' ? openFeedback :
+    filter === 'resolved' ? resolvedFeedback :
+    feedback;
 
   if (loading) {
     return (
@@ -135,14 +137,14 @@ export default function FeedbackDashboard() {
 
       {/* Feedback List */}
       <div className="space-y-4">
-        {feedback.length === 0 ? (
+        {visibleFeedback.length === 0 ? (
           <div className="text-center py-8 text-slate-500">
-            {filter === 'open' ? 'Kein offenes Feedback' : 
-             filter === 'resolved' ? 'Kein erledigtes Feedback' : 
+            {filter === 'open' ? 'Kein offenes Feedback' :
+             filter === 'resolved' ? 'Kein erledigtes Feedback' :
              'Kein Feedback vorhanden'}
           </div>
         ) : (
-          feedback.map((item) => (
+          visibleFeedback.map((item) => (
             <div
               key={item.id}
               className={`p-4 rounded-lg border transition-all ${
