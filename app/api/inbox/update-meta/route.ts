@@ -21,18 +21,30 @@ export async function POST(req: NextRequest) {
 
 		const json = await req.json();
 		const { messageIds, meta } = bodySchema.parse(json);
-		// Note: parsedData is now computed dynamically, not stored in DB
-		// Meta updates (read, starred, tags) would need a separate table or different approach
-		// For now, we only support isRead updates
-		if (meta.read !== undefined) {
-			await Promise.all(messageIds.map((id) => prisma.mail.update({
-				where: { id },
-				data: {
-					isRead: meta.read,
-				},
-			})));
+
+		const data: { isRead?: boolean; starred?: boolean } = {};
+		if (meta.read !== undefined) data.isRead = meta.read;
+		if (meta.starred !== undefined) data.starred = meta.starred;
+
+		if (Object.keys(data).length > 0) {
+			await prisma.mail.updateMany({
+				where: { id: { in: messageIds } },
+				data,
+			});
 		}
-		// TODO: Implement starred and tags if needed (would require schema changes)
+
+		// Tags werden angehaengt (Set-Union), passend zum optimistischen UI-Update im Client.
+		if (meta.tags && meta.tags.length > 0) {
+			const existing = await prisma.mail.findMany({
+				where: { id: { in: messageIds } },
+				select: { id: true, tags: true },
+			});
+			await Promise.all(existing.map((mail) => {
+				const merged = Array.from(new Set([...(mail.tags ?? []), ...meta.tags!]));
+				return prisma.mail.update({ where: { id: mail.id }, data: { tags: merged } });
+			}));
+		}
+
 		return NextResponse.json({ ok: true });
 	} catch (error) {
 		if (error instanceof z.ZodError) return NextResponse.json({ error: 'Invalid data' }, { status: 400 });

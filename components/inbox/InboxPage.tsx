@@ -181,6 +181,8 @@ function mapMailToMessage(m: any, accountLabels: Record<string, string>, detailL
 		lang: detectLang((m.text || m.html || '')),
 		assignedTo: m.orderId || null,
 		isRead: m.isRead !== undefined ? m.isRead : false,
+		starred: m.starred ?? false,
+		tags: Array.isArray(m.tags) ? m.tags : [],
 		snippet: (m.text || '').slice(0, 200),
 		text: m.text || null,
 		html: m.html || undefined,
@@ -353,7 +355,21 @@ export default function InboxPage() {
 				const mails = Array.isArray(data) ? data : (data.items || []);
 				const next: Message[] = mails.map((mail: any) => mapMailToMessage(mail, accountLabelMapRef.current, false));
 				setMessages((prev) => {
-					if (!append) return next;
+					if (!append) {
+						// A background/full list refresh only returns summary data (no
+						// attachments/html). Keep already-loaded detail data for messages
+						// that were previously fetched in full, so an in-flight refresh
+						// doesn't blank out the mail the user currently has open.
+						if (prev.length === 0) return next;
+						const detailedById = new Map(
+							prev.filter((m) => m.detailLoaded).map((m) => [m.id, m])
+						);
+						if (detailedById.size === 0) return next;
+						return next.map((mail) => {
+							const detailed = detailedById.get(mail.id);
+							return detailed ? { ...mail, ...detailed } : mail;
+						});
+					}
 					const seen = new Set(prev.map((m) => m.id));
 					const appended = next.filter((m) => !seen.has(m.id));
 					return [...prev, ...appended];
@@ -466,7 +482,10 @@ export default function InboxPage() {
 		try {
 			const syncScope = {
 				accountIds: focusedAccountIdsKey ? focusedAccountIdsKey.split(',').filter(Boolean) : [],
-				folders: [folder || 'INBOX'],
+				// Aktuellen Ordner zuerst (schnellste sichtbare Aktualisierung), aber die
+				// Standardordner immer mitsyncen — sonst veralten Gesendet/Papierkorb,
+				// solange man sie nicht aktiv ansieht.
+				folders: Array.from(new Set([folder || 'INBOX', 'INBOX', 'Sent', 'Trash'])),
 			};
 			const res = await fetch('/api/mail/sync', {
 				method: 'POST',
@@ -665,6 +684,12 @@ export default function InboxPage() {
 
 		return () => {
 			cancelled = true;
+			// Free the in-flight guard immediately on cleanup (e.g. React StrictMode's
+			// mount/cleanup/remount in dev, or selectedId changing before the fetch
+			// resolves). Otherwise a cancelled request's guard entry can linger until
+			// its own fetch settles, blocking the next effect run from actually
+			// re-fetching and leaving the mail stuck without attachments/html.
+			detailRequestIdsRef.current.delete(selectedId);
 		};
 	}, [selectedId, messages, accountLabelMap]);
 
@@ -704,6 +729,13 @@ export default function InboxPage() {
 		await fetch('/api/inbox/update-meta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageIds: ids, meta: { starred } }) });
 	}
 
+	const toggleStar = useCallback(async (id: string, starred: boolean) => {
+		setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, starred } : m)));
+		mailCacheRef.current.clear();
+		clearInboxSnapshots();
+		await fetch('/api/inbox/update-meta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageIds: [id], meta: { starred } }) });
+	}, []);
+
 	async function bulkTag(tag: string) {
 		const ids = Array.from(selectedIds);
 		if (ids.length === 0) return;
@@ -740,7 +772,12 @@ export default function InboxPage() {
 			if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement)?.isContentEditable) return;
 			if (e.key === 'm') bulkMarkRead(true);
 			if (e.key === 't') bulkTag('tag');
-			if (e.key === 's') bulkStar(true);
+			if (e.key === 's') {
+				// Toggle: sind alle ausgewaehlten schon markiert, Stern entfernen — sonst setzen.
+				const ids = Array.from(selectedIds);
+				const allStarred = ids.length > 0 && ids.every((id) => messages.find((m) => m.id === id)?.starred);
+				bulkStar(!allStarred);
+			}
 		}
 		window.addEventListener('keydown', onKey);
 		return () => window.removeEventListener('keydown', onKey);
@@ -941,6 +978,7 @@ export default function InboxPage() {
 											selectedId={selectedId}
 											onSelect={setSelectedId}
 											showAccountBadge={focusKey === 'all'}
+											onToggleStar={toggleStar}
 										/>
 									</div>
 									{hasMore && (

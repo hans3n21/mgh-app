@@ -7,6 +7,7 @@ type Props = {
 	selectedId?: string | null;
 	onSelect: (id: string) => void;
 	showAccountBadge?: boolean;
+	onToggleStar?: (id: string, starred: boolean) => void;
 };
 
 const SENT_FOLDER_KEYWORDS = ['sent', 'gesendet', 'gesendete', 'outbox'];
@@ -36,7 +37,7 @@ function getAccountBadgeTone(label?: string | null): string {
 	return 'bg-emerald-500/20 border-[rgba(0,189,124,0.5)] text-emerald-200';
 }
 
-export default function InboxList({ messages, selectedId, onSelect, showAccountBadge = false }: Props) {
+export default function InboxList({ messages, selectedId, onSelect, showAccountBadge = false, onToggleStar }: Props) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const rowHeight = 80;
 	const [scrollTop, setScrollTop] = useState(0);
@@ -145,7 +146,20 @@ export default function InboxList({ messages, selectedId, onSelect, showAccountB
 											{m.subject || 'Ohne Betreff'}
 										</span>
 										{m.hasAttachments && <span className="text-slate-500 text-[10px] flex-shrink-0">📎</span>}
-										{m.starred && <span className="text-yellow-400 text-[10px] flex-shrink-0">★</span>}
+										{onToggleStar ? (
+											<button
+												type="button"
+												onClick={(e) => { e.stopPropagation(); onToggleStar(m.id, !m.starred); }}
+												title={m.starred ? 'Stern entfernen' : 'Mit Stern markieren'}
+												className={`flex-shrink-0 text-[12px] leading-none transition-colors ${
+													m.starred ? 'text-yellow-400 hover:text-yellow-300' : 'text-slate-600 hover:text-yellow-300'
+												}`}
+											>
+												{m.starred ? '★' : '☆'}
+											</button>
+										) : (
+											m.starred && <span className="text-yellow-400 text-[10px] flex-shrink-0">★</span>
+										)}
 									</div>
 									{/* Zeile 3: Snippet + Tags */}
 									<div className="flex items-center gap-1.5 mt-0.5">

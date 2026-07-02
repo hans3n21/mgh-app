@@ -98,6 +98,8 @@ export async function GET(req: NextRequest) {
 					date: true,
 					orderId: true,
 					isRead: true,
+					starred: true,
+					tags: true,
 					snippet: true,
 					_count: { select: { attachments: true } },
 				},
