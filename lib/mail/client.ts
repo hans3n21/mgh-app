@@ -40,6 +40,16 @@ export async function getImapClient(account: MailAccount): Promise<ImapFlow> {
         missingIdleCommand: 'NOOP',
     });
 
+    // Ohne Handler landet ein asynchroner Socket-Fehler (z.B. ETIMEOUT waehrend
+    // eines langen Fetches) als uncaughtException und kann den Prozess beenden.
+    client.on('error', (err: Error) => {
+        console.error(`IMAP connection error for ${account.email}:`, err.message);
+        imapClients.delete(account.id);
+    });
+    client.on('close', () => {
+        imapClients.delete(account.id);
+    });
+
     // Wait for connection
     await client.connect();
 

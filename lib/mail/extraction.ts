@@ -78,8 +78,15 @@ const INSTRUMENT_PATTERNS: Array<{ regex: RegExp; label: string }> = [
   { regex: /\b(?:repair|reparatur|service)\b/gi, label: 'Reparatur' },
 ];
 
+// Sehr grosse Mail-Bodies (mehrere MB HTML, z.B. Newsletter) lassen die Regex-Engine
+// mit RangeError (Stack Overflow) abstuerzen. Fuer die Entity-Erkennung reicht der
+// Anfang der Mail voellig — PII wie Name/Adresse/Telefon steht praktisch nie erst
+// nach 200k Zeichen.
+const MAX_EXTRACTION_INPUT = 200_000;
+
 function normalize(text: string | undefined | null): string {
   return (text || '')
+    .slice(0, MAX_EXTRACTION_INPUT)
     .replace(/\r\n?/g, '\n')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&[a-z]+;/gi, ' ')

@@ -242,47 +242,76 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 			return { folder: folderName, success: true, processed: 0 } satisfies FolderSyncResult;
 		}
 
-		const fetchRange = `${nextUid}:*`;
-
-		const messageGenerator = client.fetch(
-			fetchRange,
-			{
-				envelope: true,
-				source: true, // We need source to parse
-				uid: true,
-				flags: true,
-				internalDate: true,
-			},
-			{ uid: true } // Forces UID FETCH instead of sequence-number FETCH
-		);
-
-		let maxUidSeen = lastUid;
+		// Nur tatsaechlich fehlende Mails laden: Wir holen die UID-Liste vom Server
+		// (billig, nur Zahlen) und gleichen sie mit den bereits gespeicherten UIDs
+		// in der DB ab. Heruntergeladen wird nur die Differenz — in Chunks mit
+		// Zwischenspeicherung des Cursors, damit ein Socket-Timeout bei grossen
+		// Ordnern den Fortschritt nicht verwirft (sonst Endlosschleife, in der ein
+		// grosser Ordner nie aufholt). Netter Nebeneffekt: Aendert sich die
+		// UIDVALIDITY (Server-Neunummerierung), passen die DB-UIDs nicht mehr zu
+		// den Server-UIDs und es wird automatisch alles neu geladen — korrekt.
+		// Klein halten: bei langsamen/instabilen Verbindungen muss ein Chunk
+		// zuverlaessig vor dem Socket-Timeout durchlaufen.
+		const CHUNK_SIZE = 100;
 		let processed = 0;
-		try {
-			for await (const message of messageGenerator) {
-				try {
-					await ingestMessage(account, message, folderName);
-					processed += 1;
-					if (message.uid > maxUidSeen) {
-						maxUidSeen = message.uid;
-					}
-				} catch (err) {
-					console.error(`Failed to ingest message UID ${message.uid} in ${folderName}:`, err);
-				}
-			}
-		} catch (err: any) {
-			throw err;
-		}
 
-		// Update cursor (inkl. UIDVALIDITY für zukünftige Prüfung, falls vom Server bereitgestellt)
-		if (maxUidSeen > lastUid) {
-			const cursorValue: Record<string, unknown> = { lastUid: maxUidSeen };
+		const persistCursor = async (uid: number) => {
+			const cursorValue: Record<string, unknown> = { lastUid: uid };
 			if (currentUidValidity) cursorValue.uidValidity = String(currentUidValidity);
 			await prisma.systemSetting.upsert({
 				where: { key: cursorKey },
 				update: { value: JSON.stringify(cursorValue) },
 				create: { key: cursorKey, value: JSON.stringify(cursorValue) },
 			});
+		};
+
+		const serverUidsRaw = await client.search({ uid: `${nextUid}:*` }, { uid: true });
+		// Manche Server beantworten "x:*" mit der letzten Mail, wenn x > hoechste UID — rausfiltern.
+		const serverUids = (Array.isArray(serverUidsRaw) ? serverUidsRaw : [])
+			.filter((uid) => uid > lastUid)
+			.sort((a, b) => a - b);
+
+		if (serverUids.length > 0) {
+			const known = await prisma.mail.findMany({
+				where: { accountId: account.id, folder: folderName, uid: { gt: lastUid } },
+				select: { uid: true },
+			});
+			const knownUids = new Set(known.map((m) => m.uid));
+			// Absteigend: die neuesten Mails zuerst laden. Bricht die Verbindung ab,
+			// sind die relevantesten Mails schon da; bereits geladene UIDs werden
+			// beim naechsten Lauf ueber knownUids uebersprungen.
+			const missingUids = serverUids.filter((uid) => !knownUids.has(uid)).reverse();
+
+			for (let i = 0; i < missingUids.length; i += CHUNK_SIZE) {
+				const chunk = missingUids.slice(i, i + CHUNK_SIZE);
+				const messageGenerator = client.fetch(
+					chunk.join(','),
+					{
+						envelope: true,
+						source: true, // We need source to parse
+						uid: true,
+						flags: true,
+						internalDate: true,
+					},
+					{ uid: true } // Forces UID FETCH instead of sequence-number FETCH
+				);
+
+				for await (const message of messageGenerator) {
+					try {
+						await ingestMessage(account, message, folderName);
+						processed += 1;
+					} catch (err) {
+						console.error(`Failed to ingest message UID ${message.uid} in ${folderName}:`, err);
+					}
+				}
+			}
+
+			// Cursor erst nach vollstaendigem Durchlauf setzen: Bei absteigender
+			// Verarbeitung waere ein frueherer Cursor falsch (unter ihm laegen noch
+			// Luecken, die die Suche dann nie wieder erfassen wuerde). Bricht der
+			// Lauf vorher ab, bleibt der Cursor stehen — bereits geladene Mails
+			// werden beim naechsten Lauf ueber knownUids uebersprungen.
+			await persistCursor(serverUids[serverUids.length - 1]);
 		}
 
 		// Reconcile: mark locally stored mails as deleted if they no longer exist on the server.
