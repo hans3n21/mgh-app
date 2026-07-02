@@ -2,6 +2,17 @@
 
 Stand: 2026-06-18
 
+> **Update 2026-07-02:** Aufraeumung durchgefuehrt. Geloescht wurden alle 501-Stubs
+> (`/api/inbox/create-lead`, `leads`, `link-to-lead`, `create-order`, `reply`) sowie die
+> verwaisten Duplikat-Routen `/api/mail/assign`, `send`, `trash`, `customer/[id]`, `thread/[id]`
+> — keine davon hatte noch UI-Aufrufer. Ebenfalls entfernt: die alte, nicht mehr verlinkte
+> Detailseite `/app/posteingang/[id]` samt ihrer Legacy-Komponenten (InboxClient,
+> InlineSpecEditor, OrderSideSheet, alte ReplyComposer/AttachmentsPanel/MailContent/
+> OrderChooseAndEdit) und die verwaisten `components/inbox/InboxActions.tsx` / `ParsedChips.tsx`.
+> Kanonisch sind jetzt: `/api/mails/*` (Datenlayer), `/api/mail/{sync,move,health}` (System),
+> `/api/inbox/{assign-order,update-meta,events,templates,summarize,translate}` (UI-Helfer).
+> Die Tabellen unten beschreiben den Stand VOR der Aufraeumung.
+
 Ziel: Klaeren, welche Funktion die drei Mail-API-Familien haben und welche Pfade aktiv, Infrastruktur oder Legacy/Stubs sind.
 
 ## Kurzfazit

@@ -68,12 +68,7 @@
 |---|---|---|
 | `/api/mail/sync` | POST | IMAP-Synchronisation auslösen |
 | `/api/mail/health` | GET | Mail-System Health Check |
-| `/api/mail/send` | POST | E-Mail versenden |
-| `/api/mail/trash` | POST | Mail in Papierkorb verschieben |
 | `/api/mail/move` | POST | Mail in anderen Ordner verschieben |
-| `/api/mail/assign` | POST | Mail einem Auftrag zuweisen |
-| `/api/mail/customer/[id]` | GET | Alle Mails eines Kunden |
-| `/api/mail/thread/[id]` | GET | Thread-Daten laden |
 
 ### Mail-Accounts
 | Route | Methods | Beschreibung |
@@ -86,12 +81,7 @@
 | Route | Methods | Beschreibung |
 |---|---|---|
 | `/api/inbox/assign-order` | POST | Mail einem bestehenden Auftrag zuweisen |
-| `/api/inbox/create-order` | POST | Neuen Auftrag aus Mail erstellen |
-| `/api/inbox/create-lead` | POST | Lead/Interessent aus Mail erstellen |
-| `/api/inbox/leads` | GET | Alle Leads auflisten |
-| `/api/inbox/link-to-lead` | POST | Mail mit bestehendem Lead verknüpfen |
-| `/api/inbox/reply` | POST | Auf Mail antworten (aus Inbox-UI) |
-| `/api/inbox/update-meta` | POST | Mail-Metadaten aktualisieren |
+| `/api/inbox/update-meta` | POST | Mail-Metadaten aktualisieren (aktuell nur isRead) |
 | `/api/inbox/events` | GET | Server-Sent Events (Realtime-Updates) |
 | `/api/inbox/templates` | GET | Antwort-Vorlagen laden |
 
