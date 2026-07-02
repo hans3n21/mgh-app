@@ -89,6 +89,28 @@ export async function guardedSyncMails(options?: SyncOptions) {
 	}
 }
 
+// Prozessweiter Mutex, den sich API-Route und Hintergrund-Worker teilen —
+// sonst koennten beide gleichzeitig auf denselben IMAP-Verbindungen arbeiten.
+let activeSync: Promise<MailSyncResult> | null = null;
+
+export function isSyncActive() {
+	return activeSync !== null;
+}
+
+/**
+ * Fuehrt einen Sync aus, wenn gerade keiner laeuft. Gibt null zurueck, wenn
+ * bereits ein anderer Lauf aktiv ist (Aufrufer entscheidet: skip oder 409).
+ */
+export async function runExclusiveSync(options?: SyncOptions): Promise<MailSyncResult | null> {
+	if (activeSync) return null;
+	activeSync = syncMails(options);
+	try {
+		return await activeSync;
+	} finally {
+		activeSync = null;
+	}
+}
+
 /**
  * Main entry point: Syncs all active accounts.
  */

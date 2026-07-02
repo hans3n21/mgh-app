@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { guardedSyncMails } from '@/lib/mail/sync';
+import { runExclusiveSync } from '@/lib/mail/sync';
 import { auth } from '@/lib/auth';
 
-let syncInFlight: Promise<Awaited<ReturnType<typeof guardedSyncMails>>> | null = null;
+let syncInFlight: Promise<Awaited<ReturnType<typeof runExclusiveSync>>> | null = null;
 let syncMeta: {
 	running: boolean;
 	fullSync: boolean;
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
 			errorCount: 0,
 		};
 
-		syncInFlight = guardedSyncMails({
+		const exclusiveRun = runExclusiveSync({
 			accountIds: accountIds.length > 0 ? accountIds : undefined,
 			folders: folders.length > 0 ? folders : undefined,
 			onProgress: (progress) => {
@@ -132,7 +132,15 @@ export async function POST(req: NextRequest) {
 				};
 			},
 		});
-		const result = await syncInFlight;
+		syncInFlight = exclusiveRun;
+		const result = await exclusiveRun;
+		if (result === null) {
+			// Der Hintergrund-Worker synchronisiert gerade (prozessweiter Mutex).
+			return NextResponse.json(
+				{ error: 'Synchronisation läuft bereits (Hintergrund-Worker)', running: true },
+				{ status: 409 }
+			);
+		}
 		console.log('✅ API /mail/sync: Sync completed:', result);
 		return NextResponse.json(
 			{
