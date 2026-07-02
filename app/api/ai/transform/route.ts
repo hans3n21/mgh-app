@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { matchKnowledgeEntries } from '@/lib/ai/keyword-matcher'
+import { semanticMatchKnowledge, mergeKnowledgeHits } from '@/lib/ai/semantic-matcher'
 import { loadKnowledgeForPrompt } from '@/lib/ai/knowledge-context'
 import {
   isPickguardInquiry,
@@ -396,6 +397,21 @@ export async function POST(req: Request) {
   }
   const anonymizedCustomerName = addPromptToken(mergedTokenMap, 'NAME', customerName)
 
+  // ── Semantisches Wissens-Matching ────────────────────────────────────
+  // Ergänzt die Keyword-Treffer um Bedeutungs-Treffer ("wann kommt mein
+  // Zeug?" → Lieferzeiten). Läuft bewusst NACH der Anonymisierung, weil der
+  // Query-Text an die Embeddings-API geht. Fällt bei Fehlern leise auf die
+  // reinen Keyword-Treffer zurück.
+  let mergedKnowledgeHits = knowledgeHits
+  if (!isPreview) {
+    const semanticQuery = `${anonymizedInput.anonymizedText} ${anonymizedOriginal?.anonymizedText ?? ''}`
+    const semanticHitsRaw = await semanticMatchKnowledge(semanticQuery, knowledgeEntries)
+    const semanticHits = shouldLookupPrices
+      ? semanticHitsRaw.filter((hit) => !isPriceLikeKnowledgeEntry(hit.entry))
+      : semanticHitsRaw
+    mergedKnowledgeHits = mergeKnowledgeHits(knowledgeHits, semanticHits)
+  }
+
   const { systemPrompt, userPrompt } = buildPrompt({
     action: action as PromptAction,
     inputText: anonymizedInput.anonymizedText,
@@ -403,7 +419,7 @@ export async function POST(req: Request) {
     mailAccountProfile: mailAccountProfile ?? undefined,
     companyData: companyData ?? [],
     templates: selectedTemplates,
-    knowledgeHits,
+    knowledgeHits: mergedKnowledgeHits,
     priceHits,
     isPriceQuestion: shouldLookupPrices,
     targetLanguage,
@@ -440,7 +456,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       result,
       tokensUsed,
-      knowledgeHits: knowledgeHits.map(h => h.entry.title),
+      knowledgeHits: mergedKnowledgeHits.map(h => h.entry.title),
       priceHits: priceHits.map(h => h.item.label),
       piiAnonymized: Object.keys(mergedTokenMap).length > 0,
     })

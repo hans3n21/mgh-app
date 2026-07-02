@@ -440,6 +440,16 @@ model SystemSetting {
   value String // JSON value
 }
 
+// Embedding-Cache fuer semantisches Wissens-Matching (lib/ai/semantic-matcher.ts).
+// entryId verweist auf GlobalKnowledgeEntry.id oder KnowledgeEntry.id (kein FK,
+// da zwei Quelltabellen); contentHash invalidiert bei Inhaltsaenderung.
+model KnowledgeEmbedding {
+  entryId     String   @id
+  contentHash String
+  embedding   Json
+  updatedAt   DateTime @updatedAt
+}
+
 model Datasheet {
   id        String   @id @default(cuid())
   orderId   String
