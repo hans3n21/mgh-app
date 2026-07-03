@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
+import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 
 interface RouteParams { params: Promise<{ id: string }> }
 
 const CONTEXT_CHARS = 120;
 const MAX_RESULTS = 50;
+// DB match is on raw text (incl. quoted history), so over-fetch candidates
+// before filtering down to fresh-content-only matches.
+const CANDIDATE_LIMIT = 300;
 
 function countOccurrences(source: string, query: string): number {
 	if (!source || !query) return 0;
@@ -94,7 +98,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 			scope.push({ toEmail: { equals: customer.email, mode: 'insensitive' } });
 		}
 
-		const mails = await prisma.mail.findMany({
+		const candidates = await prisma.mail.findMany({
 			where: {
 				isDeleted: false,
 				OR: scope,
@@ -106,7 +110,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 				},
 			},
 			orderBy: { date: 'desc' },
-			take: MAX_RESULTS,
+			take: CANDIDATE_LIMIT,
 			select: {
 				id: true,
 				subject: true,
@@ -120,22 +124,30 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 			},
 		});
 
-		const results = mails.map((mail) => {
-			const snippet = buildSnippet(mail.text || '', q) ?? buildSnippet(mail.subject || '', q);
-			const matchCount = countOccurrences(mail.text || '', q) + countOccurrences(mail.subject || '', q);
-			return {
-				id: mail.id,
-				subject: mail.subject,
-				date: mail.date,
-				folder: mail.folder,
-				orderId: mail.orderId,
-				fromEmail: mail.fromEmail,
-				fromName: mail.fromName,
-				toEmail: mail.toEmail,
-				snippet,
-				matchCount,
-			};
-		});
+		// A long reply thread quotes the entire prior conversation in every
+		// message, so a naive text search hits the same quoted paragraph once
+		// per reply. Match only against each mail's own fresh content (plus
+		// subject) so a thread shows up once, at the mail that actually says it.
+		const results = candidates
+			.map((mail) => {
+				const { freshContent } = stripQuotedContent(mail.text || '');
+				const snippet = buildSnippet(freshContent, q) ?? buildSnippet(mail.subject || '', q);
+				const matchCount = countOccurrences(freshContent, q) + countOccurrences(mail.subject || '', q);
+				return {
+					id: mail.id,
+					subject: mail.subject,
+					date: mail.date,
+					folder: mail.folder,
+					orderId: mail.orderId,
+					fromEmail: mail.fromEmail,
+					fromName: mail.fromName,
+					toEmail: mail.toEmail,
+					snippet,
+					matchCount,
+				};
+			})
+			.filter((result) => result.matchCount > 0)
+			.slice(0, MAX_RESULTS);
 
 		return NextResponse.json({ query: q, results });
 	} catch (error) {
