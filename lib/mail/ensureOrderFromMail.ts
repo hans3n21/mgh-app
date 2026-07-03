@@ -47,8 +47,11 @@ async function resolveCustomerForMail(
 	input?: CustomerInput
 ) {
 	const data = customerDataFromMail(mail, input);
-	const existing = data.email
-		? await prisma.customer.findFirst({ where: { email: data.email } })
+	const email = data.email;
+	const existing = email
+		? await prisma.customer.findFirst({
+			where: { OR: [{ email }, { additionalEmails: { has: email.toLowerCase() } }] },
+		})
 		: null;
 
 	if (existing) {
