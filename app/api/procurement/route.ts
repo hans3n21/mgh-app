@@ -78,6 +78,12 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
 
+    // Optional: nur Teile eines bestimmten Auftrags (für den Auftragsdetail-Block)
+    const orderId = searchParams.get('orderId');
+    if (orderId) {
+      where.orderId = orderId;
+    }
+
     if (!showArchived) {
       where.status = { not: 'archiviert' };
     }

@@ -432,15 +432,19 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Auftrag ID</label>
-                <input
-                  type="text"
-                  list="procurement-order-suggestions"
+                <label className="block text-sm font-medium mb-1">Auftrag (optional)</label>
+                <select
                   value={newItem.orderId}
                   onChange={(e) => setNewItem(prev => ({ ...prev, orderId: e.target.value }))}
                   className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                  placeholder="ORD-2025-001"
-                />
+                >
+                  <option value="">Kein Auftrag</option>
+                  {orders.map((order) => (
+                    <option key={order.id} value={order.id}>
+                      {order.id} · {order.customerName ?? 'Kunde'} · {order.title}
+                    </option>
+                  ))}
+                </select>
                 <datalist id="procurement-order-suggestions">
                   {orders.map((order) => (
                     <option

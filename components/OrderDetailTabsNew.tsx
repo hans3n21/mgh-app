@@ -34,6 +34,7 @@ import SuggestionBanner from '@/components/SuggestionBanner';
 import PhoneLink from '@/components/PhoneLink';
 import { AUTO_FIELDS } from '@/lib/autofill-data';
 import { useRef } from 'react';
+import OrderParts from '@/components/OrderParts';
 
 // Komponente für Bild-Anhänge in der Kommunikation
 function ImageAttachmentPanel({ images }: { images: OrderImage[] }) {
@@ -1402,6 +1403,8 @@ export default function OrderDetailTabsNew({
           <div className="space-y-4">
             <SuggestionBanner orderId={orderId} />
             <h3 className="font-semibold">Details</h3>
+
+            <OrderParts orderId={orderId} />
 
             <div className="grid sm:grid-cols-2 gap-4">
               {/* Kunde */}
