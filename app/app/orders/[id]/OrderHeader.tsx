@@ -10,6 +10,7 @@ interface OrderHeaderProps {
   orderTitle: string;
   orderType: string;
   typeLabel: string;
+  nextStep?: string | null;
   customer: {
     name: string;
     email: string | null;
@@ -17,11 +18,82 @@ interface OrderHeaderProps {
   };
 }
 
+/** Inline-editierbarer "Nächster Schritt" — erscheint auch in der Auftragsliste. */
+function NextStepInline({ orderId, initial }: { orderId: string; initial: string | null }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(initial ?? '');
+  const [saving, setSaving] = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!editing) setValue(initial ?? '');
+  }, [initial, editing]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nextStep: value.trim() || null }),
+      });
+      if (res.ok) {
+        setEditing(false);
+        router.refresh();
+      }
+    } catch (error) {
+      console.error('Fehler beim Speichern des nächsten Schritts:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex w-full items-center gap-2 sm:w-auto">
+        <span className="text-sm text-sky-300">→</span>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          maxLength={200}
+          className="min-w-0 flex-1 rounded border border-slate-600 bg-slate-800 px-2 py-1 text-sm text-slate-200 focus:border-sky-500 focus:outline-none sm:w-72"
+          placeholder="Nächster Schritt, z.B. Hals schleifen…"
+          autoFocus
+          disabled={saving}
+        />
+        <button onClick={save} disabled={saving} className="rounded bg-emerald-600 px-2 py-1 text-sm text-white hover:bg-emerald-500 disabled:opacity-50" title="Speichern">✓</button>
+        <button onClick={() => setEditing(false)} disabled={saving} className="rounded bg-slate-600 px-2 py-1 text-sm text-white hover:bg-slate-500 disabled:opacity-50" title="Abbrechen">✕</button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className={`group/next flex min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 text-sm transition-colors hover:bg-slate-800 ${initial ? 'text-sky-300' : 'text-slate-500'}`}
+      title="Nächster Schritt bearbeiten"
+    >
+      <span>→</span>
+      <span className="truncate">{initial || 'Nächster Schritt festlegen…'}</span>
+      <svg className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/next:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      </svg>
+    </button>
+  );
+}
+
 export default function OrderHeader({
   orderId,
   orderTitle,
   orderType,
   typeLabel,
+  nextStep = null,
   customer,
 }: OrderHeaderProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -132,6 +204,7 @@ export default function OrderHeader({
         <div className="shrink-0 rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-300">
           {typeLabel}
         </div>
+        <NextStepInline orderId={orderId} initial={nextStep} />
       </div>
 
       {/* Kunde-Info oben rechts */}

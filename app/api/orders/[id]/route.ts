@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { touchOrderActivity } from '@/lib/order-activity';
 
 const updateOrderSchema = z.object({
-  status: z.enum(['intake', 'quote', 'in_progress', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
+  status: z.enum(['intake', 'quote', 'in_progress', 'waiting_parts', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
+  nextStep: z.string().max(200).nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   title: z.string().optional(),
   finalAmountCents: z.number().int().nonnegative().nullable().optional(),

@@ -102,6 +102,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
         orderTitle={order.title}
         orderType={order.type}
         typeLabel={TYPE_LABEL[order.type]}
+        nextStep={order.nextStep}
         customer={order.customer}
       />
 

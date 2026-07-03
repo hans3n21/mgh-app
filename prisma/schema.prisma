@@ -39,6 +39,7 @@ enum OrderStatus {
   intake
   quote
   in_progress
+  waiting_parts
   finishing
   setup
   awaiting_customer
@@ -101,6 +102,8 @@ model Order {
   // Letzte fachliche Aktivitaet (Status/Specs/Bilder/Nachrichten/Aufgaben/Mail-Zuordnung).
   // Wird ueber lib/order-activity.ts gepflegt — Basis fuer "Liegt seit" in der Uebersicht.
   lastActivityAt   DateTime      @default(now())
+  // Freitext "Naechster Schritt" — beantwortet in der Uebersicht "was ist hier als Naechstes dran?"
+  nextStep         String?
   customerId       String
   customer         Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
   assigneeId       String?

@@ -20,6 +20,7 @@ type OrderWithRelations = {
     paymentStatus?: string | null;
     createdAt: Date;
     lastActivityAt?: Date | string | null;
+    nextStep?: string | null;
     customer: {
         name: string;
     } | null;
@@ -168,6 +169,7 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                 order.id,
                 order.customer?.name ?? '',
                 order.assignee?.name ?? '',
+                order.nextStep ?? '',
                 TYPE_LABEL[order.type] ?? order.type,
                 WORKFLOW_STATUS_LABEL[normalizeWorkflowStatus(order.status)],
                 order.paymentStatus === 'paid'
@@ -279,6 +281,9 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                                 <div>
                                     <div className="font-medium text-slate-200">{order.title}</div>
                                     <div className="text-xs text-slate-500 font-mono">{order.id}</div>
+                                    {order.nextStep && (
+                                        <div className="text-xs text-sky-300/80 mt-0.5">→ {order.nextStep}</div>
+                                    )}
                                 </div>
                                 {order.hasUnread && (
                                     <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" title="Neue Nachricht" />
@@ -338,6 +343,9 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                                         )}
                                     </div>
                                     <div className="text-xs text-slate-500 font-mono">{order.id}</div>
+                                    {order.nextStep && (
+                                        <div className="text-xs text-sky-300/80 mt-0.5" title="Nächster Schritt">→ {order.nextStep}</div>
+                                    )}
                                 </td>
                                 <td className="py-2 pr-4">{order.customer?.name || 'Unbekannt'}</td>
                                 <td className="py-2 pr-4">{TYPE_LABEL[order.type] || order.type}</td>
