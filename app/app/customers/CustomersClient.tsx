@@ -18,6 +18,7 @@ export default function CustomersClient({ customers }: { customers: CustomerWith
   const [openCustomerId, setOpenCustomerId] = React.useState<string | null>(null);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [customersList, setCustomersList] = React.useState<CustomerWithOrders[]>(customers);
+  const [search, setSearch] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -60,6 +61,14 @@ export default function CustomersClient({ customers }: { customers: CustomerWith
   // Warte bis Session geladen ist, bevor wir Admin-Status prüfen
   const isAdmin = sessionStatus === 'authenticated' && (session?.user?.role === 'admin' || session?.user?.role === 'admin_no_feedback');
 
+  const filteredCustomers = React.useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return customersList;
+    return customersList.filter((c) =>
+      [c.name, c.email ?? '', c.phone ?? ''].join(' ').toLowerCase().includes(term)
+    );
+  }, [customersList, search]);
+
   return (
     <div className="mt-3">
       {error && (
@@ -67,6 +76,14 @@ export default function CustomersClient({ customers }: { customers: CustomerWith
           {error}
         </div>
       )}
+      <div className="mb-3">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Kunden suchen (Name, E-Mail, Telefon)…"
+          className="w-full sm:w-80 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+        />
+      </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
@@ -80,9 +97,13 @@ export default function CustomersClient({ customers }: { customers: CustomerWith
             </tr>
           </thead>
           <tbody>
-            {customersList.map((c) => (
+            {filteredCustomers.map((c) => (
               <tr key={c.id} className="border-t border-slate-800">
-                <td className="py-2 pr-4 font-medium">{c.name}</td>
+                <td className="py-2 pr-4 font-medium">
+                  <Link href={`/app/customers/${c.id}`} className="hover:text-sky-400 transition-colors">
+                    {c.name}
+                  </Link>
+                </td>
                 {/* Desktop: separate Spalten */}
                 <td className="py-2 pr-4 hidden sm:table-cell">
                   {c.email ? (
