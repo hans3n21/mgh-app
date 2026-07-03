@@ -84,18 +84,22 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
 
 		const customer = await prisma.customer.findUnique({
 			where: { id },
-			select: { id: true, email: true },
+			select: { id: true, email: true, additionalEmails: true },
 		});
 		if (!customer) {
 			return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
 		}
 
-		// Scope by email, not just customerId: most mails are only ever linked
-		// to a customer via matching sender/recipient address, not the FK.
+		// Scope by every known address, not just customerId: most mails are only
+		// ever linked to a customer via matching sender/recipient address, not
+		// the FK, and a customer may have more than one address on file.
+		const addresses = Array.from(
+			new Set([customer.email, ...customer.additionalEmails].filter((e): e is string => !!e))
+		);
 		const scope: Array<Record<string, unknown>> = [{ customerId: customer.id }];
-		if (customer.email) {
-			scope.push({ fromEmail: { equals: customer.email, mode: 'insensitive' } });
-			scope.push({ toEmail: { equals: customer.email, mode: 'insensitive' } });
+		for (const address of addresses) {
+			scope.push({ fromEmail: { equals: address, mode: 'insensitive' } });
+			scope.push({ toEmail: { equals: address, mode: 'insensitive' } });
 		}
 
 		const candidates = await prisma.mail.findMany({
