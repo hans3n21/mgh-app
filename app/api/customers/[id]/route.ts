@@ -10,6 +10,7 @@ interface RouteParams {
 const updateCustomerSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional().nullable(),
+  additionalEmails: z.array(z.string().email()).optional(),
   phone: z.string().optional().nullable(),
   addressLine1: z.string().optional().nullable(),
   postalCode: z.string().optional().nullable(),
@@ -17,6 +18,20 @@ const updateCustomerSchema = z.object({
   country: z.string().optional().nullable(),
   company: z.string().optional().nullable(),
 });
+
+/** Does any OTHER customer already claim this address (as primary or secondary)? */
+async function findEmailConflict(customerId: string, email: string) {
+  return prisma.customer.findFirst({
+    where: {
+      id: { not: customerId },
+      OR: [
+        { email: { equals: email, mode: 'insensitive' } },
+        { additionalEmails: { has: email } },
+      ],
+    },
+    select: { id: true, name: true },
+  });
+}
 
 function companyKey(customerId: string) {
   return `customer:company:${customerId}`;
@@ -76,11 +91,40 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       }
     }
     const data = updateCustomerSchema.parse(cleaned);
-    const { company, ...customerData } = data;
+    const { company, additionalEmails, ...customerFields } = data;
+
+    // Warn on (but don't block) an address already claimed by another
+    // customer — merging duplicate customer records is a separate, manual step.
+    const warnings: Array<{ email: string; conflictCustomer: { id: string; name: string } }> = [];
+    let normalizedAdditionalEmails: string[] | undefined;
+
+    if (additionalEmails !== undefined) {
+      const primaryEmail = customerFields.email !== undefined
+        ? customerFields.email
+        : (await prisma.customer.findUnique({ where: { id }, select: { email: true } }))?.email ?? null;
+      const primaryLower = primaryEmail?.toLowerCase() ?? null;
+
+      const seen = new Set<string>();
+      normalizedAdditionalEmails = [];
+      for (const raw of additionalEmails) {
+        const email = raw.trim().toLowerCase();
+        if (!email || email === primaryLower || seen.has(email)) continue;
+        seen.add(email);
+        normalizedAdditionalEmails.push(email);
+      }
+
+      for (const email of normalizedAdditionalEmails) {
+        const conflict = await findEmailConflict(id, email);
+        if (conflict) warnings.push({ email, conflictCustomer: conflict });
+      }
+    }
 
     const updated = await prisma.customer.update({
       where: { id },
-      data: customerData,
+      data: {
+        ...customerFields,
+        ...(normalizedAdditionalEmails !== undefined ? { additionalEmails: normalizedAdditionalEmails } : {}),
+      },
     });
 
     if (company !== undefined) {
@@ -102,6 +146,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({
       ...updated,
       company: companySetting?.value || '',
+      warnings,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
