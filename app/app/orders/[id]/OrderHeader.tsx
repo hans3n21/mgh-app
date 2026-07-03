@@ -12,6 +12,7 @@ interface OrderHeaderProps {
   typeLabel: string;
   nextStep?: string | null;
   customer: {
+    id: string;
     name: string;
     email: string | null;
     phone: string | null;
@@ -209,7 +210,13 @@ export default function OrderHeader({
 
       {/* Kunde-Info oben rechts */}
       <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
-        <div className="min-w-0 truncate text-sm font-medium text-slate-200">{customer.name}</div>
+        <Link
+          href={`/app/customers/${customer.id}`}
+          className="min-w-0 truncate text-sm font-medium text-slate-200 hover:text-sky-400 hover:underline"
+          title="Zur Kundenakte"
+        >
+          {customer.name}
+        </Link>
         <div className="flex items-center gap-2">
           {customer.email && (
             <Link
