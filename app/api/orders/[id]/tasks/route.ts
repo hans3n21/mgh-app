@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { touchOrderActivity } from '@/lib/order-activity';
+import { notify } from '@/lib/notify';
 
 export async function GET(
   _request: NextRequest,
@@ -67,5 +68,14 @@ export async function POST(
   });
 
   await touchOrderActivity(orderId);
+  if (assigneeId !== session.user.id) {
+    await notify({
+      userId: assigneeId,
+      type: 'task_assigned',
+      title: `Neue Aufgabe: ${title}`,
+      body: note || null,
+      href: `/app/orders/${orderId}`,
+    });
+  }
   return Response.json(task, { status: 201 });
 }

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import CreateOrderButton from './CreateOrderButton';
+import NotificationBell from './NotificationBell';
 
 interface NavigationProps {
   user: {
@@ -101,6 +102,7 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
 
         <div className="ml-auto flex items-center gap-2">
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <CreateOrderButton customers={customers} users={users} />
             <span className="text-sm text-slate-400">{user.name}</span>
             <button

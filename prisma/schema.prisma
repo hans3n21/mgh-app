@@ -76,6 +76,8 @@ model User {
   // Tasks
   tasksAssigned OrderTask[] @relation("TaskAssignee")
   tasksCreated  OrderTask[] @relation("TaskCreator")
+
+  notifications Notification[]
 }
 
 model Customer {
@@ -232,6 +234,22 @@ model OrderTask {
 
   @@index([assigneeId])
   @@index([orderId])
+}
+
+// In-App-Benachrichtigungen (Badge im Header): Aufgabe zugewiesen,
+// Auftrag zugewiesen, neue Mail zu einem eigenen Auftrag.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String    // task_assigned | order_assigned | order_mail
+  title     String
+  body      String?
+  href      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
 }
 
 model ProcurementItem {

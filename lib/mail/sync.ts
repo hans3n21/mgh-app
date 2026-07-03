@@ -505,6 +505,36 @@ async function ingestMessage(
 		},
 	});
 
+	// 4a-Benachrichtigung: Neue INBOX-Mail zu einem zugewiesenen Auftrag →
+	// Bearbeiter informieren. Nur bei frisch angelegten Mails (createdAt ==
+	// updatedAt), damit Ordner-Moves/Re-Syncs nicht erneut benachrichtigen,
+	// und nur bei aktuellen Mails (Backfill alter Bestände soll still bleiben).
+	if (
+		orderId &&
+		folderName === 'INBOX' &&
+		mail.createdAt.getTime() === mail.updatedAt.getTime() &&
+		date && Date.now() - new Date(date).getTime() < 7 * 86_400_000
+	) {
+		try {
+			const orderInfo = await prisma.order.findUnique({
+				where: { id: orderId },
+				select: { title: true, assigneeId: true },
+			});
+			if (orderInfo?.assigneeId) {
+				const { notify } = await import('@/lib/notify');
+				await notify({
+					userId: orderInfo.assigneeId,
+					type: 'order_mail',
+					title: `Neue Mail zu ${orderInfo.title}`,
+					body: subject || fromEmail,
+					href: `/app/orders/${orderId}`,
+				});
+			}
+		} catch {
+			// Benachrichtigung darf den Sync nie stören
+		}
+	}
+
 	// 4b. If this mail resolves an order for a thread, propagate to all thread mails.
 	// This ensures INBOX/Sent/Trash entries of the same conversation show up on the order.
 	if (orderId && threadResult.threadId) {
