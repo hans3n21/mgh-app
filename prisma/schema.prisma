@@ -81,18 +81,21 @@ model User {
 }
 
 model Customer {
-  id           String   @id @default(cuid())
-  name         String
-  email        String?
-  phone        String?
+  id               String   @id @default(cuid())
+  name             String
+  email            String?
+  // Zusätzliche Adressen desselben Kunden (z. B. alte + neue Adresse parallel).
+  // Lowercase gespeichert, damit der Postgres `has`-Lookup im Mail-Sync greift.
+  additionalEmails String[] @default([])
+  phone            String?
   // Address fields
-  addressLine1 String?
-  postalCode   String?
-  city         String?
-  country      String?  @default("DE")
-  createdAt    DateTime @default(now())
-  orders       Order[]
-  mails        Mail[]
+  addressLine1     String?
+  postalCode       String?
+  city             String?
+  country          String?  @default("DE")
+  createdAt        DateTime @default(now())
+  orders           Order[]
+  mails            Mail[]
 }
 
 model Order {
