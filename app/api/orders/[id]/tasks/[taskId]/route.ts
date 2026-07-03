@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 export async function PATCH(
   request: NextRequest,
@@ -36,5 +37,6 @@ export async function PATCH(
     },
   });
 
+  await touchOrderActivity(task.orderId);
   return Response.json(task);
 }

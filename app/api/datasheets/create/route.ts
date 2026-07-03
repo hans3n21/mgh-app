@@ -6,6 +6,7 @@ import linkMailArtifactsToOrder from '@/lib/mail/linkArtifacts';
 import { parseMail } from '@/lib/mail/parseMail';
 import { auth } from '@/lib/auth';
 import ensureOrderFromMail from '@/lib/mail/ensureOrderFromMail';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 const bodySchema = z.object({
   mailId: z.string().min(1),
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     // Link attachments + message into order (idempotent)
     await linkMailArtifactsToOrder(mail.id, order.id);
 
+    await touchOrderActivity(order.id);
     return NextResponse.json({
       ok: true,
       orderId: order.id,

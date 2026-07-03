@@ -47,6 +47,7 @@ export default async function OrdersPage() {
       status: order.status,
       paymentStatus: order.paymentStatus,
       createdAt: order.createdAt,
+      lastActivityAt: order.lastActivityAt,
       customer: order.customer,
       assignee: order.assignee,
       hasUnread,

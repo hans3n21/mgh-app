@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 export async function GET(
   _request: NextRequest,
@@ -65,5 +66,6 @@ export async function POST(
     },
   });
 
+  await touchOrderActivity(orderId);
   return Response.json(task, { status: 201 });
 }

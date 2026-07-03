@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import { replyToMail } from '@/lib/mail/actions';
 import { loadAttachmentForEmail } from '@/lib/mail/attachments';
 import { z } from 'zod';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 function parseAttachmentRefsFromBody(body: string): string[] {
   const ids: string[] = [];
@@ -115,6 +116,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
       });
 
+      await touchOrderActivity(id);
       return NextResponse.json({
         id: sentMail.id,
         body: messageData.body,
@@ -130,6 +132,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       include: { sender: true },
     });
 
+    await touchOrderActivity(id);
     return NextResponse.json(message);
   } catch (error) {
     if (error instanceof z.ZodError) {

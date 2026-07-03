@@ -19,6 +19,7 @@ type OrderWithRelations = {
     status: string;
     paymentStatus?: string | null;
     createdAt: Date;
+    lastActivityAt?: Date | string | null;
     customer: {
         name: string;
     } | null;
@@ -47,6 +48,39 @@ function StatusBadge({ status }: { status: string }) {
     return (
         <span className={`text-xs px-2 py-0.5 rounded-full border ${WORKFLOW_STATUS_CLASS[normalized]}`}>
             {WORKFLOW_STATUS_LABEL[normalized]}
+        </span>
+    );
+}
+
+function daysSince(value: Date | string | null | undefined): number | null {
+    if (!value) return null;
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return null;
+    return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+}
+
+function activityLabel(days: number): string {
+    if (days === 0) return 'heute';
+    if (days === 1) return 'gestern';
+    if (days < 14) return `vor ${days} T`;
+    if (days < 60) return `vor ${Math.floor(days / 7)} Wo`;
+    return `vor ${Math.floor(days / 30)} Mon`;
+}
+
+/** "Liegt seit": letzte Aktivität mit Ampelfarben (≤7 T neutral, ≤21 T gelb, danach rot). */
+function ActivityBadge({ lastActivityAt, status }: { lastActivityAt?: Date | string | null; status: string }) {
+    const days = daysSince(lastActivityAt);
+    if (days === null) return <span className="text-xs text-slate-600">—</span>;
+    // Fertige Aufträge nicht anmahnen
+    const done = normalizeWorkflowStatus(status) === 'complete';
+    const cls = done || days <= 7
+        ? 'text-slate-400'
+        : days <= 21
+            ? 'text-amber-300'
+            : 'text-rose-400 font-medium';
+    return (
+        <span className={`text-xs ${cls}`} title={`Letzte Aktivität: ${new Date(lastActivityAt!).toLocaleDateString('de-DE')}`}>
+            {activityLabel(days)}
         </span>
     );
 }
@@ -86,6 +120,7 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
     const router = useRouter();
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('ALL');
+    const [sortMode, setSortMode] = useState<'default' | 'stale' | 'recent'>('default');
     const [activeStatuses, setActiveStatuses] = useState<string[]>(
         ALL_STATUSES.filter((status) => status !== 'complete')
     );
@@ -148,6 +183,14 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
         });
     }, [orders, search, activeStatuses, typeFilter]);
 
+    const sortedOrders = useMemo(() => {
+        if (sortMode === 'default') return filteredOrders;
+        const ts = (o: OrderWithRelations) => new Date(o.lastActivityAt ?? o.createdAt).getTime() || 0;
+        const copy = [...filteredOrders];
+        copy.sort((a, b) => (sortMode === 'stale' ? ts(a) - ts(b) : ts(b) - ts(a)));
+        return copy;
+    }, [filteredOrders, sortMode]);
+
     useEffect(() => {
         const onPointerDown = (event: MouseEvent) => {
             if (!statusMenuRef.current) return;
@@ -185,6 +228,17 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                         </option>
                     ))}
                 </select>
+                <select
+                    value={sortMode}
+                    onChange={(e) => setSortMode(e.target.value as 'default' | 'stale' | 'recent')}
+                    className="w-full md:w-56 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100"
+                    title="Sortierung"
+                    aria-label="Sortierung"
+                >
+                    <option value="default">Sortierung: Standard</option>
+                    <option value="stale">Längste Liegezeit zuerst</option>
+                    <option value="recent">Neueste Aktivität zuerst</option>
+                </select>
                 <button
                     type="button"
                     onClick={() => {
@@ -214,7 +268,7 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
 
             {/* Mobile View (Cards) */}
             <div className="grid gap-3 md:hidden">
-                {filteredOrders.map((order) => (
+                {sortedOrders.map((order) => (
                     <Link
                         key={order.id}
                         href={`/app/orders/${order.id}`}
@@ -239,7 +293,7 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                         <div className="flex justify-between items-center text-sm text-slate-400 mt-2">
                             <div className="flex flex-col gap-0.5">
                                 <span className="text-slate-300">{order.customer?.name || 'Unbekannt'}</span>
-                                <span className="text-xs opacity-70">{TYPE_LABEL[order.type] || order.type}</span>
+                                <span className="text-xs opacity-70">{TYPE_LABEL[order.type] || order.type} · <ActivityBadge lastActivityAt={order.lastActivityAt} status={order.status} /></span>
                             </div>
 
                             {/* Delete Button positioned absolutely or inline with stopPropagation */}
@@ -264,12 +318,13 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                             <th className="py-2 pr-4">Typ</th>
                             <th className="py-2 pr-4">Status</th>
                             <th className="py-2 pr-4">Zahlung</th>
+                            <th className="py-2 pr-4">Liegt seit</th>
                             <th className="py-2 pr-4">Zuständig</th>
                             <th className="py-2 pr-4"></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredOrders.map((order) => (
+                        {sortedOrders.map((order) => (
                             <tr
                                 key={order.id}
                                 className="border-t border-slate-800 align-top hover:bg-slate-800/30 cursor-pointer transition-colors group"
@@ -346,6 +401,9 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                                 </td>
                                 <td className="py-2 pr-4">
                                     <PaymentBadge paymentStatus={order.paymentStatus} />
+                                </td>
+                                <td className="py-2 pr-4">
+                                    <ActivityBadge lastActivityAt={order.lastActivityAt} status={order.status} />
                                 </td>
                                 <td className="py-2 pr-4">{order.assignee?.name || '—'}</td>
                                 <td className="py-2 pr-4 text-right" onClick={(e) => e.stopPropagation()}>

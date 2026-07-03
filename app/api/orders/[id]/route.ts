@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 const updateOrderSchema = z.object({
   status: z.enum(['intake', 'quote', 'in_progress', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
@@ -35,6 +36,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         { status: 404 }
       );
     }
+
+    await touchOrderActivity(id);
 
     // Entferne Duplikate in Specs: behalte den "besten" Wert pro Key
     // Strategie: längerer Wert bevorzugt (vollständiger), sonst neuerer (spätere CUID)

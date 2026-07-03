@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getPresetForOrderType, getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 const KEY_ALIASES: Record<string, string> = {
   korpus_finish: 'body_surface_treatment',
@@ -147,6 +148,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       })
     );
 
+    await touchOrderActivity(id);
     return NextResponse.json(updates);
   } catch (error) {
     console.error('Error updating specs:', error);

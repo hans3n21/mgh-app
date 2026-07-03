@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { persistAttachment } from '@/lib/mail/attachments';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 const Body = z.object({ attachmentIds: z.array(z.string()).min(1) });
 
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       linked++;
     }
 
+    await touchOrderActivity(orderId);
     return NextResponse.json({ linked, skipped, unavailable, missing: attachmentIds.length - attachments.length });
   } catch (e) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: 'Invalid body', details: e.issues }, { status: 400 });

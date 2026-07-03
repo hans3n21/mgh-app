@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
 import { persistAttachment } from '@/lib/mail/attachments';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 const createImageSchema = z.object({
   path: z.string(),
@@ -102,6 +103,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     });
 
+    await touchOrderActivity(id);
     return NextResponse.json(image);
   } catch (error) {
     if (error instanceof z.ZodError) {
