@@ -473,6 +473,11 @@ async function ingestMessage(
 			isRead: message.flags ? message.flags.has('\\Seen') : false,
 			folder: folderName,
 			uid: message.uid,
+			// A message we just fetched from folderName obviously still exists there —
+			// clear a stale isDeleted from an earlier reconcile of its PREVIOUS folder
+			// (moving a mail sets isDeleted on the old-folder row before this upsert
+			// re-homes it, and that flag must not survive the move).
+			isDeleted: false,
 			// If we found new links (e.g. orderId), update them. 
 			// But be careful not to overwrite existing valid links if this is just a folder move.
 			// Actually, if we found an orderId now, it's good to set it.
@@ -634,7 +639,14 @@ async function reconcileFolder(
 ) {
 	try {
 		// Fetch all UIDs present on the server for this folder.
+		// imapflow's search() returns `false` (not a throw) on a failed search —
+		// treating that as "zero UIDs" would mark every local mail in the folder
+		// as deleted, so bail out instead of reconciling against a bogus empty set.
 		const raw = await client.search({ all: true }, { uid: true });
+		if (raw === false) {
+			console.warn(`[reconcile] Search failed for ${folderName}@${accountId}, skipping this cycle`);
+			return;
+		}
 		const serverUids: number[] = Array.isArray(raw) ? raw.map((u) => Number(u)) : [];
 		const serverUidSet = new Set(serverUids);
 
