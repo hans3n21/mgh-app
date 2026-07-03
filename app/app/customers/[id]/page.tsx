@@ -8,6 +8,7 @@ import {
 } from '@/lib/order-status';
 import CustomerNotes from './CustomerNotes';
 import CustomerMailSearch from './CustomerMailSearch';
+import CustomerEmails from './CustomerEmails';
 
 const TYPE_LABEL: Record<string, string> = {
 	GUITAR: 'Gitarrenbau',
@@ -48,13 +49,19 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 		);
 	}
 
-	// Mail-Verlauf: direkt verknüpfte Mails plus Mails von der Kunden-Adresse
+	// Mail-Verlauf: direkt verknüpfte Mails plus Mails von/an jede bekannte Adresse des Kunden
+	const knownAddresses = Array.from(
+		new Set([customer.email, ...customer.additionalEmails].filter((e): e is string => !!e))
+	);
 	const mails = await prisma.mail.findMany({
 		where: {
 			isDeleted: false,
 			OR: [
 				{ customerId: customer.id },
-				...(customer.email ? [{ fromEmail: { equals: customer.email, mode: 'insensitive' as const } }] : []),
+				...knownAddresses.flatMap((addr) => [
+					{ fromEmail: { equals: addr, mode: 'insensitive' as const } },
+					{ toEmail: { equals: addr, mode: 'insensitive' as const } },
+				]),
 			],
 		},
 		orderBy: { date: 'desc' },
@@ -104,6 +111,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 					)}
 				</div>
 			</section>
+
+			<CustomerEmails customerId={customer.id} initialEmails={customer.additionalEmails} />
 
 			{/* Aufträge */}
 			<section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
