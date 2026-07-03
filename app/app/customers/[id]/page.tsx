@@ -7,6 +7,7 @@ import {
 	normalizeWorkflowStatus,
 } from '@/lib/order-status';
 import CustomerNotes from './CustomerNotes';
+import CustomerMailSearch from './CustomerMailSearch';
 
 const TYPE_LABEL: Record<string, string> = {
 	GUITAR: 'Gitarrenbau',
@@ -149,6 +150,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 					</div>
 				)}
 			</section>
+
+			<CustomerMailSearch customerId={customer.id} />
 
 			{/* Mail-Verlauf */}
 			<section className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
