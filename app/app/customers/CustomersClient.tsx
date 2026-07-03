@@ -9,6 +9,7 @@ export interface CustomerWithOrders {
   id: string;
   name: string;
   email?: string | null;
+  additionalEmails?: string[];
   phone?: string | null;
   orders: Array<{ id: string; title: string }>;
 }
@@ -65,7 +66,7 @@ export default function CustomersClient({ customers }: { customers: CustomerWith
     const term = search.trim().toLowerCase();
     if (!term) return customersList;
     return customersList.filter((c) =>
-      [c.name, c.email ?? '', c.phone ?? ''].join(' ').toLowerCase().includes(term)
+      [c.name, c.email ?? '', ...(c.additionalEmails ?? []), c.phone ?? ''].join(' ').toLowerCase().includes(term)
     );
   }, [customersList, search]);
 
