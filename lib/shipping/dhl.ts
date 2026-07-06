@@ -88,6 +88,16 @@ async function getAccessToken(config: DhlConfig): Promise<string> {
 		return cachedToken.token;
 	}
 
+	// Matches DHL's documented OAuth2 ROPC form exactly (body-encoded
+	// client_id/client_secret, no extra headers). As of 2026-07-06 this
+	// consistently gets back 401 "Invalid client identifier" against a
+	// freshly-registered developer.dhl.com app (env "Customer (Integration)
+	// Testing") — tried with client_id/secret in the body, as HTTP Basic Auth,
+	// and with an extra `dhl-api-key` header; all three gave the byte-identical
+	// error, which points away from a request-shape bug and towards either (a)
+	// new-key propagation delay on DHL's side, or (b) the business account
+	// itself not yet having the Returns product provisioned even though the
+	// app shows "aktiviert". Re-verify against the sandbox before trusting this.
 	const tokenUrl = `${BASE_URLS[config.environment]}/parcel/de/account/auth/ropc/v1/token`;
 	const body = new URLSearchParams({
 		grant_type: 'password',
