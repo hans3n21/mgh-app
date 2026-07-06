@@ -6,6 +6,7 @@ import SpeechSettings from '@/components/SpeechSettings';
 import UpdateTemplateSettings from '@/components/UpdateTemplateSettings';
 import AiSettings from '@/components/AiSettings';
 import TelephonySettings from '@/components/TelephonySettings';
+import DhlSettings from '@/components/DhlSettings';
 
 export default function SettingsPage() {
   return (
@@ -25,7 +26,9 @@ export default function SettingsPage() {
       <AiSettings />
 
       <TelephonySettings />
-      
+
+      <DhlSettings />
+
       <BackupManagement />
     </section>
   );
