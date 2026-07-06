@@ -8,6 +8,7 @@ import { parseMail } from './parseMail';
 import linkMailArtifactsToOrder from './linkArtifacts';
 import { extractAndStore } from './extraction';
 import { stripQuotedContent } from './stripQuotedContent';
+import { isSentFolderName } from './folders';
 import type { MailAccount } from '@prisma/client';
 
 const BATCH_SIZE = 10;
@@ -447,6 +448,24 @@ async function ingestMessage(
 		if (orderByCustomerEmail) {
 			orderId = orderByCustomerEmail.id;
 		}
+	}
+
+	// 3c. Guard against self-sent replies leaking back into INBOX.
+	// Some mail hosts copy/bounce outgoing SMTP mail back into the account's own
+	// INBOX (independent of our own IMAP append to "Sent"). Since the upsert
+	// below is keyed on (accountId, messageId) only — with no separate
+	// inbound/outbound flag — a message we authored ourselves (fromEmail ===
+	// the account's own address) that resurfaces during a non-Sent-folder sync
+	// would otherwise overwrite the existing "Sent" row's folder back to
+	// "INBOX", making our own reply look like a fresh, unanswered customer
+	// message. If a row for this messageId already exists, leave its folder
+	// alone here; the dedicated Sent-folder sync pass is what should classify it.
+	if (fromEmail && account.email && fromEmail.toLowerCase() === account.email.toLowerCase() && !isSentFolderName(folderName)) {
+		const existing = await prisma.mail.findUnique({
+			where: { accountId_messageId: { accountId: account.id, messageId } },
+			select: { id: true },
+		});
+		if (existing) return;
 	}
 
 	// 4. Upsert Mail

@@ -28,6 +28,14 @@ const TRASH_MATCHERS = [
 	'bin',
 ];
 
+const SENT_MATCHERS = [
+	'sent',
+	'gesendet',
+	'gesendete',
+	'gesendete elemente',
+	'outbox',
+];
+
 export function normalizeFolderName(value: string | null | undefined): string {
 	return (value || '')
 		.normalize('NFKD')
@@ -40,6 +48,12 @@ export function isTrashFolderName(value: string | null | undefined): boolean {
 	const normalized = normalizeFolderName(value);
 	if (!normalized) return false;
 	return TRASH_MATCHERS.some((matcher) => normalized === matcher || normalized.includes(matcher));
+}
+
+export function isSentFolderName(value: string | null | undefined): boolean {
+	const normalized = normalizeFolderName(value);
+	if (!normalized) return false;
+	return SENT_MATCHERS.some((matcher) => normalized === matcher || normalized.includes(matcher));
 }
 
 function getFolderPath(item: FolderListItem): string | null {
