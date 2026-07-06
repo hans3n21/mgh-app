@@ -10,6 +10,7 @@ import OrderPricing from './OrderPricing';
 import { normalizeWorkflowStatus } from '@/lib/order-status';
 import { getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
 import PhoneLink from '@/components/PhoneLink';
+import CreateReturnLabelButton from '@/components/CreateReturnLabelButton';
 
 type Props = {
 	message: Message | null;
@@ -1000,6 +1001,12 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 										>
 											✉
 										</a>
+										{selectedOrderId && (
+											<CreateReturnLabelButton
+												orderId={selectedOrderId}
+												className="h-7 w-7 inline-flex items-center justify-center rounded-md border border-slate-700/60 bg-slate-800/40 text-slate-400 transition-all duration-150 hover:text-sky-200 hover:border-sky-500/60 hover:bg-slate-800/80 hover:shadow-[0_0_10px_rgba(56,189,248,0.35)]"
+											/>
+										)}
 									</div>
 								</div>
 								<div className="mt-2 grid grid-cols-2 gap-1.5">

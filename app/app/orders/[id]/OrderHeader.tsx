@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PhoneLink from '@/components/PhoneLink';
+import CreateReturnLabelButton from '@/components/CreateReturnLabelButton';
 
 interface OrderHeaderProps {
   orderId: string;
@@ -218,6 +219,7 @@ export default function OrderHeader({
           {customer.name}
         </Link>
         <div className="flex items-center gap-2">
+          <CreateReturnLabelButton orderId={orderId} />
           {customer.email && (
             <Link
               href={`/app/posteingang?compose=1&to=${encodeURIComponent(customer.email)}`}
