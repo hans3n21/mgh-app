@@ -129,6 +129,11 @@ model Order {
   views            OrderView[]
   tasks            OrderTask[]
   fieldSuggestions OrderFieldSuggestion[]
+  // DHL-Retourenlabel: Tracking-Infos fuer das zuletzt erstellte Ruecksende-Label.
+  // Kein eigenes Modell, da pro Auftrag i.d.R. genau ein Label erzeugt wird.
+  returnLabelTrackingNumber String?
+  returnLabelCreatedAt      DateTime?
+  returnLabelPdfPath        String?
 }
 
 model OrderView {
