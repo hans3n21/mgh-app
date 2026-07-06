@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { replyToMail } from '@/lib/mail/actions';
+import { textToSafeHtml } from '@/lib/mail/linkify';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       to: [to],
       cc: body.cc,
       subject: body.subject,
-      html: body.html || body.text.replace(/\n/g, '<br>'),
+      html: body.html || textToSafeHtml(body.text),
       text: body.text,
       inReplyToMessageId: mail.messageId,
       attachments: atts.length > 0 ? atts : undefined,

@@ -95,6 +95,29 @@ function isSentFolder(folder?: string | null): boolean {
 	return SENT_KEYWORDS.some(k => l.includes(k));
 }
 
+const DISPLAY_URL_PATTERN = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/gi;
+
+// Renders plain text with bare http(s)/www. URLs turned into clickable links,
+// without dangerouslySetInnerHTML — everything else stays as React-escaped text.
+function renderTextWithLinks(text: string): React.ReactNode {
+	const parts = text.split(DISPLAY_URL_PATTERN);
+	return parts.map((part, i) => {
+		if (i % 2 !== 1) return part;
+		const trailingMatch = part.match(/[.,;:!?)]+$/);
+		const trailing = trailingMatch ? trailingMatch[0] : '';
+		const core = trailing ? part.slice(0, -trailing.length) : part;
+		const href = core.toLowerCase().startsWith('www.') ? `https://${core}` : core;
+		return (
+			<React.Fragment key={i}>
+				<a href={href} target="_blank" rel="noopener noreferrer nofollow" className="underline decoration-dotted hover:text-sky-300">
+					{core}
+				</a>
+				{trailing}
+			</React.Fragment>
+		);
+	});
+}
+
 function isImageAttachment(mime: string | null, fn: string) {
 	const mt = (mime || '').toLowerCase();
 	if (mt.startsWith('image/')) return true;
@@ -756,7 +779,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 											{/* Message body — always visible, no quoting */}
 											<div className={`px-3 pb-3 ${displayText ? '' : 'hidden'}`}>
 												<pre className="whitespace-pre-wrap text-sm text-slate-200 leading-relaxed font-sans">
-													{displayText}
+													{renderTextWithLinks(displayText)}
 												</pre>
 											</div>
 

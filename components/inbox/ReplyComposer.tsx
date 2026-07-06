@@ -5,6 +5,7 @@ import type { ParsedField } from '@/lib/inbox/rules';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import AiToolbar from '@/components/mail/AiToolbar';
 import SmartReply from '@/components/mail/SmartReply';
+import { textToSafeHtml } from '@/lib/mail/linkify';
 
 type Template = { id: string; key: string; lang: string; body: string; subject?: string | null; variables?: string[] };
 type LinkedAttachment = { id: string; name?: string };
@@ -25,12 +26,6 @@ type Props = {
 
 function renderTemplate(tpl: string, values: Record<string, string>) {
 	return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (values[k] ?? ''));
-}
-
-function markdownToHtml(markdown: string) {
-	return markdown
-		.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-		.replace(/\n/g, '<br>');
 }
 
 async function filesToPayload(files: File[]): Promise<Array<{ name: string; contentType: string; content: string }>> {
@@ -204,8 +199,7 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 				...linkedAttachments.map((a) => ({ id: a.id })),
 				...(await filesToPayload(files)),
 			];
-			const hasLinks = body.includes('[') && body.includes('](');
-			const html = hasLinks ? markdownToHtml(body) : undefined;
+			const html = textToSafeHtml(body);
 			const res = await fetch(`/api/mails/${mailId}/reply`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
