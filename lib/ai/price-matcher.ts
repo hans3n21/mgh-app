@@ -319,6 +319,10 @@ function inferPickguardSize(normalizedInput: string): PickguardSize | null {
   return null
 }
 
+// Deckt die auf dein-pickguard.de/materialien gelisteten Materialnamen ab (Stand
+// 2026-07-07). Tortoise/Pearl/Special sind auf der Website drei separate Kategorien,
+// landen in der Preisliste (PriceItem.priceText) aber alle im selben Tarif -- daher
+// hier als eine Gruppe behandelt statt einzeln unterschieden.
 function inferPickguardMaterialTier(normalizedInput: string): PickguardMaterialTier | null {
   if (hasWord(normalizedInput, 'sparkle') || hasWord(normalizedInput, 'sparkles')) return 'sparkle'
 
@@ -326,6 +330,13 @@ function inferPickguardMaterialTier(normalizedInput: string): PickguardMaterialT
     hasWord(normalizedInput, 'tortoise') ||
     hasWord(normalizedInput, 'pearl') ||
     hasWord(normalizedInput, 'special') ||
+    hasWord(normalizedInput, 'marble') ||
+    hasWord(normalizedInput, 'tiger') ||
+    hasWord(normalizedInput, 'mantacore') ||
+    hasWord(normalizedInput, 'psychedelic') ||
+    hasWord(normalizedInput, 'leopard') ||
+    hasWord(normalizedInput, 'koi') ||
+    normalizedInput.includes('alu brushed') ||
     isJaguarMaterialContext(normalizedInput)
   ) {
     return 'special'
@@ -337,6 +348,9 @@ function inferPickguardMaterialTier(normalizedInput: string): PickguardMaterialT
     hasWord(normalizedInput, 'black') ||
     hasWord(normalizedInput, 'weiss') ||
     hasWord(normalizedInput, 'white') ||
+    hasWord(normalizedInput, 'creme') ||
+    hasWord(normalizedInput, 'mint') ||
+    hasWord(normalizedInput, 'transparent') ||
     normalizedInput.includes('3 lagig') ||
     normalizedInput.includes('3 ply')
   ) {
