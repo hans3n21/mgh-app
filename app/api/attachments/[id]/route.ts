@@ -68,6 +68,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 				headers: {
 					'Content-Type': fetched.mimeType,
 					'Content-Disposition': disposition,
+					'Content-Length': String(fetched.content.length),
 					// Short cache — content won't change but we don't want to
 					// permanently cache something that may disappear from IMAP.
 					'Cache-Control': 'private, max-age=300',
@@ -97,7 +98,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 			}
 			const buf = fs.readFileSync(localPath);
 			return new NextResponse(buf, {
-				headers: { 'Content-Type': contentType, 'Content-Disposition': disposition },
+				headers: { 'Content-Type': contentType, 'Content-Disposition': disposition, 'Content-Length': String(buf.length) },
 			});
 		}
 
@@ -107,7 +108,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 		}
 		const blob = await response.blob();
 		return new NextResponse(blob, {
-			headers: { 'Content-Type': contentType, 'Content-Disposition': disposition },
+			headers: { 'Content-Type': contentType, 'Content-Disposition': disposition, 'Content-Length': String(blob.size) },
 		});
 	} catch (error) {
 		console.error('Error serving attachment:', error);
