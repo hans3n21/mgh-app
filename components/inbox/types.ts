@@ -12,6 +12,7 @@ export type Message = {
 	subject: string;
 	fromName: string;
 	fromEmail: string;
+	replyToEmail?: string | null;
 	accountId?: string | null;
 	accountLabel?: string | null;
 	toName?: string | null;

@@ -93,6 +93,7 @@ export async function GET(req: NextRequest) {
 					subject: true,
 					fromEmail: true,
 					fromName: true,
+					replyToEmail: true,
 					toEmail: true,
 					toName: true,
 					date: true,

@@ -377,6 +377,10 @@ model Mail {
   subject        String?
   fromEmail      String
   fromName       String?
+  // Reply-To Header, falls abweichend von fromEmail -- z. B. Kontaktformular-Mails,
+  // die technisch von der eigenen Absenderadresse verschickt werden (SPF/DKIM),
+  // aber die echte Kundenadresse im Reply-To tragen.
+  replyToEmail   String?
   toEmail        String?      // Primary recipient email (for display in sent folder)
   toName         String?      // Primary recipient name
   to             Json         // Array of strings (all recipients)

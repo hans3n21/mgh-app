@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const bodyRaw = await req.json().catch(() => ({}));
     const body = Body.parse(bodyRaw);
 
-    const to = body.to || mail.fromEmail || undefined;
+    const to = body.to || mail.replyToEmail || mail.fromEmail || undefined;
     if (!to) return NextResponse.json({ error: 'Kein Empfänger' }, { status: 400 });
 
     const atts: Array<{ filename: string; content: Buffer; contentType: string }> = [];

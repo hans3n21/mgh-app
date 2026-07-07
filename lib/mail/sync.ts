@@ -383,6 +383,16 @@ async function ingestMessage(
 	const fromEmail = fromArr[0] || '';
 	const fromName = (parsed.from && !Array.isArray(parsed.from) && parsed.from.value[0]?.name) || '';
 
+	// Kontaktformular-Mails verschicken oft von der eigenen Domain (SPF/DKIM),
+	// tragen die echte Absenderadresse aber im Reply-To -- separat speichern,
+	// damit das Antworten-Feature die richtige Adresse vorschlagen kann.
+	const replyToArr = getAddress(parsed.replyTo);
+	const replyToEmail = replyToArr[0] || null;
+	// For customer/order matching, Reply-To is the more reliable "who is this
+	// really from" signal when present (see replyToEmail comment above) --
+	// fromEmail itself is left untouched as the literal header value.
+	const senderEmail = replyToEmail || fromEmail;
+
 	// Primary recipient (for display in sent folder)
 	const toAddr = parsed.to && !Array.isArray(parsed.to) ? parsed.to.value[0] : null;
 	const toEmail = toAddr?.address || null;
@@ -413,7 +423,7 @@ async function ingestMessage(
 	const parsedData = parseMail(text || '', html || '');
 
 	// 1. Customer Linking
-	const customer = await findCustomerForEmail(fromEmail);
+	const customer = await findCustomerForEmail(senderEmail);
 
 	// 2. Order Linking (Subject)
 	// Supports order id in subject with and without brackets.
@@ -435,11 +445,11 @@ async function ingestMessage(
 	}
 
 	// 3b. Fallback: Mail von gleicher Adresse wie order.customer.email → Auftrag verlinken (nur INBOX)
-	if (!orderId && fromEmail && folderName === 'INBOX') {
+	if (!orderId && senderEmail && folderName === 'INBOX') {
 		const orderByCustomerEmail = await prisma.order.findFirst({
 			where: {
 				customer: {
-					email: { equals: fromEmail, mode: 'insensitive' },
+					email: { equals: senderEmail, mode: 'insensitive' },
 				},
 			},
 			orderBy: { createdAt: 'desc' },
@@ -477,6 +487,7 @@ async function ingestMessage(
 			subject,
 			fromEmail,
 			fromName,
+			replyToEmail,
 			toEmail,
 			toName,
 			to: JSON.stringify(to),
@@ -511,6 +522,7 @@ async function ingestMessage(
 			subject,
 			fromEmail,
 			fromName,
+			replyToEmail,
 			toEmail,
 			toName,
 			to: JSON.stringify(to),

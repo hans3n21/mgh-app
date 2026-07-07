@@ -285,16 +285,18 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 		return () => { active = false; };
 	}, [selectedOrderId]);
 
-	// Kunde automatisch aus Mail-Absender erkennen
+	// Kunde automatisch aus Mail-Absender erkennen. Reply-To bevorzugen -- bei
+	// Kontaktformular-Mails (z. B. dein-pickguard.de) steht dort die echte
+	// Kundenadresse, waehrend fromEmail die eigene Adresse ist (SPF/DKIM).
 	useEffect(() => {
-		const fromEmail = (message?.fromEmail || '').trim().toLowerCase();
-		if (!fromEmail) {
+		const senderEmail = (message?.replyToEmail || message?.fromEmail || '').trim().toLowerCase();
+		if (!senderEmail) {
 			setMatchedCustomer(null);
 			return;
 		}
-		const match = customers.find((c) => (c.email || '').trim().toLowerCase() === fromEmail) || null;
+		const match = customers.find((c) => (c.email || '').trim().toLowerCase() === senderEmail) || null;
 		setMatchedCustomer(match);
-	}, [message?.fromEmail, customers]);
+	}, [message?.replyToEmail, message?.fromEmail, customers]);
 
 	const shownCustomer = orderData?.customer || matchedCustomer;
 	const relatedOrders = useMemo(() => {
@@ -505,9 +507,10 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 		let specsImported = false;
 		try {
 			let customerId = null;
+			const senderEmail = message.replyToEmail || message.fromEmail || '';
 			const customerData = {
-				name: message.fromName || message.fromEmail || 'Unbekannt',
-				email: message.fromEmail || '',
+				name: message.fromName || senderEmail || 'Unbekannt',
+				email: senderEmail,
 				phone: ''
 			};
 

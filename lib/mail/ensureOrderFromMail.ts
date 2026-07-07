@@ -28,8 +28,13 @@ function isUniqueConstraintError(error: unknown) {
 	return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
 
-function customerDataFromMail(mail: { fromName: string | null; fromEmail: string | null }, input?: CustomerInput) {
-	const email = cleanString(input?.email) || cleanString(mail.fromEmail);
+function customerDataFromMail(
+	mail: { fromName: string | null; fromEmail: string | null; replyToEmail?: string | null },
+	input?: CustomerInput
+) {
+	// Reply-To bevorzugen -- bei Kontaktformular-Mails (z. B. dein-pickguard.de)
+	// ist fromEmail die eigene Adresse, die echte Kundenadresse steht im Reply-To.
+	const email = cleanString(input?.email) || cleanString(mail.replyToEmail) || cleanString(mail.fromEmail);
 	const name = cleanString(input?.name) || cleanString(mail.fromName) || email || 'Unbekannt';
 	return {
 		name,

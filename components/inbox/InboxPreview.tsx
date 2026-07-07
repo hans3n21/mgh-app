@@ -927,7 +927,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 					defaultTo={
 					isSentFolder(message.folder)
 						? (message.toEmail || message.fromEmail || undefined)
-						: (message.fromEmail || undefined)
+						: (message.replyToEmail || message.fromEmail || undefined)
 				}
 					defaultBody=""
 					parsedFields={[]}
