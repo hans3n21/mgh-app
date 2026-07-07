@@ -5,7 +5,9 @@ import { callAI } from '@/lib/ai/chat';
 import { auth } from '@/lib/auth';
 import {
   formatPriceItem,
+  isPickguardInquiry,
   isPriceQuestion,
+  matchPickguardOfferPrice,
   matchPriceItems,
   type MatchedPriceItem,
   type PricePromptItem,
@@ -18,13 +20,24 @@ async function getAccountProfile(accountId?: string) {
   } catch { return null; }
 }
 
+// Pickguard "S/M/L/XL"-Preiseintraege buendeln 3 Materialstufen (Standard/Sparkle/
+// Tortoise-Pearl-Special) in einer einzigen priceText-Zeile. Ohne die Groessen-/
+// Materialstufen-Erkennung aus matchPickguardOfferPrice() weiter unten wuerde hier
+// die komplette mehrdeutige Zeile in den Prompt wandern und das Modell muesste raten,
+// welcher der 3 Preise zum genannten Material passt (siehe app/api/ai/transform/route.ts).
+function isPickguardSizePriceItem(item: PricePromptItem) {
+  return /^(xl|l|m|s)\s+pickguard$/i.test((item.label ?? '').trim());
+}
+
 function buildPricePromptSection(priceHits: MatchedPriceItem[], hasPriceQuestion: boolean) {
   if (priceHits.length > 0) {
     const priceText = priceHits
       .map((hit, i) => {
         const categoryPath = [hit.item.mainCategory, hit.item.category].filter(Boolean).join(' / ');
         const description = hit.item.description?.trim() ? ` - ${hit.item.description.trim()}` : '';
-        return `${i + 1}. ${hit.item.label}${categoryPath ? ` (${categoryPath})` : ''}: ${formatPriceItem(hit.item)}${description}`;
+        const price = hit.recommendedPriceText ?? formatPriceItem(hit.item);
+        const note = hit.contextNote ? `\n   Hinweis: ${hit.contextNote}` : '';
+        return `${i + 1}. ${hit.item.label}${categoryPath ? ` (${categoryPath})` : ''}: ${price}${description}${note}`;
       })
       .join('\n');
 
@@ -66,7 +79,9 @@ export async function POST(request: NextRequest) {
 
     const priceLookupText = `${text} ${typeof originalMailText === 'string' ? originalMailText : ''}`;
     const hasPriceQuestion = isPriceQuestion(priceLookupText);
-    const priceItemsPromise: Promise<PricePromptItem[]> = hasPriceQuestion
+    const shouldPreparePickguardOffer = isPickguardInquiry(priceLookupText);
+    const shouldLookupPrices = hasPriceQuestion || shouldPreparePickguardOffer;
+    const priceItemsPromise: Promise<PricePromptItem[]> = shouldLookupPrices
       ? prisma.priceItem.findMany({
           where: { active: true },
           orderBy: [
@@ -94,7 +109,16 @@ export async function POST(request: NextRequest) {
       getAccountProfile(accountId),
       priceItemsPromise,
     ]);
-    const priceHits = hasPriceQuestion ? matchPriceItems(priceLookupText, priceItems) : [];
+    let priceHits = shouldLookupPrices ? matchPriceItems(priceLookupText, priceItems) : [];
+    if (shouldPreparePickguardOffer) {
+      const pickguardRecommendation = matchPickguardOfferPrice(priceLookupText, priceItems);
+      if (pickguardRecommendation) {
+        priceHits = [
+          pickguardRecommendation,
+          ...priceHits.filter((hit) => !isPickguardSizePriceItem(hit.item)),
+        ];
+      }
+    }
     const pricePromptSection = buildPricePromptSection(priceHits, hasPriceQuestion);
     const { anonymizedText, tokenMap } = await anonymizeText(text, mailId);
 
