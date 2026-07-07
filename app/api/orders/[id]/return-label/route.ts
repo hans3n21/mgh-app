@@ -118,7 +118,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 		let emailSent = false;
 		let emailWarning: string | undefined;
 		if (order.customer.email) {
-			const account = await prisma.mailAccount.findFirst({ where: { isDefault: true } })
+			// Prefer the mailbox this order has actually been communicating through
+			// (e.g. info@dein-pickguard.de) over an arbitrary "default" account --
+			// otherwise the customer gets a reply from an address they don't recognize.
+			const lastOrderMail = await prisma.mail.findFirst({
+				where: { orderId: order.id },
+				orderBy: { date: 'desc' },
+				select: { accountId: true },
+			});
+			const account = (lastOrderMail && await prisma.mailAccount.findUnique({ where: { id: lastOrderMail.accountId } }))
+				?? await prisma.mailAccount.findFirst({ where: { isDefault: true } })
 				?? await prisma.mailAccount.findFirst({ where: { isActive: true } });
 			if (account) {
 				try {
