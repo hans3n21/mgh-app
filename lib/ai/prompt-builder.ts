@@ -59,6 +59,15 @@ export function buildPrompt(input: PromptInput): {
   ].join(' ').toLowerCase()
   const isPickguardContext = promptContext.includes('pickguard') || promptContext.includes('schlagbrett')
 
+  // Versandmarke gibt es laut Preisliste erst "ab 69 EUR Auftragswert" (siehe
+  // PriceItem "Versandmarke Einsendung Deutschland"). Darunter soll der Kunde
+  // die Vorlage stattdessen selbst an unsere Adresse schicken.
+  const pickguardPriceHit = priceHits?.find((hit) => /^(xl|l|m|s)\s+pickguard$/i.test(hit.item.label.trim()))
+  const pickguardPrice = pickguardPriceHit?.recommendedPriceText
+    ? parseFloat(pickguardPriceHit.recommendedPriceText.replace(',', '.'))
+    : null
+  const pickguardBelowShippingLabelThreshold = pickguardPrice !== null && pickguardPrice < 69
+
   const parts: string[] = []
 
   // 1. Rolle + Business Context (AiProfile gewinnt, Legacy als Fallback)
@@ -127,7 +136,9 @@ export function buildPrompt(input: PromptInput): {
       '2. Ein kurzer Satz "Ich fasse nochmal zusammen:" mit Modell/Teilwunsch und erkennbarem Material oder Design. Wenn der Kunde "in Jaguar" schreibt, ist Jaguar das Material/Design, nicht automatisch das Instrumentenmodell.\n' +
       '3. Preiszeile: Nenne den passenden Pickguard-Preis aus PriceItem und genau einen passenden Versandkosten-PriceItem. Wenn kein Zielland genannt ist, verwende Deutschland als Standard und formuliere "zzgl. 6,95 EUR Porto/Verpackung (innerhalb Deutschlands)", sofern dieser PriceItem vorhanden ist. EU/Nicht-EU/Weltweit nur nennen, wenn die Kundenmail ein entsprechendes Zielland oder Ausland erkennen laesst. Wenn kein Land genannt ist, nicht nach dem Land fragen und nicht alle Versandzonen aufzaehlen.\n' +
       '4. Standardablauf: altes/defektes Teil einsenden, mit Maschinen abtasten, Schablone erstellen, gewuenschtes Material befestigen, neues Pickguard 1:1 fraesen. Wenn keine Vorlage erwaehnt ist, erklaere diesen Ablauf als naechsten Schritt statt nach einer Vorlage als nummerierte Rueckfrage zu fragen.\n' +
-      '5. Versandmarke: Wenn ein Versandmarken-PriceItem vorhanden ist und Deutschland als Versandkontext gilt, als Service anbieten und um Versandadresse bitten, falls der Kunde die Versandmarke moechte. Bei Ausland keine deutsche Versandmarke anbieten.\n' +
+      (pickguardBelowShippingLabelThreshold
+        ? '5. Versandmarke gibt es erst ab 69 EUR Auftragswert -- bei diesem Auftrag liegt der Preis darunter. Biete deshalb KEINE Versandmarke an. Bitte den Kunden stattdessen, die Vorlage eigenstaendig an {firmen_adresse} zu senden. Bei Kunden im Ausland ergaenze ", Germany" an die Adresse.\n'
+        : '5. Versandmarke: Wenn ein Versandmarken-PriceItem vorhanden ist und Deutschland als Versandkontext gilt, als Service anbieten und um Versandadresse bitten, falls der Kunde die Versandmarke moechte. Bei Ausland keine deutsche Versandmarke anbieten.\n') +
       '6. Bitte um Begleitschreiben mit allen Eckdaten in der Lieferung.\n' +
       '7. Kurzer Gruss und rechtlicher Hinweis zu Customfertigungen.\n' +
       'Nicht tun: keine nummerierte Rueckfragenliste, keine offenen Rueckfragen zu Material, Zielland oder Vorlage, wenn die Antwort als Angebot mit Standardablauf geschrieben werden kann. Kein "damit wir ein Angebot erstellen koennen", wenn Preis/Teilwunsch schon ausreichend aus Kontext und PriceItem hervorgehen. Keine Versandkosten ausdenken und keine unpassenden Versandzonen nennen. ' +
