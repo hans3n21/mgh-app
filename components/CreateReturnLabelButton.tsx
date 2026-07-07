@@ -127,7 +127,7 @@ export default function CreateReturnLabelButton({ orderId, className }: CreateRe
 					>
 						<h3 className="text-sm font-semibold text-slate-100">Versandlabel erstellen</h3>
 						<p className="mt-1 text-xs text-slate-400">
-							Retourenlabel für den Kunden — Adresse prüfen/korrigieren, dann erstellen. Wird automatisch per Mail an den Kunden geschickt.
+							Versandmarke für den Kunden — Adresse prüfen/korrigieren, dann erstellen. Wird automatisch per Mail an den Kunden geschickt.
 						</p>
 
 						{existingTracking && !result && (

@@ -137,9 +137,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 						orderId: order.id,
 						customerId: order.customerId,
 						to: [order.customer.email],
-						subject: `Rücksende-Label für deinen Auftrag ${order.title}`,
-						html: `Hallo ${order.customer.name},<br><br>anbei findest du das Rücksende-Label für deinen Auftrag. Bitte das Original-Teil damit an uns zurückschicken.<br><br>Viele Grüße`,
-						text: `Hallo ${order.customer.name},\n\nanbei findest du das Rücksende-Label für deinen Auftrag. Bitte das Original-Teil damit an uns zurückschicken.\n\nViele Grüße`,
+						subject: `Versandmarke für deinen Auftrag ${order.title}`,
+						html: `Hallo ${order.customer.name},<br><br>anbei findest du die Versandmarke für deinen Auftrag. Bitte sende uns das Original-Teil damit zu.<br><br>Viele Grüße`,
+						text: `Hallo ${order.customer.name},\n\nanbei findest du die Versandmarke für deinen Auftrag. Bitte sende uns das Original-Teil damit zu.\n\nViele Grüße`,
 						attachments: [{ filename: 'retourenlabel.pdf', content: pdfBuffer, contentType: 'application/pdf' }],
 					});
 					emailSent = true;
