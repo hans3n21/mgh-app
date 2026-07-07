@@ -72,10 +72,8 @@ export function isDhlConfigComplete(config: DhlConfig): boolean {
 }
 
 // Module-scope token cache. Single-instance app, no Redis — same pragmatism as
-// the rest of the codebase. DHL's documented token lifetime is inconsistent
-// across their own docs (5 min vs 30 min seen in different reference pages) —
-// cache conservatively and re-verify against a real sandbox response before
-// relying on this for production.
+// the rest of the codebase. Confirmed against a real sandbox response (2026-07-07):
+// expires_in came back as 240s, so the 30s safety margin below is a reasonable cushion.
 let cachedToken: { environment: DhlEnvironment; clientId: string; token: string; expiresAt: number } | null = null;
 
 async function getAccessToken(config: DhlConfig): Promise<string> {
@@ -88,16 +86,10 @@ async function getAccessToken(config: DhlConfig): Promise<string> {
 		return cachedToken.token;
 	}
 
-	// Matches DHL's documented OAuth2 ROPC form exactly (body-encoded
-	// client_id/client_secret, no extra headers). As of 2026-07-06 this
-	// consistently gets back 401 "Invalid client identifier" against a
-	// freshly-registered developer.dhl.com app (env "Customer (Integration)
-	// Testing") — tried with client_id/secret in the body, as HTTP Basic Auth,
-	// and with an extra `dhl-api-key` header; all three gave the byte-identical
-	// error, which points away from a request-shape bug and towards either (a)
-	// new-key propagation delay on DHL's side, or (b) the business account
-	// itself not yet having the Returns product provisioned even though the
-	// app shows "aktiviert". Re-verify against the sandbox before trusting this.
+	// portalUsername/portalPassword are the ROPC "resource owner" credentials.
+	// In sandbox these are DHL's fixed public test values (user-valid /
+	// SandboxPasswort2023!), NOT the real Geschaeftskundenportal login --
+	// verified against DHL's own docs and a live sandbox call (2026-07-07).
 	const tokenUrl = `${BASE_URLS[config.environment]}/parcel/de/account/auth/ropc/v1/token`;
 	const body = new URLSearchParams({
 		grant_type: 'password',
@@ -140,11 +132,11 @@ async function getAccessToken(config: DhlConfig): Promise<string> {
  * workshop is the receiver (resolved server-side by DHL from the account's
  * "Returns Settings" + receiverId, not sent as an address in this request).
  *
- * FIELD MAPPING NOT YET VERIFIED AGAINST A LIVE SANDBOX RESPONSE — the shape
- * below matches DHL's published example requests for the Parcel DE Returns
- * API (receiverId as a country/routing code like "deu", shipper name1/
- * addressStreet/addressHouse/postalCode/city), but must be confirmed with a
- * real sandbox call (see plan doc) before this is trusted for production use.
+ * Field mapping confirmed against a real sandbox response (2026-07-07):
+ * `shipmentNo` + `label.b64` are exactly what DHL returns. Only send the
+ * Bearer token here -- adding a `dhl-api-key` header alongside it makes DHL
+ * reject the request with "Invalid combination of credentials: Use EITHER
+ * Bearer Token or (Apikey and Basic Auth)."
  */
 export async function createReturnLabel(config: DhlConfig, request: ReturnLabelRequest): Promise<ReturnLabelResult> {
 	const token = await getAccessToken(config);
@@ -155,7 +147,6 @@ export async function createReturnLabel(config: DhlConfig, request: ReturnLabelR
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`,
-			'dhl-api-key': config.clientId,
 		},
 		body: JSON.stringify({
 			receiverId: config.receiverId,
