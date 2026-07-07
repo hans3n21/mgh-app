@@ -120,7 +120,7 @@ const PICKGUARD_SIZE_TERMS: Array<{ size: PickguardSize; terms: string[] }> = [
   },
   {
     size: 'S',
-    terms: ['s pickguard', 'les paul', 'es 335', 'gretsch'],
+    terms: ['s pickguard', 'les paul', 'es 335', '335', 'gretsch'],
   },
 ]
 
