@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
+import { deleteAttachment } from '@/lib/mail/attachments';
 import { z } from 'zod';
 
 const updateSchema = z.object({
@@ -159,34 +162,52 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    // Prüfe ob Account Mails hat
-    const account = await prisma.mailAccount.findUnique({
-      where: { id },
-      include: {
-        _count: {
-          select: {
-            mails: true,
-          },
-        },
-      },
-    });
-
+    const account = await prisma.mailAccount.findUnique({ where: { id } });
     if (!account) {
       return NextResponse.json({ error: 'Mail account not found' }, { status: 404 });
     }
 
-    if (account._count.mails > 0) {
-      return NextResponse.json(
-        { error: 'Cannot delete mail account with existing mails' },
-        { status: 400 }
-      );
-    }
-
-    await prisma.mailAccount.delete({
-      where: { id },
+    // Collect what needs local/Blob file cleanup before the cascading DB
+    // delete removes the rows. This never touches the real IMAP/SMTP server --
+    // only our local database and locally/Blob-stored copies of attachments.
+    const mailsToDelete = await prisma.mail.findMany({
+      where: { accountId: id },
+      select: { id: true },
+    });
+    const remoteAttachments = await prisma.attachment.findMany({
+      where: { mail: { accountId: id }, path: { startsWith: 'http' } },
+      select: { path: true },
     });
 
-    return NextResponse.json({ success: true });
+    // Mail rows cascade-delete their Attachment/MailExtraction rows at the DB
+    // level; MailAccount cascade-deletes MailAccountProfile/AiProfile/
+    // EmailTemplate/KnowledgeEntry/CompanyData at the DB level (verified against
+    // the live schema, not just prisma/schema.prisma).
+    const { count: deletedMails } = await prisma.mail.deleteMany({ where: { accountId: id } });
+    await prisma.mailAccount.delete({ where: { id } });
+
+    // Best-effort file cleanup -- the DB deletion above already succeeded, so
+    // failures here are logged but don't fail the request.
+    for (const att of remoteAttachments) {
+      if (!att.path) continue;
+      try {
+        await deleteAttachment(att.path);
+      } catch (cleanupError) {
+        console.warn('[mail-accounts] Failed to delete Blob attachment:', att.path, cleanupError);
+      }
+    }
+    for (const mail of mailsToDelete) {
+      try {
+        const dir = path.resolve(process.cwd(), 'uploads', 'mail', mail.id);
+        if (dir.startsWith(process.cwd() + path.sep) && fs.existsSync(dir)) {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      } catch (cleanupError) {
+        console.warn('[mail-accounts] Failed to remove local attachment dir for mail:', mail.id, cleanupError);
+      }
+    }
+
+    return NextResponse.json({ success: true, deletedMails });
   } catch (error) {
     console.error('Error deleting mail account:', error);
     return NextResponse.json(

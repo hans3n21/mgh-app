@@ -84,6 +84,9 @@ export default function MailAccountManagement() {
   const [profiles, setProfiles] = useState<Record<string, MailAccountProfileData>>({});
   const [savingProfile, setSavingProfile] = useState<string | null>(null);
   const [replyTemplates, setReplyTemplates] = useState<Array<{ id: string; key: string; lang: string }>>([]);
+  const [deleteConfirm, setDeleteConfirm] = useState<MailAccount | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -227,26 +230,30 @@ export default function MailAccountManagement() {
     }
   };
 
-  const deleteAccount = async (accountId: string, accountName: string) => {
-    if (!confirm(`Sind Sie sicher, dass Sie den Mail-Account "${accountName}" löschen möchten?`)) {
-      return;
-    }
-
+  const performDelete = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
     try {
-      const response = await fetch(`/api/mail-accounts/${accountId}`, {
+      const response = await fetch(`/api/mail-accounts/${deleteConfirm.id}`, {
         method: 'DELETE',
       });
 
       const data = await response.json();
 
       if (response.ok) {
+        const deletedName = deleteConfirm.name;
+        setDeleteConfirm(null);
+        setDeleteConfirmText('');
         await fetchAccounts();
+        alert(`"${deletedName}" wurde gelöscht${typeof data.deletedMails === 'number' ? ` (${data.deletedMails} lokale E-Mails entfernt)` : ''}.`);
       } else {
         alert(data.error || 'Fehler beim Löschen des Mail-Accounts');
       }
     } catch (error) {
       alert('Fehler beim Löschen des Mail-Accounts');
       console.error('Error deleting mail account:', error);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -697,14 +704,12 @@ export default function MailAccountManagement() {
                           >
                             Bearbeiten
                           </button>
-                          {account._count.mails === 0 && (
-                            <button
-                              onClick={() => deleteAccount(account.id, account.name)}
-                              className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition-colors"
-                            >
-                              Löschen
-                            </button>
-                          )}
+                          <button
+                            onClick={() => { setDeleteConfirm(account); setDeleteConfirmText(''); }}
+                            className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition-colors"
+                          >
+                            Löschen
+                          </button>
                           <button
                             onClick={() => {
                               const next = profileExpandedId === account.id ? null : account.id;
@@ -848,6 +853,59 @@ export default function MailAccountManagement() {
             </div>
           )}
         </>
+      )}
+
+      {deleteConfirm && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4"
+          onClick={() => { if (!deleting) { setDeleteConfirm(null); setDeleteConfirmText(''); } }}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-red-800/50 bg-slate-900 p-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-red-300">Mail-Account endgültig löschen</h3>
+            <p className="mt-2 text-sm text-slate-300">
+              Löscht <strong>{deleteConfirm.name}</strong> ({deleteConfirm.email})
+              {deleteConfirm._count.mails > 0 && (
+                <> inklusive <strong>{deleteConfirm._count.mails} lokal gespeicherter E-Mails</strong> und aller zugehörigen Anhänge</>
+              )} dauerhaft aus dieser App.
+            </p>
+            <p className="mt-2 text-xs text-amber-400">
+              ⚠ Das betrifft ausschließlich unsere lokale Datenbank — die E-Mails auf dem eigentlichen Mailserver (IMAP-Postfach) bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.
+            </p>
+            <label className="mt-3 block space-y-1">
+              <span className="text-xs font-medium text-slate-400">
+                Zum Bestätigen die E-Mail-Adresse eingeben: <code className="text-slate-300">{deleteConfirm.email}</code>
+              </span>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                autoFocus
+              />
+            </label>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => { setDeleteConfirm(null); setDeleteConfirmText(''); }}
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                disabled={deleting || deleteConfirmText.trim().toLowerCase() !== deleteConfirm.email.toLowerCase()}
+                onClick={performDelete}
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40"
+              >
+                {deleting ? 'Lösche…' : 'Endgültig löschen'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
