@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { callAI } from '@/lib/ai/chat';
 import { auth } from '@/lib/auth';
 import {
+  buildPriceValidationHints,
   formatPriceItem,
   isPickguardInquiry,
   isPriceQuestion,
@@ -202,7 +203,13 @@ export async function POST(request: NextRequest) {
     }
 
     const rehydrated = deanonymizeText(aiResult.text, mergedTokenMap);
-    return NextResponse.json({ text: rehydrated, subject: null, originalText: text, source: 'ai' });
+    return NextResponse.json({
+      text: rehydrated,
+      subject: null,
+      originalText: text,
+      source: 'ai',
+      priceValidation: buildPriceValidationHints(priceHits),
+    });
 
   } catch (error) {
     console.error('Compose-message error:', error);

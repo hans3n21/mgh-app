@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from 'react';
+import PriceCheckBanner from './PriceCheckBanner';
+import type { PriceValidationHint } from '@/lib/ai/price-matcher';
 
 type EmailTemplate = {
   id: string;
@@ -16,6 +18,7 @@ type Props = {
   customerName?: string;
   mailId?: string;
   onInsert: (text: string) => void;
+  getCurrentText: () => string;
 };
 
 type TransformResponse = {
@@ -23,6 +26,7 @@ type TransformResponse = {
   error?: string;
   knowledgeHits?: string[];
   priceHits?: string[];
+  priceValidation?: PriceValidationHint[];
   piiAnonymized?: boolean;
   tokensUsed?: number;
 };
@@ -32,6 +36,8 @@ type ReplyTrace = {
   templateKey: string;
   knowledgeHits: string[];
   priceHits: string[];
+  priceValidation: PriceValidationHint[];
+  generatedText: string;
   piiAnonymized: boolean;
   tokensUsed?: number;
 };
@@ -79,7 +85,7 @@ function scoreTemplate(template: EmailTemplate, incomingMail: string) {
   return score;
 }
 
-export default function SmartReply({ mailAccountId, hasAiProfile, incomingMail, customerName, mailId, onInsert }: Props) {
+export default function SmartReply({ mailAccountId, hasAiProfile, incomingMail, customerName, mailId, onInsert, getCurrentText }: Props) {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [lastTrace, setLastTrace] = useState<ReplyTrace | null>(null);
@@ -141,6 +147,8 @@ export default function SmartReply({ mailAccountId, hasAiProfile, incomingMail, 
         templateKey: tpl.key,
         knowledgeHits: data.knowledgeHits ?? [],
         priceHits: data.priceHits ?? [],
+        priceValidation: data.priceValidation ?? [],
+        generatedText: data.result,
         piiAnonymized: !!data.piiAnonymized,
         tokensUsed: data.tokensUsed,
       });
@@ -201,6 +209,15 @@ export default function SmartReply({ mailAccountId, hasAiProfile, incomingMail, 
             </span>
           )}
         </div>
+      )}
+
+      {lastTrace && lastTrace.priceValidation.length > 0 && (
+        <PriceCheckBanner
+          text={lastTrace.generatedText}
+          hints={lastTrace.priceValidation}
+          getCurrentText={getCurrentText}
+          onFix={onInsert}
+        />
       )}
     </div>
   );

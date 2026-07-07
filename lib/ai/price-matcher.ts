@@ -198,6 +198,95 @@ export function matchPickguardOfferPrice(inputText: string, items: PricePromptIt
   }
 }
 
+export type PriceValidationHint = {
+  label: string
+  // Einzelner, sicher aufgeloester Preis (z. B. wenn Pickguard-Groesse UND
+  // -Material eindeutig erkannt wurden, oder das PriceItem nur einen festen
+  // Preis hat). Wenn gesetzt, gilt fuer diese Position NUR dieser Preis als
+  // korrekt -- die anderen Tarif-Zahlen aus priceText zaehlen dann bewusst
+  // NICHT als gueltig, damit ein falscher Tarif (z. B. 49 statt 38 EUR) auch
+  // erkannt wird, obwohl 49 EUR fuer sich genommen ein echter Listenpreis ist.
+  recommendedPrice: string | null
+  // Alle im PriceItem vorkommenden Preise (z. B. alle 3 Pickguard-Tarife) --
+  // nur relevant, wenn recommendedPrice null ist (Groesse/Material unklar).
+  allPrices: string[]
+}
+
+export type PriceCheckHit = {
+  amount: string
+  status: 'ok' | 'mismatch'
+  suggestions: string[]
+}
+
+function normalizeAmount(raw: string): string {
+  const cleaned = raw.replace(/\./g, ',')
+  const [intPart, decPart] = cleaned.split(',')
+  if (!decPart || /^0+$/.test(decPart)) return intPart
+  return `${intPart},${decPart}`
+}
+
+const AMOUNT_PATTERN = /(\d+(?:[.,]\d{1,2})?)\s*(€|eur\b|euro\b)/gi
+
+function extractAmounts(text: string): string[] {
+  return Array.from(text.matchAll(AMOUNT_PATTERN), (m) => normalizeAmount(m[1]))
+}
+
+/**
+ * Baut aus den an die KI uebergebenen Preis-Treffern eine Liste "gueltiger"
+ * Preise pro Position, damit ein generierter Antworttext anschliessend gegen
+ * echte PriceItem-Werte geprueft werden kann (siehe checkPricesInText).
+ */
+export function buildPriceValidationHints(hits: MatchedPriceItem[]): PriceValidationHint[] {
+  return hits
+    .map((hit) => {
+      const allPrices = hit.item.priceText
+        ? extractAmounts(hit.item.priceText)
+        : hit.item.price !== null
+          ? [normalizeAmount(String(hit.item.price))]
+          : []
+      const recommended = hit.recommendedPriceText
+        ? extractAmounts(hit.recommendedPriceText)[0] ?? null
+        : allPrices.length === 1
+          ? allPrices[0]
+          : null
+      return { label: hit.item.label, recommendedPrice: recommended, allPrices }
+    })
+    .filter((hint) => hint.allPrices.length > 0)
+}
+
+/**
+ * Prueft alle "X €"/"X EUR"-Betraege in einem generierten Antworttext gegen
+ * die uebergebenen PriceValidationHints. Ein Betrag gilt nur dann als "ok",
+ * wenn er entweder dem recommendedPrice einer Position entspricht (falls
+ * gesetzt) oder -- bei mehrdeutigen Positionen ohne eindeutige Empfehlung --
+ * irgendeinem ihrer bekannten Tarif-Preise. Alles andere gilt als moeglicher
+ * KI-Fehler (siehe: 335-Stil-Bug, bei dem 149 € genannt wurde, obwohl dieser
+ * Wert in keinem der uebergebenen PriceItems vorkam).
+ */
+export function checkPricesInText(text: string, hints: PriceValidationHint[]): PriceCheckHit[] {
+  if (hints.length === 0) return []
+
+  const validAmounts = new Set<string>()
+  for (const hint of hints) {
+    const numbers = hint.recommendedPrice ? [hint.recommendedPrice] : hint.allPrices
+    numbers.forEach((n) => validAmounts.add(n))
+  }
+
+  const suggestions = Array.from(
+    new Set(
+      hints.flatMap((hint) => (hint.recommendedPrice ? [hint.recommendedPrice] : hint.allPrices))
+    )
+  )
+
+  const foundAmounts = Array.from(new Set(extractAmounts(text)))
+
+  return foundAmounts.map((amount) => ({
+    amount,
+    status: validAmounts.has(amount) ? 'ok' as const : 'mismatch' as const,
+    suggestions: validAmounts.has(amount) ? [] : suggestions.filter((s) => s !== amount),
+  }))
+}
+
 export function isPriceLikeKnowledgeEntry(
   entry: Pick<KnowledgeEntry, 'title' | 'category' | 'keywords'>
 ): boolean {

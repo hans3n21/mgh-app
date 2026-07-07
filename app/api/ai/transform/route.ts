@@ -6,6 +6,7 @@ import { matchKnowledgeEntries } from '@/lib/ai/keyword-matcher'
 import { semanticMatchKnowledge, mergeKnowledgeHits } from '@/lib/ai/semantic-matcher'
 import { loadKnowledgeForPrompt } from '@/lib/ai/knowledge-context'
 import {
+  buildPriceValidationHints,
   isPickguardInquiry,
   isPriceLikeKnowledgeEntry,
   isPriceQuestion,
@@ -458,6 +459,7 @@ export async function POST(req: Request) {
       tokensUsed,
       knowledgeHits: mergedKnowledgeHits.map(h => h.entry.title),
       priceHits: priceHits.map(h => h.item.label),
+      priceValidation: buildPriceValidationHints(priceHits),
       piiAnonymized: Object.keys(mergedTokenMap).length > 0,
     })
   } catch (err: unknown) {

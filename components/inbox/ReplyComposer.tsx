@@ -5,7 +5,9 @@ import type { ParsedField } from '@/lib/inbox/rules';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import AiToolbar from '@/components/mail/AiToolbar';
 import SmartReply from '@/components/mail/SmartReply';
+import PriceCheckBanner from '@/components/mail/PriceCheckBanner';
 import { textToSafeHtml } from '@/lib/mail/linkify';
+import type { PriceValidationHint } from '@/lib/ai/price-matcher';
 
 type Template = { id: string; key: string; lang: string; body: string; subject?: string | null; variables?: string[] };
 type LinkedAttachment = { id: string; name?: string };
@@ -61,6 +63,7 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 	const [dragOver, setDragOver] = useState(false);
 	const [userName, setUserName] = useState<string>('');
 	const [hasAiProfile, setHasAiProfile] = useState(false);
+	const [bulletsPriceCheck, setBulletsPriceCheck] = useState<{ text: string; hints: PriceValidationHint[] } | null>(null);
 
 	useEffect(() => {
 		fetch('/api/auth/session')
@@ -160,6 +163,7 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 	async function bulletsToText() {
 		if (!bullets.trim() || bulletsBusy) return;
 		setBulletsBusy(true);
+		setBulletsPriceCheck(null);
 		try {
 		const res = await fetch('/api/compose-message', {
 			method: 'POST',
@@ -177,8 +181,12 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 		});
 			const data = await res.json().catch(() => ({}));
 			if (data?.text) {
-				setBody((prev) => prev ? `${prev}\n\n${data.text}` : data.text);
+				const combined = body ? `${body}\n\n${data.text}` : data.text;
+				setBody(combined);
 				if (data?.subject) setSubject(data.subject);
+				if (data?.priceValidation?.length > 0) {
+					setBulletsPriceCheck({ text: combined, hints: data.priceValidation });
+				}
 				showToast('Stichpunkte formuliert', 'success');
 			} else {
 				setBody((prev) => prev ? `${prev}\n\n${bullets}` : bullets);
@@ -291,8 +299,9 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 					hasAiProfile={hasAiProfile}
 					incomingMail={originalMailText ?? ''}
 					customerName={customerName}
-					mailId={mailId}          
+					mailId={mailId}
 					onInsert={(text) => setBody(text)}
+					getCurrentText={getText}
 				/>
 				{showAiTools && (
 					<AiToolbar
@@ -348,6 +357,17 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 					</div>
 				)}
 			</div>
+
+			{bulletsPriceCheck && (
+				<div className="px-3 py-1.5 border-t border-slate-800/70">
+					<PriceCheckBanner
+						text={bulletsPriceCheck.text}
+						hints={bulletsPriceCheck.hints}
+						getCurrentText={getText}
+						onFix={setText}
+					/>
+				</div>
+			)}
 
 			{/* Extras-Bereich (aufklappbar) */}
 			{showExtras === 'template' && (
