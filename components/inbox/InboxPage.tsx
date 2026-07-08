@@ -813,6 +813,28 @@ export default function InboxPage() {
 		void fetchUnreadCounts();
 	}, [fetchUnreadCounts, folder, q, searchIncludeTrash]);
 
+	// Schnelles Verschieben in den Papierkorb direkt aus der Nachrichtenliste
+	// (gleicher Weg wie der Papierkorb-Button in der Vorschau). Erst wenn der
+	// Server-Move bestaetigt ist, wird die Zeile aus der Ansicht entfernt; bei
+	// Fehlschlag wird die Liste neu geladen, damit nichts faelschlich verschwindet.
+	const moveMessageToTrash = useCallback(async (mailId: string) => {
+		try {
+			const res = await fetch('/api/mail/move', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ mailId, targetFolder: 'trash' }),
+			});
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(data?.error || 'Mail konnte nicht verschoben werden');
+			const movedFolder = data?.folder || 'Trash';
+			handleMessageMoved(mailId, movedFolder);
+			window.dispatchEvent(new CustomEvent('mail-moved', { detail: { mailId, folder: movedFolder } }));
+		} catch {
+			// Move fehlgeschlagen — Liste neu laden, damit die Zeile korrekt bleibt.
+			void fetchMails(false, 1, false);
+		}
+	}, [handleMessageMoved, fetchMails]);
+
 	// Hotkeys
 	useEffect(() => {
 		function onKey(e: KeyboardEvent) {
@@ -1035,6 +1057,7 @@ export default function InboxPage() {
 											onSelect={setSelectedId}
 											showAccountBadge={focusKey === 'all'}
 											onToggleStar={toggleStar}
+											onMoveToTrash={moveMessageToTrash}
 										/>
 									</div>
 									{hasMore && (

@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Message } from './types';
+import { isTrashFolderName } from '@/lib/mail/folders';
 
 type Props = {
 	messages: Message[];
@@ -8,6 +9,7 @@ type Props = {
 	onSelect: (id: string) => void;
 	showAccountBadge?: boolean;
 	onToggleStar?: (id: string, starred: boolean) => void;
+	onMoveToTrash?: (id: string) => void;
 };
 
 const SENT_FOLDER_KEYWORDS = ['sent', 'gesendet', 'gesendete', 'outbox'];
@@ -37,7 +39,7 @@ function getAccountBadgeTone(label?: string | null): string {
 	return 'bg-emerald-500/20 border-[rgba(0,189,124,0.5)] text-emerald-200';
 }
 
-export default function InboxList({ messages, selectedId, onSelect, showAccountBadge = false, onToggleStar }: Props) {
+export default function InboxList({ messages, selectedId, onSelect, showAccountBadge = false, onToggleStar, onMoveToTrash }: Props) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const rowHeight = 80;
 	const [scrollTop, setScrollTop] = useState(0);
@@ -101,7 +103,7 @@ export default function InboxList({ messages, selectedId, onSelect, showAccountB
 							role="listitem"
 							aria-selected={isSelected}
 							onClick={() => onSelect(m.id)}
-							className={`absolute inset-x-0 px-3 py-2.5 border-b cursor-pointer transition-colors ${
+							className={`group absolute inset-x-0 px-3 py-2.5 border-b cursor-pointer transition-colors ${
 								isSelected
 									? 'border-sky-700 bg-sky-900/30 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.35)]'
 									: `border-slate-800 hover:bg-slate-800/40 ${unread ? 'bg-sky-950/40' : ''}`
@@ -159,6 +161,17 @@ export default function InboxList({ messages, selectedId, onSelect, showAccountB
 											</button>
 										) : (
 											m.starred && <span className="text-yellow-400 text-[10px] flex-shrink-0">★</span>
+										)}
+										{onMoveToTrash && !isSent(m) && !isTrashFolderName(m.folder || '') && (
+											<button
+												type="button"
+												onClick={(e) => { e.stopPropagation(); onMoveToTrash(m.id); }}
+												title="In den Papierkorb verschieben"
+												aria-label="In den Papierkorb verschieben"
+												className="flex-shrink-0 text-[12px] leading-none text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+											>
+												🗑
+											</button>
 										)}
 									</div>
 									{/* Zeile 3: Snippet + Tags */}
