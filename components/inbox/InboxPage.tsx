@@ -968,14 +968,19 @@ export default function InboxPage() {
 					foldersOpen={foldersOpen}
 					onSelectFocus={(key) => {
 						if (key === focusKey) {
-							setFoldersOpen((prev) => (key === 'all' ? false : !prev));
+							// Erneuter Druck auf das AKTIVE Postfach = Ordner-Sidebar
+							// explizit auf-/zuklappen. ('all' hat keine Ordner → nichts tun.)
+							if (key !== 'all') setFoldersOpen((prev) => !prev);
 							return;
 						}
+						// Postfach WECHSELN: nur die Auswahl aendern, den Auf-/Zu-Zustand
+						// der Ordner-Sidebar aber unangetastet lassen (klebrig). Offen bleibt
+						// offen und zeigt dann die Ordner des neuen Postfachs; geschlossen
+						// bleibt geschlossen — sie faehrt nur durch expliziten Klick aus.
 						setFocusKey(key);
 						if (key !== 'all') setActiveAccountId(key);
 						setFolder('INBOX');
 						setSelectedId(null);
-						setFoldersOpen(key !== 'all');
 						// focusedAccountIds spiegelt hier noch den ALTEN focusKey — die
 						// Konten fuer die neue Auswahl direkt aus `key` ableiten.
 						const idsForKey = key === 'all' ? accounts.map((a) => a.id) : [key];
