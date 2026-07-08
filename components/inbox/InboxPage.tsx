@@ -15,6 +15,10 @@ import type { MailAccountTab } from './AccountSidebar';
 import { isTrashFolderName } from '@/lib/mail/folders';
 
 const AUTO_SYNC_INTERVAL = 3 * 60 * 1000; // 3 Minuten
+// Klickt man ein Postfach/einen Ordner an, wird dieses Fach gezielt im
+// Hintergrund synchronisiert. Dieselbe Auswahl loesen wir aber nicht oefter als
+// alle 15s aus, damit schnelles Hin-und-her-Klicken den Server nicht flutet.
+const FOLDER_SYNC_DEBOUNCE_MS = 15 * 1000;
 const PAGE_SIZE = 100;
 const DEFAULT_LIST_WIDTH = 352;
 const MIN_LIST_WIDTH = 288;
@@ -225,6 +229,7 @@ export default function InboxPage() {
 	const [foldersOpen, setFoldersOpen] = useState<boolean>(false);
 	const [replyOpen, setReplyOpen] = useState<boolean>(false);
 	const [syncing, setSyncing] = useState(false);
+	const [bgSyncing, setBgSyncing] = useState(false);
 	const [remoteSyncRunning, setRemoteSyncRunning] = useState(false);
 	const [remoteFullSyncRunning, setRemoteFullSyncRunning] = useState(false);
 	const [remoteSyncTotalAccounts, setRemoteSyncTotalAccounts] = useState(0);
@@ -237,6 +242,9 @@ export default function InboxPage() {
 	const [isResizingSettings, setIsResizingSettings] = useState(false);
 	const [composeHandled, setComposeHandled] = useState(false);
 	const mailCacheRef = useRef(new Map<string, MailCacheEntry>());
+	// Merkt sich pro (Konten+Ordner)-Auswahl, wann zuletzt ein gezielter
+	// Klick-Sync lief — fuer die Entprellung in syncFolderInBackground.
+	const bgSyncKeyRef = useRef(new Map<string, number>());
 	const listAbortRef = useRef<AbortController | null>(null);
 	const listRequestSeqRef = useRef(0);
 	const bootSnapshotAppliedRef = useRef(false);
@@ -510,6 +518,46 @@ export default function InboxPage() {
 		} catch { /* Sync-Fehler still ignorieren */ }
 		finally { setSyncing(false); }
 	}, [syncing, focusedAccountIdsKey, folder, fetchMails, fetchUnreadCounts, fetchSyncStatus]);
+
+	// Gezielter, nicht blockierender Hintergrund-Sync fuer genau das gerade
+	// angeklickte Postfach/Fach. Die Liste kommt weiterhin sofort aus der DB;
+	// dieser Aufruf holt parallel den Server-Stand nach und aktualisiert die
+	// Ansicht, sobald er durch ist. Entprellt pro Auswahl (FOLDER_SYNC_DEBOUNCE_MS),
+	// still bei 409 (ein anderer/Vollsync haelt gerade die Sperre — der Poller
+	// zeigt den an).
+	const syncFolderInBackground = useCallback(async (accountIds: string[], folderName: string) => {
+		const ids = accountIds.filter(Boolean);
+		if (ids.length === 0 || !folderName) return;
+		const key = `${[...ids].sort().join(',')}:${folderName}`;
+		const now = Date.now();
+		const last = bgSyncKeyRef.current.get(key) || 0;
+		if (now - last < FOLDER_SYNC_DEBOUNCE_MS) return;
+		bgSyncKeyRef.current.set(key, now);
+		setBgSyncing(true);
+		try {
+			const res = await fetch('/api/mail/sync', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ accountIds: ids, folders: [folderName] }),
+			});
+			if (res.status === 409) {
+				// Sperre belegt — Entprellung zuruecksetzen, damit ein spaeterer Klick
+				// es erneut versuchen darf, sobald der laufende Sync fertig ist.
+				bgSyncKeyRef.current.set(key, 0);
+				return;
+			}
+			if (res.ok) {
+				await fetchMails(false, 1, false);
+				await fetchUnreadCounts();
+				setLastSyncTime(new Date());
+			}
+		} catch {
+			// Transienter Fehler: Entprellung zuruecksetzen, nicht stoerend melden.
+			bgSyncKeyRef.current.set(key, 0);
+		} finally {
+			setBgSyncing(false);
+		}
+	}, [fetchMails, fetchUnreadCounts]);
 
 	const closeSettingsPanel = useCallback(() => {
 		if (!settingsMounted || isClosingSettings) return;
@@ -863,7 +911,7 @@ export default function InboxPage() {
 				q={q}
 				onChangeQ={(val) => { setQ(val); }}
 				filter={filter} onChangeFilter={setFilter}
-				syncing={syncing || remoteSyncRunning}
+				syncing={syncing || remoteSyncRunning || bgSyncing}
 				syncLabel={
 					remoteSyncRunning
 						? `${remoteFullSyncRunning ? 'Vollsync' : 'Sync'} läuft${remoteSyncCurrentFolder ? ` · ${remoteSyncCurrentFolder}` : ''}…`
@@ -886,7 +934,11 @@ export default function InboxPage() {
 				<FolderSidebar
 					activeAccountId={focusedAccountIds[0] || activeAccountId}
 					activeFolder={folder}
-					onSelectFolder={(f) => { setFolder(f); setSelectedId(null); }}
+					onSelectFolder={(f) => {
+						setFolder(f);
+						setSelectedId(null);
+						void syncFolderInBackground(focusedAccountIds, f);
+					}}
 					accounts={accounts}
 					accountsLoading={accountsLoading}
 					accountsError={accountsError}
@@ -902,6 +954,10 @@ export default function InboxPage() {
 						setFolder('INBOX');
 						setSelectedId(null);
 						setFoldersOpen(key !== 'all');
+						// focusedAccountIds spiegelt hier noch den ALTEN focusKey — die
+						// Konten fuer die neue Auswahl direkt aus `key` ableiten.
+						const idsForKey = key === 'all' ? accounts.map((a) => a.id) : [key];
+						void syncFolderInBackground(idsForKey, 'INBOX');
 					}}
 					onOpenSettings={(accountId) => {
 						if (settingsAccountId === accountId && settingsMounted && !isClosingSettings) {
