@@ -7,6 +7,7 @@ import UpdateTemplateSettings from '@/components/UpdateTemplateSettings';
 import AiSettings from '@/components/AiSettings';
 import TelephonySettings from '@/components/TelephonySettings';
 import DhlSettings from '@/components/DhlSettings';
+import DatevSettings from '@/components/DatevSettings';
 
 export default function SettingsPage() {
   return (
@@ -28,6 +29,8 @@ export default function SettingsPage() {
       <TelephonySettings />
 
       <DhlSettings />
+
+      <DatevSettings />
 
       <BackupManagement />
     </section>

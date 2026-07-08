@@ -77,7 +77,6 @@ function stripHtml(html: string) {
 const MIN_SPLIT = 120;
 
 const SENT_KEYWORDS = ['sent', 'gesendet', 'gesendete', 'outbox'];
-const DATEV_ADDRESS_STORAGE_KEY = 'mgh-datev-forward-email';
 const INVOICE_KEYWORDS = [
 	'rechnung',
 	'invoice',
@@ -166,16 +165,6 @@ function looksLikeInvoice(message: Message): boolean {
 		.toLowerCase();
 	const hasInvoiceWord = INVOICE_KEYWORDS.some((keyword) => haystack.includes(keyword));
 	return hasInvoiceWord || hasPdf;
-}
-
-function readStoredDatevAddress(): string {
-	if (typeof window === 'undefined') return '';
-	return window.localStorage.getItem(DATEV_ADDRESS_STORAGE_KEY)?.trim() || '';
-}
-
-function writeStoredDatevAddress(value: string) {
-	if (typeof window === 'undefined') return;
-	window.localStorage.setItem(DATEV_ADDRESS_STORAGE_KEY, value.trim());
 }
 
 export default function InboxPreview({ message, actionsSlot, replyOpen = false, onReplyToggle, onLeadLinked, onLeadCreated, onMessageMoved, accountId }: Props) {
@@ -387,12 +376,12 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 		}
 	}
 
-	async function postDatevForward(target?: string) {
+	async function postDatevForward() {
 		if (!message) return { needsTarget: false };
 		const res = await fetch(`/api/mails/${encodeURIComponent(message.id)}/forward-datev`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(target ? { to: target } : {}),
+			body: JSON.stringify({}),
 		});
 		const data = await res.json().catch(() => ({}));
 		if (!res.ok && data?.code === 'DATEV_TARGET_REQUIRED') return { needsTarget: true };
@@ -406,12 +395,10 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 		setActionError(null);
 		setActionMessage(null);
 		try {
-			let result = await postDatevForward(readStoredDatevAddress() || undefined);
+			const result = await postDatevForward();
 			if (result.needsTarget) {
-				const entered = window.prompt('DATEV E-Mailadresse fuer Weiterleitung eingeben');
-				if (!entered?.trim()) return;
-				writeStoredDatevAddress(entered);
-				result = await postDatevForward(entered.trim());
+				setActionError('Keine DATEV-Adresse hinterlegt — bitte unter Einstellungen → DATEV-Weiterleitung eintragen.');
+				return;
 			}
 			const attachmentCount = Number(result.attachmentCount || 0);
 			const skippedCount = Number(result.skippedAttachmentCount || 0);
