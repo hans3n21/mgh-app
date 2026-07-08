@@ -521,8 +521,11 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 
 	const mailHeader = (
 		<div className="px-4 py-3 border-b border-slate-800 flex-shrink-0">
-			<div className="flex items-start justify-between gap-3">
-				<div className="min-w-0 flex-1">
+			{/* Betreff bekommt eine eigene volle Zeile (basis-full); die Aktions-Buttons
+			    rutschen darunter und brechen bei Bedarf um — sonst quetschen sie in
+			    schmaler Ansicht den langen Betreff in eine winzige Spalte. */}
+			<div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+				<div className="min-w-0 basis-full">
 					<h2 className="text-base font-semibold text-slate-100 leading-tight">{message.subject || 'Ohne Betreff'}</h2>
 				<div className="mt-1 text-xs text-slate-400">
 					{isSentFolder(message.folder)
@@ -535,7 +538,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 					{' · '}{new Date(message.createdAt).toLocaleString('de-DE')}
 				</div>
 				</div>
-				<div className="flex items-center gap-2 flex-shrink-0">
+				<div className="flex items-center gap-2 flex-wrap">
 					<button
 						type="button"
 						draggable
