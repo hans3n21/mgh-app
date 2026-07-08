@@ -13,6 +13,39 @@ import type { MailAccount } from '@prisma/client';
 
 const BATCH_SIZE = 10;
 
+// Ein einzelnes haengendes Postfach (langsamer/nicht erreichbarer IMAP-Server)
+// darf die anderen Konten nicht mitblockieren. Deshalb bekommt jedes Konto ein
+// eigenes Zeitlimit; laeuft es ab, wird das Konto als Fehler gewertet und der
+// Lauf macht mit den uebrigen weiter. Der inkrementelle UID-Cursor sorgt dafuer,
+// dass abgebrochene Konten beim naechsten Lauf dort weitermachen, wo sie waren.
+// 0/"off" deaktiviert das Limit.
+function getAccountSyncTimeoutMs(): number {
+	const raw = (process.env.MAIL_SYNC_ACCOUNT_TIMEOUT_MS || '').trim().toLowerCase();
+	if (raw === 'off' || raw === '0') return 0;
+	const parsed = Number(raw);
+	if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	return 120_000; // Default: 2 Minuten pro Konto
+}
+
+/**
+ * Wartet auf `p`, bricht aber nach `ms` mit einem Timeout-Fehler ab (ms<=0 = kein Limit).
+ * Die zugrunde liegende Operation laeuft ggf. detached weiter — das ist unkritisch,
+ * weil IMAP-Mailbox-Locks den Zugriff serialisieren und alle DB-Writes idempotente
+ * Upserts sind.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+	if (ms <= 0) return p;
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			reject(new Error(`Sync-Timeout nach ${ms}ms (${label})`));
+		}, ms);
+		p.then(
+			(value) => { clearTimeout(timer); resolve(value); },
+			(error) => { clearTimeout(timer); reject(error); },
+		);
+	});
+}
+
 export type FolderSyncResult = {
 	folder: string;
 	success: boolean;
@@ -126,9 +159,9 @@ export async function syncAllAccounts(options?: SyncOptions) {
 	const results: AccountSyncResult[] = [];
 	let totalProcessed = 0;
 	let errorCount = 0;
+	let completedAccounts = 0;
 
 	const reportProgress = (
-		completedAccounts: number,
 		currentAccount: MailAccount | null,
 		currentFolder: string | null
 	) => {
@@ -143,18 +176,28 @@ export async function syncAllAccounts(options?: SyncOptions) {
 		});
 	};
 
-	reportProgress(0, null, null);
+	reportProgress(null, null);
 
-	for (let i = 0; i < accounts.length; i++) {
-		const account = accounts[i];
+	// Konten laufen parallel — jedes auf seiner eigenen (pro accountId gepoolten)
+	// IMAP-Verbindung, sodass ein langsames Konto die anderen nicht ausbremst.
+	// Die Ordner INNERHALB eines Kontos bleiben sequenziell (sie teilen sich eine
+	// Verbindung, siehe syncAccount). JS ist single-threaded, daher sind die
+	// gemeinsam beschriebenen Zaehler (totalProcessed/errorCount) zwischen den
+	// await-Punkten konsistent.
+	const accountTimeoutMs = getAccountSyncTimeoutMs();
+
+	await Promise.all(accounts.map(async (account) => {
 		try {
-			const accountResult = await syncAccount(account, (folderResult) => {
-				totalProcessed += folderResult.processed;
-				if (!folderResult.success) errorCount += 1;
-				reportProgress(i, account, folderResult.folder);
-			}, options?.folders);
+			const accountResult = await withTimeout(
+				syncAccount(account, (folderResult) => {
+					totalProcessed += folderResult.processed;
+					if (!folderResult.success) errorCount += 1;
+					reportProgress(account, folderResult.folder);
+				}, options?.folders),
+				accountTimeoutMs,
+				account.email,
+			);
 			results.push(accountResult);
-			reportProgress(i + 1, account, null);
 		} catch (error) {
 			console.error(`Error syncing account ${account.email}:`, error);
 			errorCount += 1;
@@ -169,9 +212,12 @@ export async function syncAllAccounts(options?: SyncOptions) {
 					error: error instanceof Error ? error.message : String(error),
 				}],
 			});
-			reportProgress(i + 1, account, null);
+		} finally {
+			completedAccounts += 1;
+			reportProgress(null, null);
 		}
-	}
+	}));
+
 	return results;
 }
 
