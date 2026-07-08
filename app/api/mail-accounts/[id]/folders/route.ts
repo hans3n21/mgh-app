@@ -7,6 +7,22 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+// Die Ordnerliste eines Kontos aendert sich praktisch nie, aber jeder Aufruf
+// oeffnete bisher eine frische IMAP-Verbindung (connect -> list -> logout,
+// gemessen ~1,4s). Da die UI beim Konto-Wechsel jedes Mal neu laedt, cachen wir
+// das erfolgreiche list()-Ergebnis prozessweit fuer kurze Zeit. Nur der teure
+// IMAP-Pfad wird gecacht — ein DB-Fallback (nach IMAP-Fehler) nicht, damit sich
+// die Liste nach einem transienten Fehler sofort wieder erholen kann.
+type FolderResult = {
+  path: string;
+  name: string;
+  delimiter: string;
+  specialUse: string | null;
+};
+
+const FOLDER_CACHE_TTL_MS = 5 * 60 * 1000;
+const folderCache = new Map<string, { at: number; folders: FolderResult[] }>();
+
 async function getDatabaseFolders(accountId: string) {
   const rows = await prisma.mail.findMany({
     where: {
@@ -43,6 +59,13 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     }
 
     const { id } = await params;
+
+    // Frischer Cache-Treffer -> kein IMAP-Roundtrip noetig.
+    const cached = folderCache.get(id);
+    if (cached && Date.now() - cached.at < FOLDER_CACHE_TTL_MS) {
+      return NextResponse.json(cached.folders);
+    }
+
     const account = await prisma.mailAccount.findUnique({ where: { id } });
     if (!account) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     if (!account.isActive) return NextResponse.json({ error: 'Account not active' }, { status: 400 });
@@ -64,14 +87,17 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       const list = await (client as any).list({ pattern: '*' });
       await client.logout();
 
-      const folders = (list || []).map((item: any) => ({
+      const folders: FolderResult[] = (list || []).map((item: any) => ({
         path: item.path,
         name: item.name,
         delimiter: item.delimiter ?? '/',
         specialUse: item.specialUse ?? null,
       }));
 
-      if (folders.length > 0) return NextResponse.json(folders);
+      if (folders.length > 0) {
+        folderCache.set(id, { at: Date.now(), folders });
+        return NextResponse.json(folders);
+      }
     } catch (error: any) {
       try {
         await client?.logout();
