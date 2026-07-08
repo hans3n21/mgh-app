@@ -162,17 +162,6 @@ export default function InboxList({ messages, selectedId, onSelect, showAccountB
 										) : (
 											m.starred && <span className="text-yellow-400 text-[10px] flex-shrink-0">★</span>
 										)}
-										{onMoveToTrash && !isSent(m) && !isTrashFolderName(m.folder || '') && (
-											<button
-												type="button"
-												onClick={(e) => { e.stopPropagation(); onMoveToTrash(m.id); }}
-												title="In den Papierkorb verschieben"
-												aria-label="In den Papierkorb verschieben"
-												className="flex-shrink-0 text-[12px] leading-none text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-											>
-												🗑
-											</button>
-										)}
 									</div>
 									{/* Zeile 3: Snippet + Tags */}
 									<div className="flex items-center gap-1.5 mt-0.5">
@@ -189,6 +178,21 @@ export default function InboxList({ messages, selectedId, onSelect, showAccountB
 										</span>
 									</div>
 								</div>
+								{/* Papierkorb: rechts in der Zeile, vertikal zentriert und klar vom
+								    Favoriten-Stern getrennt, damit man nicht versehentlich favorisiert. */}
+								{onMoveToTrash && !isSent(m) && !isTrashFolderName(m.folder || '') && (
+									<button
+										type="button"
+										onClick={(e) => { e.stopPropagation(); onMoveToTrash(m.id); }}
+										title="In den Papierkorb verschieben"
+										aria-label="In den Papierkorb verschieben"
+										className="self-center flex-shrink-0 grid place-items-center h-8 w-8 rounded-md border border-slate-700 bg-slate-800/70 text-slate-300 opacity-70 hover:opacity-100 hover:bg-rose-600 hover:text-white hover:border-rose-500 focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-rose-500 transition-all"
+									>
+										<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-4 w-4" aria-hidden="true">
+											<path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m2 0v12a1 1 0 01-1 1H8a1 1 0 01-1-1V7M10 11v6M14 11v6" />
+										</svg>
+									</button>
+								)}
 							</div>
 						</div>
 					);
