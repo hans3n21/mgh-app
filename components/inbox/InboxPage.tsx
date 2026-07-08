@@ -230,6 +230,7 @@ export default function InboxPage() {
 	const [replyOpen, setReplyOpen] = useState<boolean>(false);
 	const [syncing, setSyncing] = useState(false);
 	const [bgSyncing, setBgSyncing] = useState(false);
+	const [listActionError, setListActionError] = useState<string | null>(null);
 	const [remoteSyncRunning, setRemoteSyncRunning] = useState(false);
 	const [remoteFullSyncRunning, setRemoteFullSyncRunning] = useState(false);
 	const [remoteSyncTotalAccounts, setRemoteSyncTotalAccounts] = useState(0);
@@ -827,10 +828,13 @@ export default function InboxPage() {
 			const data = await res.json().catch(() => ({}));
 			if (!res.ok) throw new Error(data?.error || 'Mail konnte nicht verschoben werden');
 			const movedFolder = data?.folder || 'Trash';
+			setListActionError(null);
 			handleMessageMoved(mailId, movedFolder);
 			window.dispatchEvent(new CustomEvent('mail-moved', { detail: { mailId, folder: movedFolder } }));
-		} catch {
-			// Move fehlgeschlagen — Liste neu laden, damit die Zeile korrekt bleibt.
+		} catch (error) {
+			// Move fehlgeschlagen — den echten Grund anzeigen (nicht still schlucken)
+			// und die Liste neu laden, damit die Zeile korrekt bleibt.
+			setListActionError(error instanceof Error ? error.message : 'Mail konnte nicht in den Papierkorb verschoben werden');
 			void fetchMails(false, 1, false);
 		}
 	}, [handleMessageMoved, fetchMails]);
@@ -951,6 +955,19 @@ export default function InboxPage() {
 				filterCounts={filterCounts}
 				focusLabel={focusLabel}
 			/>
+			{listActionError && (
+				<div className="mx-3 mt-2 rounded border border-rose-800 bg-rose-950/40 px-3 py-1.5 text-[12px] text-rose-200 flex items-center justify-between gap-2">
+					<span className="min-w-0 break-words">{listActionError}</span>
+					<button
+						type="button"
+						onClick={() => setListActionError(null)}
+						className="flex-shrink-0 text-rose-300 hover:text-rose-100"
+						aria-label="Fehlermeldung schließen"
+					>
+						✕
+					</button>
+				</div>
+			)}
 			<div className="flex-1 flex overflow-hidden min-h-0">
 				{/* Ordner-Sidebar links */}
 				<FolderSidebar
