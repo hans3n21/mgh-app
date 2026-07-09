@@ -245,7 +245,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 					});
 					if (res.ok) {
 						setIsUnread(false);
-						window.dispatchEvent(new CustomEvent('mail-read'));
+						window.dispatchEvent(new CustomEvent('mail-read', { detail: { mailId: message.id } }));
 					}
 				} catch { /* ignore */ }
 			}
@@ -586,7 +586,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 								});
 								if (res.ok) {
 									setIsUnread(!newRead);
-									window.dispatchEvent(new CustomEvent(newRead ? 'mail-read' : 'mail-unread'));
+									window.dispatchEvent(new CustomEvent(newRead ? 'mail-read' : 'mail-unread', { detail: { mailId: message.id } }));
 								}
 							} catch { /* ignore */ }
 						}}

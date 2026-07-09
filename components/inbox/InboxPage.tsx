@@ -608,6 +608,33 @@ export default function InboxPage() {
 		return () => ev.close();
 	}, [fetchMails, fetchUnreadCounts]);
 
+	// Ungelesen-Status live nachziehen, wenn eine Mail in der Vorschau als
+	// gelesen/ungelesen markiert wird (Auto-Markierung nach 2s oder Toggle).
+	// Sonst haengen Rail-Badges, Filter-Zaehler und die Zeilen-Darstellung bis
+	// zum naechsten Sync hinterher.
+	useEffect(() => {
+		const onReadChange = (e: Event) => {
+			const mailId = (e as CustomEvent).detail?.mailId as string | undefined;
+			const isRead = e.type === 'mail-read';
+			if (mailId) {
+				const patch = (m: Message): Message => m.id === mailId
+					? { ...m, isRead, ...(isRead ? { threadHasUnread: false } : {}) }
+					: m;
+				setMessages((prev) => prev.map(patch));
+				mailCacheRef.current.forEach((entry, key) => {
+					mailCacheRef.current.set(key, { ...entry, messages: entry.messages.map(patch) });
+				});
+			}
+			void fetchUnreadCounts();
+		};
+		window.addEventListener('mail-read', onReadChange);
+		window.addEventListener('mail-unread', onReadChange);
+		return () => {
+			window.removeEventListener('mail-read', onReadChange);
+			window.removeEventListener('mail-unread', onReadChange);
+		};
+	}, [fetchUnreadCounts]);
+
 	// Initial load
 	useEffect(() => {
 		if (accountsLoading) {
