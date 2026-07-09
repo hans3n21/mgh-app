@@ -13,9 +13,11 @@ export async function GET(req: NextRequest) {
 		const accountId = searchParams.get('accountId') || null;
 
 		if (accountId) {
-			// Count for a specific account
+			// Count for a specific account. isDeleted ausschliessen — sonst zaehlt
+			// der Badge ungelesene Mails mit, die per Reconcile als geloescht
+			// markiert wurden und in der Liste gar nicht mehr auftauchen (Phantom).
 			const count = await prisma.mail.count({
-				where: { folder: 'INBOX', isRead: false, accountId },
+				where: { folder: 'INBOX', isRead: false, isDeleted: false, accountId },
 			});
 			return NextResponse.json({ count });
 		}
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
 		const counts: Record<string, number> = {};
 		for (const acc of accounts) {
 			counts[acc.id] = await prisma.mail.count({
-				where: { folder: 'INBOX', isRead: false, accountId: acc.id },
+				where: { folder: 'INBOX', isRead: false, isDeleted: false, accountId: acc.id },
 			});
 		}
 
