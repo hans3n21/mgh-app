@@ -1,5 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import Link from 'next/link';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import FeedbackDashboard from '@/components/FeedbackDashboard';
@@ -25,8 +24,10 @@ export default async function Dashboard() {
 
   // Für Staff: Nur eigene zugewiesene Aufträge, für Admin: alle Aufträge
   const orders = await prisma.order.findMany({
-    where: isAdmin ? {} : {
-      assigneeId: currentUserId,
+    where: {
+      ...(isAdmin ? {} : { assigneeId: currentUserId }),
+      // Fertige (abgeschlossene) Auftraege gehoeren nicht in die Dashboard-Liste.
+      status: { not: 'complete' },
     },
     include: {
       customer: true,
@@ -69,23 +70,6 @@ export default async function Dashboard() {
       status: 'in_progress',
     },
   });
-
-  // Feedback-Statistiken nur für normale Admins (nicht für admin_no_feedback)
-  let feedbackStats = null;
-  if (showFeedback) {
-    try {
-      feedbackStats = {
-        open: await prisma.feedback.count({ where: { resolved: false } }),
-        total: await prisma.feedback.count(),
-      };
-    } catch (error) {
-      console.warn('Feedback-Modell noch nicht verfügbar:', error);
-      feedbackStats = {
-        open: 0,
-        total: 0,
-      };
-    }
-  }
 
   const myTasks = currentUserId
     ? await prisma.orderTask.findMany({
@@ -134,12 +118,6 @@ export default async function Dashboard() {
         <Stat label="In Arbeit" value={inProgressOrders} />
         {openOrders > 0 && (
           <Stat label="Unzugewiesen" value={openOrders} />
-        )}
-        {showFeedback && feedbackStats && (
-          <>
-            <Stat label="Offenes Feedback" value={feedbackStats.open} />
-            <Stat label="Feedback gesamt" value={feedbackStats.total} />
-          </>
         )}
       </div>
 
