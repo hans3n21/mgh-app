@@ -248,6 +248,10 @@ export default function InboxPage() {
 	const bgSyncKeyRef = useRef(new Map<string, number>());
 	const listAbortRef = useRef<AbortController | null>(null);
 	const listRequestSeqRef = useRef(0);
+	// Merkt sich, zu welcher Auswahl (cacheKey) die aktuell angezeigten Mails
+	// gehoeren — damit beim Wechsel auf ein anderes Postfach/Ordner nicht kurz
+	// die Mails der vorherigen Auswahl stehen bleiben.
+	const lastAppliedKeyRef = useRef<string | null>(null);
 	const bootSnapshotAppliedRef = useRef(false);
 	const detailRequestIdsRef = useRef(new Set<string>());
 	const accountLabelMapRef = useRef<Record<string, string>>({});
@@ -332,8 +336,23 @@ export default function InboxPage() {
 			setHasMore(warmEntry.hasMore);
 			setPage(warmEntry.page);
 			setLoading(false);
-		} else if (showLoading && !append) {
-			setLoading(true);
+		} else if (!append && pageNumber === 1) {
+			// Kein warmer Cache fuer diese Auswahl. Gehoeren die aktuell
+			// angezeigten Mails zu einer ANDEREN Auswahl (anderes Postfach/
+			// Ordner/Filter), sofort leeren und Skeleton zeigen — sonst bleiben
+			// kurz die Mails des vorherigen Postfachs stehen, bis der Netzwerk-
+			// Request zurueck ist. (Beim allerersten Laden ist lastAppliedKeyRef
+			// null → Boot-Snapshot bleibt erhalten.)
+			if (lastAppliedKeyRef.current !== null && lastAppliedKeyRef.current !== cacheKey) {
+				setMessages([]);
+				setHasMore(false);
+				setLoading(true);
+			} else if (showLoading) {
+				setLoading(true);
+			}
+		}
+		if (!append && pageNumber === 1) {
+			lastAppliedKeyRef.current = cacheKey;
 		}
 		if (!append) setLoadingMore(false);
 		if (append) setLoadingMore(true);
