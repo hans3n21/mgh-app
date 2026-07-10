@@ -15,6 +15,19 @@ import type { MailAccountTab } from './AccountSidebar';
 import { isTrashFolderName } from '@/lib/mail/folders';
 
 const AUTO_SYNC_INTERVAL = 3 * 60 * 1000; // 3 Minuten
+
+// Ein Schluessel, der die komplette Listen-Auswahl beschreibt (Postfach/Ordner/
+// Suche/Filter). Wird sowohl fuer den Cache als auch fuer den Stale-Scope-
+// Schutz in fetchMails benutzt — beide MUESSEN denselben Schluessel bauen.
+function buildListScopeKey(
+	folder: string,
+	q: string,
+	includeTrash: boolean,
+	filter: string,
+	accountIdsKey: string,
+): string {
+	return [folder, q.trim(), includeTrash ? 'trash' : 'no-trash', filter, accountIdsKey].join('|');
+}
 // Klickt man ein Postfach/einen Ordner an, wird dieses Fach gezielt im
 // Hintergrund synchronisiert. Dieselbe Auswahl loesen wir aber nicht oefter als
 // alle 15s aus, damit schnelles Hin-und-her-Klicken den Server nicht flutet.
@@ -270,6 +283,14 @@ export default function InboxPage() {
 	}, [focusKey, accounts]);
 	const focusedAccountIdsKey = focusedAccountIds.join(',');
 
+	// Haelt bei jedem Render den Auswahl-Schluessel der AKTUELLEN Ansicht.
+	// fetchMails-Aufrufe aus aelteren Closures (z.B. der Refetch nach einem
+	// Hintergrund-Sync, waehrend der Nutzer laengst das Postfach gewechselt hat)
+	// vergleichen dagegen und brechen ab — sonst ueberschreiben sie die neue
+	// Ansicht mit den Mails des vorherigen Postfachs.
+	const scopeKeyRef = useRef('');
+	scopeKeyRef.current = buildListScopeKey(folder, debouncedQ, searchIncludeTrash, filter, focusedAccountIdsKey);
+
 	const focusLabel = useMemo(() => {
 		if (focusKey === 'all') return 'Alle Eingänge';
 		return accountLabelMap[focusKey] || 'Postfach';
@@ -309,13 +330,12 @@ export default function InboxPage() {
 	}, []);
 
 	const fetchMails = useCallback(async (showLoading = false, pageNumber = 1, append = false) => {
-		const cacheKey = [
-			folder,
-			debouncedQ.trim(),
-			searchIncludeTrash ? 'trash' : 'no-trash',
-			filter,
-			focusedAccountIdsKey,
-		].join('|');
+		const cacheKey = buildListScopeKey(folder, debouncedQ, searchIncludeTrash, filter, focusedAccountIdsKey);
+		// Stale-Scope-Schutz: Stammt diese Closure aus einem aelteren Render
+		// (der Nutzer hat inzwischen Postfach/Ordner/Filter gewechselt), sofort
+		// abbrechen — BEVOR der laufende Request der neuen Ansicht abgebrochen
+		// oder deren Liste ueberschrieben wird.
+		if (cacheKey !== scopeKeyRef.current) return;
 		const requestId = ++listRequestSeqRef.current;
 		listAbortRef.current?.abort();
 		const controller = new AbortController();
@@ -437,6 +457,13 @@ export default function InboxPage() {
 		}
 	}, [folder, debouncedQ, searchIncludeTrash, filter, focusedAccountIdsKey, focusKey]);
 
+	// Immer die NEUESTE fetchMails-Instanz. Refetches, die erst nach einem await
+	// laufen (Hintergrund-Sync, SSE), muessen hierueber gehen — eine direkt
+	// eingefangene Instanz laedt sonst den Scope von VOR dem await (voriges
+	// Postfach) und ueberschreibt damit die aktuelle Ansicht.
+	const fetchMailsRef = useRef(fetchMails);
+	useEffect(() => { fetchMailsRef.current = fetchMails; }, [fetchMails]);
+
 	const fetchUnreadCounts = useCallback(async () => {
 		try {
 			const res = await fetch('/api/mails/unread-count');
@@ -531,13 +558,16 @@ export default function InboxPage() {
 			}
 			mailCacheRef.current.clear();
 			clearInboxSnapshots();
-			await fetchMails();
+			// Ueber die Ref: Der Sync kann Sekunden dauern; hat der Nutzer
+			// inzwischen das Postfach gewechselt, muss der Refetch die NEUE
+			// Ansicht laden, nicht die von vor dem Sync.
+			await fetchMailsRef.current(false, 1, false);
 			await fetchUnreadCounts();
 			await fetchSyncStatus();
 			setLastSyncTime(new Date());
 		} catch { /* Sync-Fehler still ignorieren */ }
 		finally { setSyncing(false); }
-	}, [syncing, focusedAccountIdsKey, folder, fetchMails, fetchUnreadCounts, fetchSyncStatus]);
+	}, [syncing, focusedAccountIdsKey, folder, fetchUnreadCounts, fetchSyncStatus]);
 
 	// Gezielter, nicht blockierender Hintergrund-Sync fuer genau das gerade
 	// angeklickte Postfach/Fach. Die Liste kommt weiterhin sofort aus der DB;
@@ -567,7 +597,11 @@ export default function InboxPage() {
 				return;
 			}
 			if (res.ok) {
-				await fetchMails(false, 1, false);
+				// WICHTIG: ueber die Ref, nicht die eingefangene Instanz. Dieser
+				// Punkt liegt Sekunden nach dem Klick — die eingefangene fetchMails
+				// traegt noch den Scope von VOR dem Wechsel und wuerde die neue
+				// Ansicht mit den Mails des vorherigen Postfachs ueberschreiben.
+				await fetchMailsRef.current(false, 1, false);
 				await fetchUnreadCounts();
 				setLastSyncTime(new Date());
 			}
@@ -577,7 +611,7 @@ export default function InboxPage() {
 		} finally {
 			setBgSyncing(false);
 		}
-	}, [fetchMails, fetchUnreadCounts]);
+	}, [fetchUnreadCounts]);
 
 	const closeSettingsPanel = useCallback(() => {
 		if (!settingsMounted || isClosingSettings) return;
@@ -591,7 +625,9 @@ export default function InboxPage() {
 		}, 180);
 	}, [settingsMounted, isClosingSettings]);
 
-	// SSE: neue Mails live nachladen
+	// SSE: neue Mails live nachladen. Bewusst ueber fetchMailsRef statt fetchMails
+	// in den Deps — so laedt der Handler immer die aktuelle Ansicht UND die
+	// EventSource wird nicht bei jedem Postfach-/Filterwechsel neu aufgebaut.
 	useEffect(() => {
 		const ev = new EventSource('/api/inbox/events');
 		ev.addEventListener('message.created', async (e: MessageEvent) => {
@@ -601,12 +637,12 @@ export default function InboxPage() {
 				// instead of blindly appending event mails from other scopes.
 				mailCacheRef.current.clear();
 				clearInboxSnapshots();
-				await fetchMails(false, 1, false);
+				await fetchMailsRef.current(false, 1, false);
 				await fetchUnreadCounts();
 			} catch { /* SSE-Fehler ignorieren */ }
 		});
 		return () => ev.close();
-	}, [fetchMails, fetchUnreadCounts]);
+	}, [fetchUnreadCounts]);
 
 	// Ungelesen-Status live nachziehen, wenn eine Mail in der Vorschau als
 	// gelesen/ungelesen markiert wird (Auto-Markierung nach 2s oder Toggle).
