@@ -1,57 +1,116 @@
+// Autofill-Vorgaben für Spec-Felder.
+// Stand 2026-07: Optionen anhand der real genutzten Werte aus der Produktions-DB
+// überarbeitet (häufigste Schreibweisen zuerst, ungenutzte Fantasie-Optionen entfernt,
+// MGH-eigene Modelle/Profile ergänzt). Ja/Nein-Felder haben bewusst eine kurze Liste,
+// damit die Schreibweise einheitlich bleibt.
 export const AUTO_FIELDS = new Set<string>([
-  'body_shape','body_material','body_thickness','neck_construction','body_top','body_top_thickness',
-  'body_shaping','bridge_type','pickups_routes','body_electronics_layout','body_surface_treatment',
+  // Body
+  'body_shape','string_count','body_material','body_thickness','body_has_top','body_top',
+  'body_top_thickness','body_binding','body_shaping','neck_construction','bridge_type',
+  'pickups_routes','pickup_mount_direct','pickup_mount_frame','body_electronics_layout',
+  'body_surface_treatment','pickguard','battery_compartment','neck_pocket','customer_provides_neck',
+  // Neck
   'headstock_type','neck_wood','neck_shape','fretboard_scale','fretboard_radius','fretboard_material',
-  'inlays','frets','nut','side_dots','action_12th','tuners','finish_neck','headstock_finish',
-  'headstock_logo','neck_foot','neck_pocket','finish_body','electronics','hardware_color','strap_pins','strings','tuning',
-  'objekt','oberflaeche_typ','farbe','aged','speziallack'
+  'inlays','frets','nut','side_dots','action_12th','tuners','neck_binding','spokewheel',
+  'finish_neck','headstock_finish','headstock_logo','neck_foot','customer_provides_body',
+  // Finish / Allgemein
+  'finish_body','finish_body_top','finish_body_back','electronics','hardware_color','strap_pins','strings','tuning',
+  // Oberflächenbehandlung
+  'objekt','oberflaeche_typ','farbe','aged','speziallack',
+  // Tonabnehmer
+  'pickup_type','bobbin_1','bobbin_2','magnet_type','wire','cover','pickup_surface_treatment',
+  // Reparatur
+  'repair_type','repair_area','repair_priority',
+  // Pickguard
+  'pg_material','pg_thickness','pg_shielding',
+  // Gravur
+  'engraving_material','engraving_depth_technique','vectorization_needed',
 ]);
+
+const JA_NEIN = ['Ja', 'Nein'];
 
 export const AUTOFILL_OPTIONS: Record<string,string[]> = {
   // Body fields
-  body_shape: ['RG','Strat','Tele','PRS','Warlock','V','Dinky','SLY17','Hammer V','Les Paul','Explorer','Jazzmaster','SG','Flying V','Firebird'],
-  body_material: ['Mahagoni','Esche','Erle','Swamp Ash','Walnuss','Ahorn','Bubinga','Korina','Ovangkol','Basswood','Zeder','Wenge','Koa','Poplar'],
-  body_thickness: ['38 mm','40 mm','42 mm','45 mm','47 mm','50 mm','52 mm','55 mm'],
-  neck_construction: ['Bolt-On','Set-Neck','Neck-Through','Long Tenon','Scarf Joint'],
-  body_top: ['Flamed Maple','Quilted Maple','Spalted Maple','Birdseye Maple','Curly Maple','Figured Walnut','Burl Walnut','Buckeye Burl','Redwood Burl','Poplar Burl','Koa','Ziricote','Wenge','Padauk','Purpleheart','Keine Top'],
-  body_top_thickness: ['6 mm','8 mm','10 mm','12 mm','14 mm','16 mm','18 mm','Solid'],
-  body_shaping: ['Bauchfräsung','Armkontur','Beides','Standard','Custom Contouring'],
-  bridge_type: ['Hardtail','TOM','Floyd Rose','Hipshot','Vintage Trem 2-Point','Kluson 3D4','Schaller Hannes','Bigsby','Kahler','Wilkinson'],
-  pickups_routes: ['HH','HSS','SSS','HSH','HHH','P90','Single H','Custom'],
-  body_electronics_layout: ['Standard','Swimming Pool','F-Hole Access','Back Access','Side Access'],
-  body_surface_treatment: ['Standard','Carved Top','Flamed Top','Quilted Top','Bookmatched','Plain'],
+  body_shape: ['MGH Evil','MGH Demon','Crusader','Naz','Metalcaster','Telecaster','Stratocaster','Les Paul','SG','Explorer','Flying V','Jazzmaster','RG','PRS Doublecut','Superstrat','Headless','Custom nach Zeichnung/Bild'],
+  string_count: ['6','7','8','4','5','12'],
+  body_material: ['Erle','Esche','Mahagoni','Swamp Ash','Ahorn','Walnuss/Nussbaum','Basswood','Korina','Bubinga','Ovangkol','Zeder','Koa','Poplar'],
+  body_thickness: ['32 mm','36 mm','38 mm','40 mm','42 mm','44 mm','45 mm','46 mm','50 mm'],
+  body_has_top: JA_NEIN,
+  neck_construction: ['Bolt-On','Set-Neck','Long Tenon Set-Neck','Neck-Through','Scarf Joint'],
+  body_top: ['Riegelahorn (Flamed Maple)','Quilted Maple','Spalted Maple','Birdseye Maple','Figured Walnut','Burl Walnut','Buckeye Burl','Redwood Burl','Poplar Burl','Koa','Ziricote','Wenge','Padauk','Kein Top'],
+  body_top_thickness: ['5 mm','6 mm','8 mm','10 mm','12 mm','14 mm','Solid'],
+  body_binding: ['Nein','Creme','Weiß','Schwarz','Custom'],
+  body_shaping: ['Bauchfräsung (Belly Cut)','Armauflage (Forearm Contour)','Belly Cut + Armauflage','Carved Top','Abgerundete Kanten','Standard','Custom (siehe Bild)'],
+  bridge_type: ['Hardtail','Hardtail String-Through','Hipshot Hardtail','TOM','Floyd Rose (Gotoh 1996T)','Floyd Rose Original','Schaller Lockmeister','Ibanez Lo-Pro Edge','Evertune','Vintage Trem 2-Point','Gotoh 510 (2-Point)','Monorail-Einzelreiter','Headless-Bridge','Bigsby','Kunde liefert'],
+  pickups_routes: ['HH','HH Direct Mount','HH Frame Mount','HSS','SSS','HSH','HS','Single H','P90','Custom'],
+  pickup_mount_direct: JA_NEIN,
+  pickup_mount_frame: JA_NEIN,
+  body_electronics_layout: ['1x Vol','1x Vol, 1x Toggle','1x Vol, 1x Tone, 3-Way Toggle','1x Vol, 1x Tone, 3-Way Blade','1x Vol, 1x Tone, 5-Way Blade','2x Vol, 2x Tone, 3-Way Toggle (Les Paul)','1x Vol (Push/Pull Coil Split), 3-Way','Zusätzlicher Killswitch','Custom (siehe Notizen)'],
+  body_surface_treatment: ['Oil/Wax','High Gloss','Satin','Matt','Grobschliff (Kunde behandelt selbst)','Feinschliff (Kunde behandelt selbst)','Raw','Custom'],
+  pickguard: ['Nein','1-lagig Schwarz','3-lagig Schwarz','1-lagig Weiß','3-lagig Weiß','Mint Green','Custom'],
+  battery_compartment: JA_NEIN,
+  neck_pocket: ['Fender-Standard','Gibson-Style','PRS-Pattern','Custom'],
+  customer_provides_neck: JA_NEIN,
 
   // Neck fields
-  headstock_type: ['Standard','Reversed','Angled','Straight','PRS-Style','Fender-Style','Gibson-Style','Custom','3+3','6-Inline','4+2'],
-  neck_wood: ['Mahagoni','Ahorn','Riegelahorn','Walnuss','Ovangkol','Wenge','Rosenholz','Bubinga','Padauk','Purpleheart'],
-  neck_shape: ['C','D','U','V','Asymmetric','Flat C','Round C','Modern C','Vintage V','Baseball Bat'],
-  fretboard_scale: ['628 mm / 24.75" (Gibson)','635 mm / 25" (PRS)','648 mm / 25.5" (Fender)','650 mm / 25.59"','660 mm / 25.98"','686 mm / 27"','Multi-Scale'],
-  fretboard_radius: ['184 mm / 7.25"','241 mm / 9.5"','254 mm / 10"','305 mm / 12"','356 mm / 14"','406 mm / 16"','508 mm / 20"','Compound 254-406 mm / 10"-16"','Compound 241-356 mm / 9.5"-14"'],
-  fretboard_material: ['Ebenholz','Palisander','Ahorn','Maple (Flamed)','Pau Ferro','Macassar','Ziricote','Cocobolo'],
-  inlays: ['Dots','Blocks','Trapezoids','Birds','Abalone','MOP','Custom','Blank','Shark Tooth','Crown'],
-  frets: ['22 Medium','22 Jumbo','24 Medium','24 Jumbo','21 Vintage','Stainless Steel','Gold','21 Medium'],
-  nut: ['Bone','Tusq','Graphite','Locking','Floyd Rose','41mm','42mm','43mm','44mm','Corian'],
-  side_dots: ['Standard','Abalone','MOP','Black','White','LED','Custom','None'],
+  headstock_type: ['MGH Classic','MGH Classic Reversed','MGH Demon','MGH Sharp Reversed','Headless','6 in Line','6 in Line Reversed','7 in Line','3+3','Paddle','Fender-Style','Gibson-Style','PRS-Style','Custom (siehe Bild)'],
+  neck_wood: ['Ahorn','Roasted Maple','Riegelahorn','Mahagoni','Ahorn 3-teilig','5-teilig Ahorn/Walnuss','Wenge','Ovangkol','Bubinga','Padauk'],
+  neck_shape: ['Slim Taper','Modern C','Flat C','Flat D','Thin U','Wizard','Super Wizard','Asymmetric','Vintage V','Fat U (Baseball Bat)','MGH Classic','MGH Slim','Custom'],
+  fretboard_scale: ['648 mm / 25.5" (Fender)','628 mm / 24.75" (Gibson)','635 mm / 25" (PRS)','610 mm / 24"','660 mm / 25.98"','686 mm / 27" (Bariton)','711 mm / 28" (Bariton)','762 mm / 30" (Bariton)','Multi-Scale (Fanned Frets)'],
+  fretboard_radius: ['7.25" (184 mm)','9.5" (241 mm)','10" (254 mm)','12" (305 mm)','14" (356 mm)','16" (406 mm)','17" (430 mm)','20" (508 mm)','Compound 9.5"-14"','Compound 10"-16"'],
+  fretboard_material: ['Ebenholz','Palisander','Ahorn','Roasted Maple','Birdseye Maple','Figured Maple','Pau Ferro','Richlite','Pale Moon Ebony','Macassar','Ziricote','Cocobolo'],
+  inlays: ['Keine','Dots','Offset Dots','Black Dots','Perlmutt Dots','Luminlay','Blocks','Trapezoids','Sharkfin','Custom (siehe Anhang)'],
+  frets: ['22 Medium','22 Medium Jumbo','22 Jumbo','24 Medium','24 Medium Jumbo','24 Jumbo','24 Jumbo Stainless Steel','24 Extra Jumbo Stainless Steel','21 Vintage','Fretless'],
+  nut: ['Bone','Bone 42mm','Bone 43mm','Tusq','Graphtech Black Tusq XL','Locking Nut 42mm','Locking Nut (Floyd Rose R2/R3)','Headless-Sattel','Corian','Custom'],
+  side_dots: ['Standard','Luminlay','Luminlay Grün','Schwarz','Weiß','Keine','Custom'],
   action_12th: ['1.5 mm / 0.059"','1.8 mm / 0.071"','2.0 mm / 0.079"','2.2 mm / 0.087"','2.5 mm / 0.098"','Custom Setup'],
-  tuners: ['3L + 3R','6 Inline','4 Inline','3L + 3R Locking','6 Inline Locking','4L + 2R','Custom'],
-  finish_neck: ['Oil/Wax','Satin','Gloss','Tinted Oil','Raw Wood','Vintage Tint'],
-  headstock_finish: ['Matching Headstock','Natural','Satin','Gloss','Oil/Wax','Relic','Custom'],
-  headstock_logo: ['Altes Logo','Neues Logo','Eigenes Logo'],
+  tuners: ['6R in Line','6L in Line','6R in Line Locking','6L in Line Locking','7R in Line Locking','3L+3R','3L+3R Locking','Gotoh SG381 MG-T Locking','Schaller Locking','Headless (Steinberger-Style)','4L+2R','Kunde liefert'],
+  neck_binding: ['Nein','Weiß','Creme','Schwarz','Custom'],
+  spokewheel: JA_NEIN,
+  finish_neck: ['Oil/Wax','Natural Satin','Satin','Gloss','Raw Wood','Vintage Tint Nitro','Lackiert wie Body','Custom'],
+  headstock_finish: ['Matching Headstock','Schwarz Matt','Schwarz High Gloss','Natural','Satin','Gloss','Oil/Wax','Custom'],
+  headstock_logo: ['Altes Logo','Neues Logo','Eigenes Logo','Kein Logo'],
   neck_foot: ['Fender-Standard','Gibson-Style','PRS-Pattern','Custom'],
-  neck_pocket: ['Fender-Standard','Gibson-Style','PRS-Pattern','Custom'],
+  customer_provides_body: JA_NEIN,
 
   // Finish fields
-  finish_body: ['Oil/Wax','Lackiert','High Gloss','Satin','Nitro','Poly','Relic','Cherry Burst','Tobacco Burst','Sunburst','Natural'],
-  electronics: ['3-Way','5-Way','Push-Pull','Coil Split','Phase Switch','Kill Switch','Custom Wiring'],
-  hardware_color: ['Black','Chrome','Gold','Nickel','Cosmo Black','Aged Nickel','Satin Chrome','Antique Brass'],
-  strap_pins: ['Standard','Schaller','Dunlop','Flush Mount','Custom'],
-  strings: ['.009-.042','.010-.046','.011-.049','.012-.054','Custom Gauge','Drop Tuning Set'],
-  tuning: ['E-Standard','Eb-Standard','Drop D','Drop C','D-Standard','DADGAD','Open G','Custom'],
+  finish_body: ['Oil/Wax','High Gloss','Satin','Matt','Burst (Farbe in Notizen)','Deckend lackiert','Beize + Klarlack','Relic/Aged','Grobschliff (Kunde lackiert selbst)','Natural','Custom Graphic'],
+  finish_body_top: ['Oil/Wax','High Gloss','Satin','Matt','Burst (Farbe in Notizen)','Deckend lackiert','Beize + Klarlack','Relic/Aged','Grobschliff (Kunde lackiert selbst)','Natural','Custom Graphic'],
+  finish_body_back: ['Oil/Wax','High Gloss','Satin','Matt','Burst (Farbe in Notizen)','Deckend lackiert','Beize + Klarlack','Relic/Aged','Grobschliff (Kunde lackiert selbst)','Natural','Custom Graphic'],
+  electronics: ['1x Vol','1x Vol, 1x Toggle','1x Vol, 1x Tone, 3-Way','1x Vol, 1x Tone, 5-Way','2x Vol, 2x Tone, 3-Way (Les Paul)','Push/Pull Coil Split','Zusätzlicher Killswitch','Custom Wiring'],
+  hardware_color: ['Black','Chrome','Gold','Nickel','Cosmo Black','Black Nickel','Aged Nickel','Satin Chrome'],
+  strap_pins: ['Standard','Schaller Security Locks','Dunlop Straploks','Dunlop Flush Mount','Schwarz','Custom'],
+  strings: ['.009-.042','.010-.046','.010-.052','.011-.049','.012-.054','Custom Gauge'],
+  tuning: ['E-Standard','Eb-Standard','Drop D','Drop C#','Drop C','Drop A','D-Standard','C-Standard','DADGAD','Open G','Custom'],
 
   // Oberflächenbehandlung fields
   objekt: ['Gitarre komplett','Body','Hals','Headstock','Pickguard','Hardware','Sonstiges'],
   oberflaeche_typ: ['Nitro-Lack','Acryl-Lack','Polyurethan','Öl/Wachs','Shellac','2K-Lack','Wasserlack','Gravur','Lasergravur','Brandgravur'],
   farbe: ['Schwarz','Weiß','Rot','Blau','Grün','Gelb','Sunburst','Cherry Burst','Tobacco Burst','Natural','Transparent','Custom RAL'],
   aged: ['Nein','Light Aged','Medium Aged','Heavy Aged','Custom Relic','Road Worn'],
-  speziallack: ['Nein','Risslack','Metallic','Perlmutt','Candy','Flip-Flop','Hammerschlag','Antik-Finish'],
+  speziallack: ['Nein','Burst','Risslack','Metallic','Perlmutt','Candy','Flip-Flop','Hammerschlag','Antik-Finish'],
+
+  // Tonabnehmer fields
+  pickup_type: ['Humbucker Set (77B/77N)','Humbucker Set (7TB/5N)','Single Coil Set','P90 Set','Einzelner Humbucker Bridge','Einzelner Humbucker Neck','Custom'],
+  bobbin_1: ['Schwarz','Creme','Weiß','Zebra'],
+  bobbin_2: ['Schwarz','Creme','Weiß','Zebra'],
+  magnet_type: ['AlNiCo 5','AlNiCo 2','AlNiCo 8','Keramik','Custom'],
+  wire: ['AWG 42','AWG 43','AWG 44'],
+  cover: ['Open Coil','Chromkappe','Nickelkappe','Schwarz','Custom'],
+  pickup_surface_treatment: ['Standard','Aged','Custom'],
+
+  // Reparatur fields
+  repair_type: ['Neubundierung','Setup/Einstellung','Elektronik','Lackausbesserung','Bruchreparatur','Umbau','Sonstiges'],
+  repair_area: ['Hals','Bünde','Body','Headstock','Elektronik','Hardware','Komplett'],
+  repair_priority: ['Normal','Hoch','Express'],
+
+  // Pickguard fields
+  pg_material: ['Kunststoff 1-lagig','Kunststoff 3-lagig','Metall/Alu','Holz','Kunde liefert'],
+  pg_thickness: ['2 mm','2.5 mm','3 mm'],
+  pg_shielding: JA_NEIN,
+
+  // Gravur fields
+  engraving_material: ['Holz','Metall','Kunststoff/Pickguard','Leder'],
+  engraving_depth_technique: ['Lasergravur','CNC-Fräsung','Brandgravur'],
+  vectorization_needed: JA_NEIN,
 };

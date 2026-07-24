@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { FIELD_LABELS as SPEC_FIELD_LABELS } from '@/lib/order-presets';
 
 interface Suggestion {
   id: string;
@@ -26,6 +27,15 @@ const FIELD_LABELS: Record<string, string> = {
   'order.type': 'Auftragstyp',
 };
 
+function labelFor(field: string): string {
+  if (FIELD_LABELS[field]) return FIELD_LABELS[field];
+  if (field.startsWith('order.')) {
+    const key = field.slice('order.'.length);
+    if (SPEC_FIELD_LABELS[key]) return SPEC_FIELD_LABELS[key];
+  }
+  return field;
+}
+
 export default function SuggestionBanner({ orderId }: { orderId: string }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [expanded, setExpanded] = useState(false);
@@ -43,6 +53,9 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
 
   useEffect(() => {
     loadSuggestions();
+    // Nach PDF-Import (CustomerDatasheetActions) sofort neu laden
+    window.addEventListener('mgh:suggestions-updated', loadSuggestions);
+    return () => window.removeEventListener('mgh:suggestions-updated', loadSuggestions);
   }, [loadSuggestions]);
 
   const pending = suggestions.filter((s) => s.status === 'suggested');
@@ -74,7 +87,7 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
         <div className="flex items-center gap-2">
           <span className="text-violet-400 text-sm">📬</span>
           <span className="text-sm text-violet-200">
-            {pending.length} {pending.length === 1 ? 'Vorschlag' : 'Vorschläge'} aus E-Mails
+            {pending.length} {pending.length === 1 ? 'Vorschlag' : 'Vorschläge'} (E-Mail / Datenblatt)
           </span>
         </div>
         <span className={`text-xs text-violet-400 transition-transform ${expanded ? 'rotate-180' : ''}`}>
@@ -87,7 +100,7 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
           {pending.map((s) => (
             <div key={s.id} className="px-3 py-2 flex items-center gap-3">
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-violet-400">{FIELD_LABELS[s.field] || s.field}</p>
+                <p className="text-xs text-violet-400">{labelFor(s.field)}</p>
                 <p className="text-sm text-slate-200 truncate">{s.value}</p>
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
