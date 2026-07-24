@@ -13,7 +13,7 @@ const KEY_ALIASES: Record<string, string> = {
   decke: 'body_has_top',
 };
 
-function normalizeIncomingSpecs(input: Record<string, string>): Record<string, string> {
+function normalizeIncomingSpecs(input: Record<string, string>, hasTop: boolean): Record<string, string> {
   const out: Record<string, string> = {};
 
   for (const [rawKey, rawValue] of Object.entries(input)) {
@@ -24,12 +24,15 @@ function normalizeIncomingSpecs(input: Record<string, string>): Record<string, s
     out[key] = value.trim().length >= existing.trim().length ? value : existing;
   }
 
-  // Body Finish und Korpus-Finish als semantisch gleich behandeln:
-  // wenn einer fehlt, den vorhandenen übernehmen.
-  const finishBody = (out.finish_body ?? '').trim();
-  const bodyFinish = (out.body_surface_treatment ?? '').trim();
-  if (finishBody && !bodyFinish) out.body_surface_treatment = out.finish_body;
-  if (bodyFinish && !finishBody) out.finish_body = out.body_surface_treatment;
+  // Mit Top ist das Finish in Top/Korpus aufgeteilt: Gesamt-Finish nicht mehr synchronisieren.
+  if (!hasTop) {
+    // Body Finish und Korpus-Finish als semantisch gleich behandeln:
+    // wenn einer fehlt, den vorhandenen übernehmen.
+    const finishBody = (out.finish_body ?? '').trim();
+    const bodyFinish = (out.body_surface_treatment ?? '').trim();
+    if (finishBody && !bodyFinish) out.body_surface_treatment = out.finish_body;
+    if (bodyFinish && !finishBody) out.finish_body = out.body_surface_treatment;
+  }
 
   return out;
 }
@@ -93,13 +96,24 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       Object.entries(body as Record<string, unknown>)
         .filter(([, v]) => typeof v === 'string') as [string, string][]
     );
-    const candidate = normalizeIncomingSpecs(rawCandidate);
 
     // Fetch order type
     const order = await prisma.order.findUnique({ where: { id }, select: { type: true } });
     if (!order) {
       return NextResponse.json({ error: 'Order nicht gefunden' }, { status: 404 });
     }
+
+    // Top-Status ermitteln (aus dieser Anfrage oder dem gespeicherten Stand),
+    // um zu entscheiden, ob das Gesamt-Finish noch synchronisiert werden soll.
+    const existingTopSpecs = await prisma.orderSpecKV.findMany({
+      where: { orderId: id, key: { in: ['body_has_top', 'body_top'] } },
+      select: { key: true, value: true },
+    });
+    const isTruthy = (v?: string) => ['ja', 'true', '1', 'yes'].includes((v || '').trim().toLowerCase());
+    const hasTopValue = (key: string) =>
+      key in rawCandidate ? rawCandidate[key] : existingTopSpecs.find((s) => s.key === key)?.value;
+    const hasTop = isTruthy(hasTopValue('body_has_top')) || Boolean((hasTopValue('body_top') || '').trim());
+    const candidate = normalizeIncomingSpecs(rawCandidate, hasTop);
 
     // Compute allowed and required keys
     const categories = getCategoriesForOrderType(order.type as any);

@@ -28,9 +28,9 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
   GUITAR: {
     categories: ["body","neck","finish"],
     fields: {
-      body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard","battery_compartment","body_extras","body_surface_treatment","body_notes"],
+      body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard","battery_compartment","body_extras","body_surface_treatment","finish_body_top","finish_body_back","body_notes"],
       neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","neck_extras","finish_neck","headstock_finish","neck_notes"],
-      finish: ["finish_body","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","electronics","pickups","elektronikparts","hardware_color","strap_pins","strings","tuning","notes"],
+      finish: ["finish_body","finish_body_top","finish_body_back","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","electronics","pickups","elektronikparts","hardware_color","strap_pins","strings","tuning","notes"],
       oberflaeche: [],
       repair: [],
       pickguard: [],
@@ -47,7 +47,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
   BODY: {
     categories: ["body"],
     fields: {
-      body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard_checkbox","pickguard_material","battery_compartment_checkbox","battery_compartment_details","body_extras","body_surface_treatment","neck_pocket","customer_provides_neck","finish_body","body_notes"],
+      body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard_checkbox","pickguard_material","battery_compartment_checkbox","battery_compartment_details","body_extras","body_surface_treatment","finish_body_top","finish_body_back","neck_pocket","customer_provides_neck","finish_body","body_notes"],
       neck: [],
       finish: [],
       oberflaeche: [],
@@ -204,6 +204,8 @@ export const FIELD_LABELS: Record<string, string> = {
 
   // Finish fields
   finish_body: "Body-Finish",
+  finish_body_top: "Body-Finish (Top)",
+  finish_body_back: "Body-Finish (Korpus)",
   electronics: "Elektronik",
   pickups: "Pickups",
   elektronikparts: "Elektronikparts",

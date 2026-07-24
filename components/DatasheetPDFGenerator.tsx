@@ -392,9 +392,18 @@ export default function DatasheetPDFGenerator({
 
       // Spezifikationen nach Kategorien organisieren - verwende order-presets
       const specsByCategory: Record<string, typeof specs> = {};
+      const isTruthySpecValue = (value?: string) => {
+        const normalized = (value || '').trim().toLowerCase();
+        return normalized === 'ja' || normalized === 'true' || normalized === '1' || normalized === 'yes';
+      };
+      const hasTop =
+        specs.some((spec) => spec.key === 'body_has_top' && isTruthySpecValue(spec.value)) ||
+        specs.some((spec) => spec.key === 'body_top' && Boolean((spec.value || '').trim()));
       const validSpecs = specs
         .filter(spec => spec.value && spec.value.trim())
         .filter(spec => spec.key !== 'string_count') // Wird bereits im Header angezeigt
+        // Mit Top gilt das aufgeteilte Finish (Top/Korpus), das Gesamt-Finish entfällt.
+        .filter(spec => !(hasTop && (spec.key === 'finish_body' || spec.key === 'body_surface_treatment')))
         .filter(spec => {
           // Binding-Felder: Nur anzeigen wenn aktiviert (nicht "Nein")
           if (spec.key === 'body_binding' || spec.key === 'neck_binding') {
@@ -419,6 +428,8 @@ export default function DatasheetPDFGenerator({
       
       const finishKeys = new Set([
         'finish_body',
+        'finish_body_top',
+        'finish_body_back',
         'finish_neck',
         'headstock_finish',
         'body_surface_treatment',
@@ -427,6 +438,8 @@ export default function DatasheetPDFGenerator({
       ]);
       const finishFieldOrder = [
         'finish_body',
+        'finish_body_top',
+        'finish_body_back',
         'finish_neck',
         'headstock_finish',
         'headstock_logo',
@@ -441,10 +454,6 @@ export default function DatasheetPDFGenerator({
         'notes',
       ];
       const hasTopMaterial = validSpecs.some((spec) => spec.key === 'body_top');
-      const isTruthySpecValue = (value?: string) => {
-        const normalized = (value || '').trim().toLowerCase();
-        return normalized === 'ja' || normalized === 'true' || normalized === '1' || normalized === 'yes';
-      };
 
       // Verwende die definierten Kategorien aus order-presets
       const categories = getCategoriesForOrderType(orderType);

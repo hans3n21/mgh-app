@@ -37,12 +37,23 @@ export function applyAliases(kv: Kv, orderType: string): Kv {
     const hasTopDetails = Boolean((out.body_top || '').trim()) || Boolean((out.body_top_thickness || '').trim());
     if (hasTopDetails) out.body_has_top = 'Ja';
   }
-  // Body Finish / Korpus-Finish zusammenführen, falls nur eines gepflegt ist.
-  if ((out.finish_body || '').trim() && !(out.body_surface_treatment || '').trim()) {
-    out.body_surface_treatment = out.finish_body;
-  }
-  if ((out.body_surface_treatment || '').trim() && !(out.finish_body || '').trim()) {
-    out.finish_body = out.body_surface_treatment;
+  // Mit Top wird das Finish in Top/Korpus aufgeteilt: altes Gesamt-Finish gilt als Top-Finish.
+  const hasTop = ['ja', 'true', '1', 'yes'].includes((out.body_has_top || '').trim().toLowerCase());
+  if (hasTop) {
+    const legacyFinish = (out.finish_body || '').trim() || (out.body_surface_treatment || '').trim();
+    if (legacyFinish && !(out.finish_body_top || '').trim()) {
+      out.finish_body_top = legacyFinish;
+    }
+    delete out.finish_body;
+    delete out.body_surface_treatment;
+  } else {
+    // Body Finish / Korpus-Finish zusammenführen, falls nur eines gepflegt ist.
+    if ((out.finish_body || '').trim() && !(out.body_surface_treatment || '').trim()) {
+      out.body_surface_treatment = out.finish_body;
+    }
+    if ((out.body_surface_treatment || '').trim() && !(out.finish_body || '').trim()) {
+      out.finish_body = out.body_surface_treatment;
+    }
   }
   // entferne Keys, die im aktuellen Preset nicht vorkommen
   for (const k of Object.keys(out)) {

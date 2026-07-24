@@ -166,10 +166,13 @@ export default function OrderSpecsSidebar({
 
   const shouldRenderField = (fieldKey: string) => {
     if (fieldKey === 'pickup_mount_frame' || fieldKey === 'headstock_logo_notes') return false;
-    if (fieldKey !== 'body_top' && fieldKey !== 'body_top_thickness') return true;
     const hasTop = isTruthySpecValue(specValues['body_has_top']);
     const hasLegacyValue = Boolean((specValues[fieldKey] || '').trim());
-    return hasTop || hasLegacyValue;
+    if (fieldKey === 'body_top' || fieldKey === 'body_top_thickness') return hasTop || hasLegacyValue;
+    // Mit Top wird das Finish in Top/Korpus aufgeteilt, das Gesamt-Finish entfällt.
+    if (fieldKey === 'finish_body_top' || fieldKey === 'finish_body_back') return hasTop || hasLegacyValue;
+    if (fieldKey === 'finish_body' || fieldKey === 'body_surface_treatment') return !hasTop;
+    return true;
   };
 
   const toggleCategory = (category: CategoryKey) => {

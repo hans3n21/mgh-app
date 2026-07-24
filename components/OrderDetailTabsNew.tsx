@@ -30,6 +30,7 @@ import NeckBindingInput from '@/components/NeckBindingInput';
 import HeadstockLogoInput from '@/components/HeadstockLogoInput';
 import PickupMountInput from '@/components/PickupMountInput';
 import DatasheetPDFGenerator from '@/components/DatasheetPDFGenerator';
+import CustomerDatasheetActions from '@/components/CustomerDatasheetActions';
 import SuggestionBanner from '@/components/SuggestionBanner';
 import PhoneLink from '@/components/PhoneLink';
 import { AUTO_FIELDS } from '@/lib/autofill-data';
@@ -421,10 +422,13 @@ export default function OrderDetailTabsNew({
     if (fieldKey === 'pickup_mount_frame' || fieldKey === 'headstock_logo_notes') {
       return false;
     }
-    if (fieldKey !== 'body_top' && fieldKey !== 'body_top_thickness') return true;
     const hasTop = isTruthySpecValue(specValues['body_has_top']);
     const hasLegacyValue = Boolean((specValues[fieldKey] || '').trim());
-    return hasTop || hasLegacyValue;
+    if (fieldKey === 'body_top' || fieldKey === 'body_top_thickness') return hasTop || hasLegacyValue;
+    // Mit Top wird das Finish in Top/Korpus aufgeteilt, das Gesamt-Finish entfällt.
+    if (fieldKey === 'finish_body_top' || fieldKey === 'finish_body_back') return hasTop || hasLegacyValue;
+    if (fieldKey === 'finish_body' || fieldKey === 'body_surface_treatment') return !hasTop;
+    return true;
   };
 
   const hasReadableValue = (value?: string) => {
@@ -631,6 +635,7 @@ export default function OrderDetailTabsNew({
       <div className="rounded-xl border border-slate-800 p-3 sm:p-4">
         {activeTab === 'spec' && (
           <div className="space-y-4">
+            <SuggestionBanner orderId={orderId} />
             <div className="flex items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <h3 className="hidden sm:block font-semibold">Datenblatt - {TYPE_LABEL[orderType] || orderType}</h3>
@@ -650,6 +655,9 @@ export default function OrderDetailTabsNew({
                 </button>
               </div>
               <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-3">
+                {/* Kunden-Datenblatt: ausfüllbares PDF + Import */}
+                <CustomerDatasheetActions orderId={orderId} />
+
                 {/* Datenblatt aktualisieren Button */}
                 <button
                   onClick={() => {
