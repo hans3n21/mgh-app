@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 
 interface ProcurementItem {
   id: string;
@@ -19,6 +20,18 @@ interface ProcurementItem {
     name: string;
     email: string;
   } | null;
+}
+
+interface ProcurementSuggestion {
+  name: string;
+  link?: string | null;
+  note?: string | null;
+}
+
+interface OrderOption {
+  id: string;
+  title: string;
+  customerName?: string | null;
 }
 
 interface CurrentUser {
@@ -68,8 +81,13 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
     orderId: '',
     link: ''
   });
+  const [suggestions, setSuggestions] = useState<ProcurementSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [orders, setOrders] = useState<OrderOption[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
 
-  const isAdmin = currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'admin_no_feedback';
 
   // Items laden (mit Filter)
   const loadItems = async () => {
@@ -89,6 +107,16 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
     } finally {
       setLoading(false);
     }
+  };
+
+  const applySuggestion = (suggestion: ProcurementSuggestion) => {
+    setNewItem(prev => ({
+      ...prev,
+      name: suggestion.name,
+      link: suggestion.link ?? prev.link,
+      note: prev.note || suggestion.note || ''
+    }));
+    setSuggestionsOpen(false);
   };
 
   // Neues Item erstellen
@@ -234,6 +262,70 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
     loadItems();
   }, [showArchived, statusFilter]);
 
+  React.useEffect(() => {
+    let active = true;
+    (async () => {
+      setOrdersLoading(true);
+      try {
+        const res = await fetch('/api/orders');
+        if (!active) return;
+        if (res.ok) {
+          const data = await res.json();
+          const mapped = Array.isArray(data)
+            ? data.map((order: any) => ({
+                id: order.id,
+                title: order.title ?? '',
+                customerName: order.customer?.name ?? null,
+              }))
+            : [];
+          setOrders(mapped);
+        }
+      } catch (error) {
+        console.error('Fehler beim Laden der Aufträge:', error);
+      } finally {
+        if (active) setOrdersLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const query = newItem.name.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      setSuggestionsOpen(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setSuggestionsLoading(true);
+      try {
+        const res = await fetch(`/api/procurement?suggest=true&q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSuggestions(Array.isArray(data) ? data : []);
+          setSuggestionsOpen(true);
+        }
+      } catch (error) {
+        if ((error as { name?: string }).name !== 'AbortError') {
+          console.error('Fehler beim Laden der Vorschläge:', error);
+        }
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [newItem.name]);
+
   const filteredItems = items.filter(item => {
     if (statusFilter !== 'all' && item.status !== statusFilter) return false;
     if (!showArchived && item.status === 'archiviert') return false;
@@ -284,16 +376,48 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
           <h3 className="text-lg font-semibold mb-3">Neues Procurement Item</h3>
           <form onSubmit={handleAddItem} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium mb-1">Produkt *</label>
                 <input
                   type="text"
                   value={newItem.name}
                   onChange={(e) => setNewItem(prev => ({ ...prev, name: e.target.value }))}
+                  onFocus={() => {
+                    if (suggestions.length > 0) setSuggestionsOpen(true);
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => setSuggestionsOpen(false), 150);
+                  }}
                   required
                   className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
                   placeholder="z.B. Floyd Rose Original"
                 />
+                {suggestionsOpen && (
+                  <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 shadow-lg">
+                    {suggestionsLoading ? (
+                      <div className="px-3 py-2 text-xs text-slate-400">Lade Vorschläge…</div>
+                    ) : suggestions.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-slate-500">Keine Treffer</div>
+                    ) : (
+                      <ul className="max-h-56 overflow-auto">
+                        {suggestions.map((item, index) => (
+                          <li key={`${item.name}-${item.link ?? 'nolink'}-${index}`}>
+                            <button
+                              type="button"
+                              onClick={() => applySuggestion(item)}
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-slate-800/70"
+                            >
+                              <div className="font-medium text-slate-200">{item.name}</div>
+                              {item.link && (
+                                <div className="text-xs text-slate-500 truncate">{item.link}</div>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Anzahl (Stück) *</label>
@@ -308,14 +432,31 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Auftrag ID</label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium mb-1">Auftrag (optional)</label>
+                <select
                   value={newItem.orderId}
                   onChange={(e) => setNewItem(prev => ({ ...prev, orderId: e.target.value }))}
                   className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
-                  placeholder="ORD-2025-001"
-                />
+                >
+                  <option value="">Kein Auftrag</option>
+                  {orders.map((order) => (
+                    <option key={order.id} value={order.id}>
+                      {order.id} · {order.customerName ?? 'Kunde'} · {order.title}
+                    </option>
+                  ))}
+                </select>
+                <datalist id="procurement-order-suggestions">
+                  {orders.map((order) => (
+                    <option
+                      key={order.id}
+                      value={order.id}
+                      label={`${order.id} • ${order.customerName ?? 'Kunde'} • ${order.title}`}
+                    />
+                  ))}
+                </datalist>
+                {ordersLoading && (
+                  <div className="mt-1 text-xs text-slate-500">Aufträge werden geladen…</div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Link (URL)</label>
@@ -405,7 +546,19 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                           className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm"
                         />
                       ) : (
-                        item.name
+                        <div>
+                          <div>{item.name}</div>
+                          {item.orderId && (
+                            <div className="sm:hidden text-xs mt-1">
+                              <Link
+                                href={`/app/orders/${item.orderId}`}
+                                className="text-sky-400 hover:text-sky-300 underline"
+                              >
+                                {item.orderId}
+                              </Link>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="py-3 px-4">
@@ -433,13 +586,21 @@ export default function ProcurementClient({ initialItems, currentUser }: Procure
                       {editingItem === item.id ? (
                         <input
                           type="text"
+                          list="procurement-order-suggestions"
                           value={editData.orderId}
                           onChange={(e) => setEditData(prev => ({ ...prev, orderId: e.target.value }))}
                           className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm"
                           placeholder="ORD-2025-001"
                         />
                       ) : (
-                        item.orderId || '—'
+                        item.orderId ? (
+                          <Link
+                            href={`/app/orders/${item.orderId}`}
+                            className="text-sky-400 hover:text-sky-300 underline"
+                          >
+                            {item.orderId}
+                          </Link>
+                        ) : '—'
                       )}
                     </td>
                     <td className="py-3 px-4 text-slate-400 max-w-xs hidden sm:table-cell">

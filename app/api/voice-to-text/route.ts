@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const whisperUrl = process.env.WHISPER_API_URL || 'http://localhost:9000';
 
     // Check if Whisper is configured
@@ -34,7 +40,6 @@ export async function POST(request: NextRequest) {
     const language = formData.get('language') || 'de';
 
     // Call Whisper API
-    console.log('🎤 Sending audio to Whisper API:', whisperUrl);
     const whisperResponse = await fetch(
       `${whisperUrl}/asr?task=transcribe&language=${language}&output=json`,
       {
@@ -45,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     if (!whisperResponse.ok) {
       const errorText = await whisperResponse.text();
-      console.error('❌ Whisper API error:', whisperResponse.status, errorText);
+      console.error('Whisper API error:', whisperResponse.status);
       return NextResponse.json(
         { error: 'Voice-to-text conversion failed', details: errorText },
         { status: whisperResponse.status }
@@ -53,8 +58,6 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await whisperResponse.json();
-    console.log('✅ Whisper transcription successful:', result.text?.slice(0, 100));
-
     return NextResponse.json({
       text: result.text || '',
       language: language,

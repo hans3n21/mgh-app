@@ -1,102 +1,196 @@
 # AGENTS.md – Prisma Database
 
-## Struktur (konkret)
-```
-prisma/
-├── schema.prisma         # Database Schema
-├── migrations/           # 10 Migrations vorhanden
-├── dev.db               # SQLite Development DB
-└── seed.ts              # Database Seeding
-```
-
-## Database Config
-- **Provider**: SQLite (file:./dev.db)
+## Konfiguration
+- **Provider**: PostgreSQL
+- **URL**: `env("DATABASE_URL")`
+- **Client**: `lib/prisma.ts` (Singleton)
 - **Generator**: prisma-client-js
-- **Client**: `lib/prisma.ts`
 
-## Commands (konkret verfügbar)
-- **Reset**: `npm run db:reset`
-- **Seed**: `npm run db:seed`
-- **Generate**: `npx prisma generate`
-- **Migrate**: `npx prisma migrate dev`
-- **Studio**: `npx prisma studio`
+## Commands
+| Command | Beschreibung |
+|---|---|
+| `npm run db:reset` | DB zurücksetzen + Seed |
+| `npm run db:seed` | Seed-Daten laden |
+| `npm run db:backup` | PostgreSQL-Backup erstellen |
+| `npx prisma generate` | Client generieren |
+| `npx prisma migrate dev --name beschreibung` | Neue Migration |
+| `npx prisma studio` | DB-Browser |
 
-## Hauptmodels (aus Schema)
-```prisma
-model Order {
-  id         String      @id  // Human-readable: ORD-2025-001
-  title      String
-  type       OrderType   // GUITAR, BODY, NECK, REPAIR, PICKGUARD, PICKUPS, ENGRAVING, FINISH_ONLY
-  status     OrderStatus // intake, quote, in_progress, finishing, setup, awaiting_customer, complete, design_review
-  customer   Customer
-  assignee   User?
-  specs      OrderSpecKV[]
-  images     OrderImage[]
-  mails      Mail[]
-  items      OrderItem[]
-  extras     OrderExtra[]
-  datasheets Datasheet[]
-}
+## Enums (3)
 
-model Mail {
-  id        String @id @default(cuid())
-  messageId String @unique
-  subject   String?
-  text      String?
-  html      String?
-  order     Order?
-  unread    Boolean @default(true)
-  attachments Attachment[]
-}
+### OrderType
+`GUITAR`, `BODY`, `NECK`, `REPAIR`, `PICKGUARD`, `PICKUPS`, `ENGRAVING`, `FINISH_ONLY`
 
-model User {
-  id    String @id @default(cuid())
-  name  String
-  email String @unique
-  role  Role   @default(staff) // admin, staff
-}
-```
+### OrderStatus
+`intake`, `quote`, `in_progress`, `finishing`, `setup`, `awaiting_customer`, `complete`, `design_review`
 
-## Migration History (konkret vorhanden)
-- `20250811201322_fix_order_creation`
-- `20250812191556_add_wc_order_id`
-- `20250812193652_billing_fields`
-- `20250813095322_add_mail_models`
-- `20250813102740_add_datasheet_model`
-- `20250813132828_add_customer_address`
-- `20250813141040_drop_customer_address_line2`
-- `20250814213059_add_feedback_model`
-- `20250815133259_add_reply_templates`
-- `20250819_add_mail_read_status`
+### Role
+`admin`, `admin_no_feedback`, `staff`
 
-## Client Usage
-```typescript
-import { prisma } from '@/lib/prisma'
+## Models (26)
 
-// Create Order with Relations
-const order = await prisma.order.create({
-  data: {
-    id: 'ORD-2025-001',
-    title: 'Custom Stratocaster',
-    type: 'GUITAR',
-    customer: { connect: { id: customerId } },
-    specs: {
-      create: [
-        { key: 'body_wood', value: 'Alder' },
-        { key: 'neck_wood', value: 'Maple' }
-      ]
-    }
-  },
-  include: { customer: true, specs: true }
-})
-```
+### Kern-Models
 
-## Workflow
-1. Schema ändern: `prisma/schema.prisma`
-2. Migration: `npx prisma migrate dev --name beschreibung`
-3. Client generiert automatisch
-4. Seed: `npm run db:seed`
+**User** — Benutzer mit Rollen
+| Feld | Typ | Hinweis |
+|---|---|---|
+| id | String | @id @default(cuid()) |
+| name | String | |
+| email | String | @unique |
+| passwordHash | String | bcrypt |
+| role | Role | @default(staff) |
+| → | Order[], Message[], OrderView[], OrderTask[] (assignee + creator), MailAccount[], ProcurementItem[] | |
 
-## Testing
-- **Test Framework**: vitest (lib/mail/__tests__)
-- **Test DB**: Separate Test-Database empfohlen
+**Customer** — Kunden
+| Feld | Typ | Hinweis |
+|---|---|---|
+| id | String | @id @default(cuid()) |
+| name | String | |
+| email | String? | |
+| phone | String? | |
+| addressLine1, postalCode, city, country | String? | country @default("DE") |
+| → | Order[], Mail[] | |
+
+**Order** — Aufträge
+| Feld | Typ | Hinweis |
+|---|---|---|
+| id | String | @id, human-readable: ORD-2026-001 |
+| title | String | |
+| type | OrderType | |
+| status | OrderStatus | @default(intake) |
+| customerId | String | → Customer |
+| assigneeId | String? | → User |
+| wcOrderId | String? | WooCommerce-ID |
+| finalAmountCents | Int? | Gesamtpreis in Cent |
+| paymentStatus | String | @default("open") |
+| paymentMethod | String? | |
+| → | Customer, User?, OrderSpecKV[], OrderImage[], OrderItem[], Message[], OrderExtra[], Mail[], Datasheet[], OrderView[], OrderTask[], OrderFieldSuggestion[] |
+
+### Auftrags-Details
+
+**OrderSpecKV** — Key-Value Spezifikationen
+- `orderId`, `key`, `value`
+- Keys aus `lib/order-presets.ts` (z.B. body_shape, neck_wood, finish_body)
+
+**OrderImage** — Auftragsbilder
+- `orderId`, `path`, `comment?`, `position`, `attach` (an Kunde senden), `scope?` (body/neck/finish), `fieldKey?`
+
+**OrderItem** — Preis-Positionen
+- `orderId`, `priceItemId?`, `label`, `qty`, `unitPrice`, `total`, `notes?`
+- → PriceItem (optionale Verknüpfung zur Preisliste)
+
+**OrderExtra** — Zusatzkosten
+- `orderId`, `label`, `amountCents`
+
+**OrderView** — Ungelesen-Tracking
+- `orderId`, `userId`, `lastSeenAt`, `acknowledgedAt?`
+- @@unique([orderId, userId])
+- Bestimmt den Ungelesen-Indikator im Dashboard und der Auftragsübersicht
+
+**OrderTask** — Aufgaben-Delegation
+- `orderId`, `assigneeId`, `creatorId`, `title`, `note?`
+- `status`: "open" | "done"
+- `completedAt?`
+- Anzeige im Dashboard des zugewiesenen Mitarbeiters
+
+**OrderFieldSuggestion** — Auto-Vorschläge aus Mails
+- `orderId`, `field`, `value`, `mailId?`
+- `status`: "suggested" | "accepted" | "rejected"
+- `acceptedBy?`, `acceptedAt?`
+
+### Mail-System
+
+**MailAccount** — IMAP/SMTP-Konfiguration
+- `name`, `email` (@unique), `imapHost/Port/User/Pass`, `smtpHost/Port/User/Pass`
+- `isDefault`, `isActive`, `userId?`
+
+**Mail** — E-Mails
+| Feld | Typ | Hinweis |
+|---|---|---|
+| id | String | @id @default(cuid()) |
+| messageId | String | @unique (IMAP Message-ID) |
+| threadId | String? | Threading |
+| accountId | String | → MailAccount |
+| uid | Int | IMAP UID |
+| folder | String | z.B. "INBOX" |
+| subject, fromEmail, fromName | String? | |
+| to, cc, bcc | Json | |
+| text, html | String? | @db.Text |
+| snippet | String? | Vorschau |
+| date | DateTime | |
+| inReplyTo, references | String?, Json? | Threading |
+| orderId, customerId, senderId | String? | Zuordnungen |
+| isRead, isDeleted | Boolean | |
+| → | MailAccount, Order?, Customer?, User?, Attachment[], MailExtraction? |
+
+**Attachment** — Mail-Anhänge
+- `mailId`, `filename`, `mimeType?`, `size`, `path`, `cid?`
+
+**MailExtraction** — PII-Entities pro Mail
+- `mailId` (@unique), `entities` (Json)
+- Entities-Format: `{ type, text, start, end, confidence, source, pii }`
+- Wird bei erstem Öffnen extrahiert und gecached
+
+### Preise & Beschaffung
+
+**PriceItem** — Preisliste
+- `category`, `label`, `description?`, `unit?`
+- `price?`, `min?`, `max?`, `priceText?`
+- `mainCategory?`, `active`
+
+**ProcurementItem** — Beschaffungsliste
+- `name`, `qty`, `unit?`, `status` (offen/bestellt/geliefert/archiviert)
+- `neededBy?`, `note?`, `link?`, `orderId?`, `createdBy?`, `archivedAt?`
+
+**GlobalKnowledgeEntry** - zentrale Wissensbasis
+- `title`, `keywords`, `content`, `category?`
+- `status` (`draft`/`review`/`approved`/`archived`), `kiFreigabe`, `isActive`
+- Wird von der KI zusaetzlich zu postfachbezogenem `KnowledgeEntry` gelesen
+- Konkrete Preise bleiben in `PriceItem`
+
+### Content & Templates
+
+**Datasheet** — Auftragsdatenblätter
+- `orderId`, `type`, `fields` (Json), `version`
+- Versioniert: neue Version bei jeder Regenerierung
+
+**ReplyTemplate** — Antwort-Vorlagen
+- `key` (@unique), `lang` (@default("de")), `subject?`, `body`
+- `variables` (Json): Platzhalter-Definitionen
+
+**Feedback** — User-Feedback
+- `message`, `page`, `url`, `timestamp`, `userAgent?`
+- `resolved`, `resolvedBy?`, `resolvedAt?`
+
+**SystemSetting** — App-Einstellungen
+- `key` (@id), `value` (JSON-String)
+- z.B. N8N-Webhook-URLs, KI-Konfiguration
+
+### Auth (NextAuth)
+
+**Account** — OAuth-Accounts (NextAuth)
+**Session** — Sessions (NextAuth)
+**VerificationToken** — Verifizierungs-Tokens (NextAuth)
+
+## Migration History (12 Migrations)
+1. `20250811201322_fix_order_creation`
+2. `20250812191556_add_wc_order_id`
+3. `20250812193652_billing_fields`
+4. `20250813095322_add_mail_models`
+5. `20250813102740_add_datasheet_model`
+6. `20250813132828_add_customer_address`
+7. `20250813141040_drop_customer_address_line2`
+8. `20250814213059_add_feedback_model`
+9. `20250815133259_add_reply_templates`
+10. `20250819_add_mail_read_status`
+11. `20250822124911_robust_mail_system`
+12. `20251010134625_add_datasheet_versioning`
+
+**Hinweis**: Neue Models (OrderView, OrderTask, MailExtraction, OrderFieldSuggestion, SystemSetting) wurden nach der letzten formellen Migration hinzugefügt — Schema-Änderungen ggf. über `prisma db push` oder noch ausstehende Migrations.
+
+## Workflow für Schema-Änderungen
+1. `prisma/schema.prisma` bearbeiten
+2. `npx prisma migrate dev --name beschreibung`
+3. Client wird automatisch generiert
+4. Seed aktualisieren falls nötig: `npm run db:seed`
+5. `app/api/AGENTS.md` aktualisieren falls neue Endpunkte

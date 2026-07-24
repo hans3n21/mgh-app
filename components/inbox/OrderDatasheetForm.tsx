@@ -7,28 +7,44 @@ import PickguardInput from '@/components/PickguardInput';
 import BatteryCompartmentInput from '@/components/BatteryCompartmentInput';
 import SpokewheelInput from '@/components/SpokewheelInput';
 import NeckBindingInput from '@/components/NeckBindingInput';
+import HeadstockLogoInput from '@/components/HeadstockLogoInput';
+import PickupMountInput from '@/components/PickupMountInput';
 
-const AUTO_FIELDS = new Set(['body_shape', 'headstock_type', 'neck_wood', 'fretboard_material', 'finish_body']);
+const AUTO_FIELDS = new Set(['body_shape', 'headstock_type', 'neck_wood', 'fretboard_material', 'finish_body', 'finish_body_top', 'finish_body_back', 'finish_neck', 'headstock_finish']);
 
 type Props = {
 	orderId: string;
 	orderType: string;
+	editable?: boolean;
 	onSpecsChange?: (specs: Record<string, string>) => void;
 };
 
-export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }: Props) {
+export default function OrderDatasheetForm({ orderId, orderType, editable = true, onSpecsChange }: Props) {
+	const LINKED_SPEC_KEYS: Record<string, string> = {
+		body_surface_treatment: 'finish_body',
+		finish_body: 'body_surface_treatment',
+	};
+
 	const [specValues, setSpecValues] = useState<Record<string, string>>({});
-	const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
 	const [saving, setSaving] = useState(false);
 	const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 	const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
 	// Lade Kategorien für diesen Auftragstyp
-	const categories = getCategoriesForOrderType(orderType);
+	const categories = orderType ? getCategoriesForOrderType(orderType) : [];
+	const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
 
-	// Initial alle Kategorien aktivieren
+	// Initial alle Kategorien aktivieren wenn orderType sich ändert
 	useEffect(() => {
-		setActiveCategories(new Set(categories));
+		if (!orderType) {
+			setActiveCategories(new Set());
+			return;
+		}
+		const newCategories = getCategoriesForOrderType(orderType);
+		console.log('OrderDatasheetForm: Kategorien geladen', { orderType, categories: newCategories });
+		if (newCategories.length > 0) {
+			setActiveCategories(new Set(newCategories));
+		}
 	}, [orderType]);
 
 	// Lade vorhandene Spezifikationen
@@ -48,24 +64,33 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 						return acc;
 					}, {});
 					setSpecValues(values);
+					console.log('OrderDatasheetForm: Specs geladen', { orderId, orderType, categories, activeCategories: Array.from(activeCategories), valuesCount: Object.keys(values).length });
 				}
 			} catch (error) {
 				console.error('Fehler beim Laden der Spezifikationen:', error);
 			}
 		})();
 		return () => { active = false; };
-	}, [orderId]);
+	}, [orderId, orderType]);
 
 	// Debounced Save
 	const updateSpec = (key: string, value: string) => {
-		setSpecValues(prev => ({ ...prev, [key]: value }));
-		onSpecsChange?.({ ...specValues, [key]: value });
+		if (!editable) return;
+		const nextUpdates: Record<string, string> = { [key]: value };
+		const linkedKey = LINKED_SPEC_KEYS[key];
+		if (linkedKey && (specValues[linkedKey] ?? '') !== (value ?? '')) {
+			nextUpdates[linkedKey] = value;
+		}
+
+		setSpecValues(prev => ({ ...prev, ...nextUpdates }));
+		onSpecsChange?.({ ...specValues, ...nextUpdates });
 
 		// Clear validation error for this field
-		if (validationErrors[key]) {
+		const keysToClear = Object.keys(nextUpdates).filter((k) => validationErrors[k]);
+		if (keysToClear.length > 0) {
 			setValidationErrors(prev => {
 				const next = { ...prev };
-				delete next[key];
+				keysToClear.forEach((k) => delete next[k]);
 				return next;
 			});
 		}
@@ -80,7 +105,7 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 				const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/spec`, {
 					method: 'PUT',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ [key]: value }),
+					body: JSON.stringify(nextUpdates),
 				});
 				if (!res.ok) throw new Error('Speichern fehlgeschlagen');
 			} catch (error) {
@@ -91,11 +116,109 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 		}, 500);
 	};
 
-	if (!orderId) {
+	const isTruthySpecValue = (value?: string) => {
+		const normalized = (value || '').trim().toLowerCase();
+		return normalized === 'ja' || normalized === 'true' || normalized === '1' || normalized === 'yes';
+	};
+
+	const shouldRenderField = (fieldKey: string) => {
+		if (fieldKey === 'pickup_mount_frame' || fieldKey === 'headstock_logo_notes') return false;
+		const hasTop = isTruthySpecValue(specValues['body_has_top']);
+		const hasLegacyValue = Boolean((specValues[fieldKey] || '').trim());
+		if (fieldKey === 'body_top' || fieldKey === 'body_top_thickness') return hasTop || hasLegacyValue;
+		// Mit Top wird das Finish in Top/Korpus aufgeteilt, das Gesamt-Finish entfällt.
+		if (fieldKey === 'finish_body_top' || fieldKey === 'finish_body_back') return hasTop || hasLegacyValue;
+		if (fieldKey === 'finish_body' || fieldKey === 'body_surface_treatment') return !hasTop;
+		return true;
+	};
+
+	if (!orderId || !orderType) {
 		return (
 			<div className="text-center py-8 text-slate-500">
 				<div className="text-4xl mb-2">📋</div>
-				<div className="text-sm">Kein Auftrag ausgewählt</div>
+				<div className="text-sm">{!orderId ? 'Kein Auftrag ausgewählt' : 'Auftragstyp wird geladen...'}</div>
+			</div>
+		);
+	}
+
+	if (!editable) {
+		return (
+			<div className="space-y-4">
+				{categories.length > 1 && (
+					<div className="flex flex-wrap gap-2">
+						<button
+							type="button"
+							onClick={() => setActiveCategories(new Set(categories))}
+							className={`rounded-full px-2 py-1 text-xs ${
+								activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+							}`}
+						>
+							Alle
+						</button>
+						{categories.map((category) => {
+							const isActive = activeCategories.has(category);
+							return (
+								<button
+									key={category}
+									type="button"
+									onClick={() => {
+										const newSet = new Set(activeCategories);
+										if (isActive) {
+											newSet.delete(category);
+										} else {
+											newSet.add(category);
+										}
+										if (newSet.size > 0) {
+											setActiveCategories(newSet);
+										}
+									}}
+									className={`rounded-full px-2 py-1 text-xs ${
+										isActive
+											? 'bg-slate-600 text-white'
+											: 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+									}`}
+								>
+									{CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS]}
+								</button>
+							);
+						})}
+					</div>
+				)}
+
+				<div className="space-y-4">
+					{Array.from(activeCategories).map((category) => {
+						const visibleFields = getFieldsForCategory(orderType, category as any).filter((fieldKey) => {
+							if (category === 'oberflaeche' && orderType === 'FINISH_ONLY') {
+								const oberflaeche_typ = specValues['oberflaeche_typ'] || '';
+								if (!shouldShowField(fieldKey, oberflaeche_typ)) return false;
+							}
+							return shouldRenderField(fieldKey);
+						});
+						if (visibleFields.length === 0) return null;
+
+						return (
+							<div key={category} className="space-y-3">
+								<h4 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">
+									{CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS]}
+								</h4>
+								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+									{visibleFields.map((fieldKey) => {
+										const label = FIELD_LABELS[fieldKey] || fieldKey;
+										const value = (specValues[fieldKey] || '').trim();
+										return (
+											<div key={fieldKey} className="rounded border border-slate-800 bg-slate-950/50 px-2.5 py-2">
+												<div className="text-[11px] text-slate-500 mb-1">{label}</div>
+												<div className={`text-sm leading-snug break-words ${value ? 'text-slate-200' : 'text-slate-600'}`}>
+													{value || 'Nicht ausgefuellt'}
+												</div>
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						);
+					})}
+				</div>
 			</div>
 		);
 	}
@@ -121,24 +244,43 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 					>
 						Alle
 					</button>
-					{categories.map((category) => (
-						<button
-							key={category}
-							onClick={() => setActiveCategories(new Set([category]))}
-							className={`rounded-full px-2 py-1 text-xs ${
-								activeCategories.has(category) && activeCategories.size === 1
-									? 'bg-slate-600 text-white'
-									: 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-							}`}
-						>
-							{CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS]}
-						</button>
-					))}
+					{categories.map((category) => {
+						const isActive = activeCategories.has(category);
+						return (
+							<button
+								key={category}
+								onClick={() => {
+									const newSet = new Set(activeCategories);
+									if (isActive) {
+										newSet.delete(category);
+									} else {
+										newSet.add(category);
+									}
+									// Mindestens eine Kategorie muss aktiv sein
+									if (newSet.size > 0) {
+										setActiveCategories(newSet);
+									}
+								}}
+								className={`rounded-full px-2 py-1 text-xs ${
+									isActive
+										? 'bg-slate-600 text-white'
+										: 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+								}`}
+							>
+								{CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS]}
+							</button>
+						);
+					})}
 				</div>
 			)}
 
 			{/* Dynamic Form Fields by Category */}
 			<div className="space-y-4">
+				{activeCategories.size === 0 && categories.length > 0 && (
+					<div className="text-xs text-slate-400 mb-2">
+						Keine Kategorien aktiv. Bitte Kategorien auswählen.
+					</div>
+				)}
 				{Array.from(activeCategories).map((category) => {
 					const categoryFields = getFieldsForCategory(orderType, category as any);
 					if (categoryFields.length === 0) return null;
@@ -173,6 +315,10 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 										}
 									}
 
+									if (!shouldRenderField(fieldKey)) {
+										return null;
+									}
+
 
 													return (
 														<label key={fieldKey} className="block">
@@ -189,6 +335,34 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 																onChange={(v) => updateSpec(fieldKey, v)}
 																hasError={!!hasError}
 															/>
+															) : fieldKey === 'pickup_mount_direct' ? (
+																<PickupMountInput
+																	directValue={specValues['pickup_mount_direct'] || ''}
+																	frameValue={specValues['pickup_mount_frame'] || ''}
+																	onDirectChange={(v) => updateSpec('pickup_mount_direct', v)}
+																	onFrameChange={(v) => updateSpec('pickup_mount_frame', v)}
+																/>
+															) : fieldKey === 'headstock_logo' ? (
+																<HeadstockLogoInput
+																	logoValue={specValues['headstock_logo'] || ''}
+																	notesValue={specValues['headstock_logo_notes'] || ''}
+																	onLogoChange={(v) => updateSpec('headstock_logo', v)}
+																	onNotesChange={(v) => updateSpec('headstock_logo_notes', v)}
+																	hasError={!!hasError}
+																/>
+															) : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+																<div className="flex items-center gap-2">
+																	<input
+																		type="checkbox"
+																		id={`${fieldKey}-checkbox-left`}
+																		checked={isTruthySpecValue(specValues[fieldKey])}
+																		onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+																		className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
+																	/>
+																	<label htmlFor={`${fieldKey}-checkbox-left`} className="text-sm cursor-pointer">
+																		{label}
+																	</label>
+																</div>
 														) : fieldKey === 'battery_compartment' ? (
 															<BatteryCompartmentInput
 																value={specValues[fieldKey] || ''}
@@ -213,6 +387,19 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 																	onChange={(v) => updateSpec(fieldKey, v)}
 																	hasError={!!hasError}
 																/>
+															) : fieldKey === 'body_has_top' ? (
+																<div className="flex items-center gap-2">
+																	<input
+																		type="checkbox"
+																		id={`body-top-checkbox-left-${fieldKey}`}
+																		checked={isTruthySpecValue(specValues[fieldKey])}
+																		onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+																		className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
+																	/>
+																	<label htmlFor={`body-top-checkbox-left-${fieldKey}`} className="text-sm cursor-pointer">
+																		Top vorhanden
+																	</label>
+																</div>
 															) : AUTO_FIELDS.has(fieldKey) ? (
 																<AutoFillInput
 																	fieldKey={fieldKey}
@@ -268,6 +455,10 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 														}
 													}
 
+													if (!shouldRenderField(fieldKey)) {
+														return null;
+													}
+
 
 													return (
 														<label key={fieldKey} className="block">
@@ -284,6 +475,34 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 																onChange={(v) => updateSpec(fieldKey, v)}
 																hasError={!!hasError}
 															/>
+															) : fieldKey === 'pickup_mount_direct' ? (
+																<PickupMountInput
+																	directValue={specValues['pickup_mount_direct'] || ''}
+																	frameValue={specValues['pickup_mount_frame'] || ''}
+																	onDirectChange={(v) => updateSpec('pickup_mount_direct', v)}
+																	onFrameChange={(v) => updateSpec('pickup_mount_frame', v)}
+																/>
+															) : fieldKey === 'headstock_logo' ? (
+																<HeadstockLogoInput
+																	logoValue={specValues['headstock_logo'] || ''}
+																	notesValue={specValues['headstock_logo_notes'] || ''}
+																	onLogoChange={(v) => updateSpec('headstock_logo', v)}
+																	onNotesChange={(v) => updateSpec('headstock_logo_notes', v)}
+																	hasError={!!hasError}
+																/>
+															) : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+																<div className="flex items-center gap-2">
+																	<input
+																		type="checkbox"
+																		id={`${fieldKey}-checkbox-right`}
+																		checked={isTruthySpecValue(specValues[fieldKey])}
+																		onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+																		className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
+																	/>
+																	<label htmlFor={`${fieldKey}-checkbox-right`} className="text-sm cursor-pointer">
+																		{label}
+																	</label>
+																</div>
 														) : fieldKey === 'battery_compartment' ? (
 															<BatteryCompartmentInput
 																value={specValues[fieldKey] || ''}
@@ -308,6 +527,19 @@ export default function OrderDatasheetForm({ orderId, orderType, onSpecsChange }
 																	onChange={(v) => updateSpec(fieldKey, v)}
 																	hasError={!!hasError}
 																/>
+															) : fieldKey === 'body_has_top' ? (
+																<div className="flex items-center gap-2">
+																	<input
+																		type="checkbox"
+																		id={`body-top-checkbox-right-${fieldKey}`}
+																		checked={isTruthySpecValue(specValues[fieldKey])}
+																		onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+																		className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
+																	/>
+																	<label htmlFor={`body-top-checkbox-right-${fieldKey}`} className="text-sm cursor-pointer">
+																		Top vorhanden
+																	</label>
+																</div>
 															) : AUTO_FIELDS.has(fieldKey) ? (
 																<AutoFillInput
 																	fieldKey={fieldKey}

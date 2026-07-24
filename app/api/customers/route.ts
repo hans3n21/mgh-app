@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { auth } from '@/lib/auth';
 
 const createCustomerSchema = z.object({
   name: z.string().min(1),
@@ -16,6 +17,11 @@ const updateCustomerSchema = createCustomerSchema.partial();
 
 export async function GET() {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const customers = await prisma.customer.findMany({
       include: {
         orders: true,
@@ -37,8 +43,35 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const validatedData = createCustomerSchema.parse(body);
+
+    // Dedupe per E-Mail: Doppelte Submits (z.B. Auftrags-Formular nach
+    // Validierungsfehler erneut abgeschickt) legten denselben Kunden mehrfach
+    // an. Existiert die E-Mail bereits, wird der bestehende Datensatz um neu
+    // mitgelieferte Felder ergänzt und zurückgegeben statt dupliziert.
+    const email = validatedData.email?.trim();
+    if (email) {
+      const existing = await prisma.customer.findFirst({
+        where: { email: { equals: email, mode: 'insensitive' } },
+      });
+      if (existing) {
+        const fillOnly: Record<string, string> = {};
+        for (const key of ['phone', 'addressLine1', 'postalCode', 'city', 'country'] as const) {
+          const incoming = validatedData[key]?.trim();
+          if (incoming && !existing[key]) fillOnly[key] = incoming;
+        }
+        const customer = Object.keys(fillOnly).length > 0
+          ? await prisma.customer.update({ where: { id: existing.id }, data: fillOnly })
+          : existing;
+        return NextResponse.json(customer, { status: 200 });
+      }
+    }
 
     const customer = await prisma.customer.create({
       data: validatedData,
@@ -63,6 +96,11 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, ...rest } = body || {};
     if (!id) {

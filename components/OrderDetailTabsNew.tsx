@@ -27,9 +27,15 @@ import PickguardInput from '@/components/PickguardInput';
 import BatteryCompartmentInput from '@/components/BatteryCompartmentInput';
 import SpokewheelInput from '@/components/SpokewheelInput';
 import NeckBindingInput from '@/components/NeckBindingInput';
+import HeadstockLogoInput from '@/components/HeadstockLogoInput';
+import PickupMountInput from '@/components/PickupMountInput';
 import DatasheetPDFGenerator from '@/components/DatasheetPDFGenerator';
+import CustomerDatasheetActions from '@/components/CustomerDatasheetActions';
+import SuggestionBanner from '@/components/SuggestionBanner';
+import PhoneLink from '@/components/PhoneLink';
 import { AUTO_FIELDS } from '@/lib/autofill-data';
 import { useRef } from 'react';
+import OrderParts from '@/components/OrderParts';
 
 // Komponente für Bild-Anhänge in der Kommunikation
 function ImageAttachmentPanel({ images }: { images: OrderImage[] }) {
@@ -94,17 +100,6 @@ function ImageAttachmentPanel({ images }: { images: OrderImage[] }) {
     </div>
   );
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  intake: 'Eingang',
-  quote: 'Angebot',
-  in_progress: 'In Arbeit',
-  finishing: 'Finish',
-  setup: 'Setup',
-  awaiting_customer: 'Warten auf Kunde',
-  complete: 'Fertig',
-  design_review: 'Designprüfung',
-};
 
 const TYPE_LABEL: Record<string, string> = {
   GUITAR: 'Gitarrenbau',
@@ -174,17 +169,46 @@ interface OrderDetailTabsNewProps {
     customer: { id: string; name: string; email?: string; phone?: string } | null;
     assignee: { id: string; name: string } | null;
     latestDatasheet?: { version: string; updatedAt: string };
+    mails?: Array<{
+      id: string;
+      messageId?: string;
+      subject: string | null;
+      fromName: string | null;
+      fromEmail: string;
+      text: string | null;
+      html: string | null;
+      date: Date;
+      folder: string;
+      senderId: string | null;
+      attachments: Array<{ id: string; filename: string; mimeType: string | null; size: number }>;
+    }>;
   };
   paymentStatus?: string | null;
+  paymentMethod?: string | null;
+  depositAmountCents?: number | null;
   onStatusChange: (status: string) => void;
   onAssigneeChange: (assigneeId: string) => void;
   onImagesChange: (images: OrderImage[]) => void;
   onMessagesChange: (messages: Message[]) => void;
   onPaymentStatusChange?: (paymentStatus: string) => void;
+  onPaymentMethodChange?: (paymentMethod: 'paypal' | 'direktueberweisung' | null) => void;
+  onDepositAmountChange?: (depositAmountCents: number | null) => void;
   shopMode?: 'full' | 'deposit' | 'balance';
   shopAmount?: string;
   onShopOptionsChange?: (mode: 'full' | 'deposit' | 'balance', amount: string) => void;
   amountLocked?: boolean;
+  showSpecsTab?: boolean;
+  hasUnreadComm?: boolean;
+  initialTasks?: Array<{
+    id: string;
+    title: string;
+    note: string | null;
+    status: string;
+    completedAt: string | null;
+    createdAt: string;
+    assignee: { id: string; name: string };
+    creator: { id: string; name: string };
+  }>;
 }
 
 export default function OrderDetailTabsNew({
@@ -193,22 +217,30 @@ export default function OrderDetailTabsNew({
   specs,
   images,
   messages,
-  status,
-  assigneeId,
   users,
   currentUserId,
   order,
   paymentStatus,
-  onStatusChange,
-  onAssigneeChange,
+  paymentMethod,
+  depositAmountCents,
   onImagesChange,
   onMessagesChange,
   onPaymentStatusChange,
+  onPaymentMethodChange,
+  onDepositAmountChange,
   shopMode = 'full',
   shopAmount = '',
   onShopOptionsChange,
   amountLocked = false,
+  showSpecsTab = true,
+  hasUnreadComm = false,
+  initialTasks,
 }: OrderDetailTabsNewProps) {
+  const LINKED_SPEC_KEYS: Record<string, string> = {
+    body_surface_treatment: 'finish_body',
+    finish_body: 'body_surface_treatment',
+  };
+
   const [activeTab, setActiveTab] = useState('spec');
   const [activeCategories, setActiveCategories] = useState<Set<CategoryKey>>(() => {
     // Standardmäßig alle Kategorien anzeigen
@@ -218,9 +250,20 @@ export default function OrderDetailTabsNew({
   const [splitPayment, setSplitPayment] = useState<boolean>(false);
   const [extrasOpen, setExtrasOpen] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState<boolean>(amountLocked);
+  const [depositInput, setDepositInput] = useState<string>('');
   const isGuitar = orderType === 'GUITAR';
   const [datasheetVersion, setDatasheetVersion] = useState<number | undefined>(undefined);
   const [datasheetUpdatedAt, setDatasheetUpdatedAt] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    setDepositInput(depositAmountCents != null ? (depositAmountCents / 100).toString() : '');
+  }, [depositAmountCents]);
+
+  // Bearbeitungsmodus Datenblatt: standardmäßig aus, außer wenn noch keine Einträge
+  const hasAnySpecEntries = useMemo(
+    () => specs.some(s => s.value && s.value.trim() !== ''),
+    [specs]
+  );
+  const [editingDatasheet, setEditingDatasheet] = useState(() => !hasAnySpecEntries);
 
   // Anzeigeformat für Betrag: ohne überflüssige Nachkommastellen, mit € in einer Zeile
   const formattedAmount = (() => {
@@ -334,12 +377,19 @@ export default function OrderDetailTabsNew({
     // Skip if value unchanged
     if ((specValues[key] ?? '') === (value ?? '')) return;
 
-    setSpecValues(prev => ({ ...prev, [key]: value }));
+    const nextUpdates: Record<string, string> = { [key]: value };
+    const linkedKey = LINKED_SPEC_KEYS[key];
+    if (linkedKey && (specValues[linkedKey] ?? '') !== (value ?? '')) {
+      nextUpdates[linkedKey] = value;
+    }
 
-    if (validationErrors[key]) {
+    setSpecValues(prev => ({ ...prev, ...nextUpdates }));
+
+    const keysToClear = Object.keys(nextUpdates).filter((k) => validationErrors[k]);
+    if (keysToClear.length > 0) {
       setValidationErrors(prev => {
         const newErrors = { ...prev };
-        delete newErrors[key];
+        keysToClear.forEach((k) => delete newErrors[k]);
         return newErrors;
       });
     }
@@ -353,7 +403,7 @@ export default function OrderDetailTabsNew({
         await fetch(`/api/orders/${orderId}/spec`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ [key]: value }),
+          body: JSON.stringify(nextUpdates),
         });
       } catch (error) {
         console.error('Fehler beim Speichern:', error);
@@ -362,6 +412,81 @@ export default function OrderDetailTabsNew({
       }
     }, 500);
   };
+
+  const isTruthySpecValue = (value?: string) => {
+    const normalized = (value || '').trim().toLowerCase();
+    return normalized === 'ja' || normalized === 'true' || normalized === '1' || normalized === 'yes';
+  };
+
+  const shouldRenderField = (fieldKey: string) => {
+    if (fieldKey === 'pickup_mount_frame' || fieldKey === 'headstock_logo_notes') {
+      return false;
+    }
+    const hasTop = isTruthySpecValue(specValues['body_has_top']);
+    const hasLegacyValue = Boolean((specValues[fieldKey] || '').trim());
+    if (fieldKey === 'body_top' || fieldKey === 'body_top_thickness') return hasTop || hasLegacyValue;
+    // Mit Top wird das Finish in Top/Korpus aufgeteilt, das Gesamt-Finish entfällt.
+    if (fieldKey === 'finish_body_top' || fieldKey === 'finish_body_back') return hasTop || hasLegacyValue;
+    if (fieldKey === 'finish_body' || fieldKey === 'body_surface_treatment') return !hasTop;
+    return true;
+  };
+
+  const hasReadableValue = (value?: string) => {
+    const trimmed = (value || '').trim();
+    if (!trimmed) return false;
+    const normalized = trimmed.toLowerCase();
+    return !['nein', 'false', '0', 'no', 'n/a', '-'].includes(normalized);
+  };
+
+  const shouldShowFieldForCategory = (category: CategoryKey, fieldKey: string) => {
+    if (category === 'oberflaeche' && orderType === 'FINISH_ONLY') {
+      const oberflaeche_typ = specValues['oberflaeche_typ'] || '';
+      if (!shouldShowField(fieldKey, oberflaeche_typ)) {
+        return false;
+      }
+    }
+    return shouldRenderField(fieldKey);
+  };
+
+  const getReadValueForField = (fieldKey: string) => {
+    if (fieldKey === 'pickup_mount_direct') {
+      const direct = (specValues['pickup_mount_direct'] || '').trim();
+      const frame = (specValues['pickup_mount_frame'] || '').trim();
+      const parts = [
+        hasReadableValue(direct) ? `Direkt: ${direct}` : '',
+        hasReadableValue(frame) ? `Rahmen: ${frame}` : '',
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(' / ') : null;
+    }
+
+    if (fieldKey === 'headstock_logo') {
+      const logo = (specValues['headstock_logo'] || '').trim();
+      const notes = (specValues['headstock_logo_notes'] || '').trim();
+      const parts = [
+        hasReadableValue(logo) ? logo : '',
+        hasReadableValue(notes) ? notes : '',
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(' - ') : null;
+    }
+
+    if (fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' || fieldKey === 'body_has_top') {
+      return isTruthySpecValue(specValues[fieldKey]) ? 'Ja' : null;
+    }
+
+    const value = (specValues[fieldKey] || '').trim();
+    return hasReadableValue(value) ? value : null;
+  };
+
+  const getReadEntriesForCategory = (category: CategoryKey) => (
+    getFieldsForCategory(orderType, category)
+      .filter((fieldKey) => shouldShowFieldForCategory(category, fieldKey))
+      .map((fieldKey) => ({
+        key: fieldKey,
+        label: FIELD_LABELS[fieldKey] || fieldKey,
+        value: getReadValueForField(fieldKey),
+      }))
+      .filter((entry): entry is { key: string; label: string; value: string } => Boolean(entry.value))
+  );
 
   // Lade neueste Datenblatt-Version (pro Auftrag + Typ)
   useEffect(() => {
@@ -467,45 +592,25 @@ export default function OrderDetailTabsNew({
     );
   }, [images, activeCategories, activeTab]);
 
+  const visibleSpecCategories = Array.from(activeCategories).filter((category) => {
+    if (editingDatasheet) return true;
+    const hasEntries = getReadEntriesForCategory(category).length > 0;
+    const hasImages = images?.some((img) => img.scope === category) || false;
+    return hasEntries || hasImages;
+  });
+
   return (
-    <div className="space-y-4">
-      {/* Status Controls */}
-      <div className="flex items-center gap-2">
-        <select
-          value={status}
-          onChange={(e) => onStatusChange(e.target.value)}
-          className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-1.5 text-sm"
-        >
-          {Object.entries(STATUS_LABEL).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={assigneeId || ''}
-          onChange={(e) => onAssigneeChange(e.target.value)}
-          className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-1.5 text-sm"
-        >
-          <option value="">Nicht zugewiesen</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name}
-            </option>
-          ))}
-        </select>
-
-        {saving && (
-          <div className="text-xs text-slate-400">Speichert...</div>
-        )}
-
-        {Object.keys(validationErrors).length > 0 && (
-          <div className="text-xs text-red-400">
-            {Object.keys(validationErrors).length} Pflichtfeld(er) fehlen
-          </div>
-        )}
-      </div>
+    <div className="space-y-3 sm:space-y-4">
+      {(saving || Object.keys(validationErrors).length > 0) && (
+        <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs">
+          {saving && <span className="text-slate-400">Speichert...</span>}
+          {Object.keys(validationErrors).length > 0 && (
+            <span className={saving ? 'ml-3 text-red-400' : 'text-red-400'}>
+              {Object.keys(validationErrors).length} Pflichtfeld(er) fehlen
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Tabs - nur auf Desktop */}
       <div className="hidden md:flex flex-wrap gap-1">
@@ -513,33 +618,57 @@ export default function OrderDetailTabsNew({
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`rounded-lg px-3 py-1.5 text-sm ${activeTab === tab.id
+            className={`relative rounded-lg px-3 py-1.5 text-sm ${activeTab === tab.id
               ? 'bg-slate-200/10 text-white'
               : 'bg-slate-200/5 text-slate-300 hover:bg-slate-200/10'
               }`}
           >
             {tab.label}
+            {tab.id === 'comm' && hasUnreadComm && activeTab !== 'comm' && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
+            )}
           </button>
         ))}
       </div>
 
       {/* Tab Content */}
-      <div className="rounded-xl border border-slate-800 p-3">
+      <div className="rounded-xl border border-slate-800 p-3 sm:p-4">
         {activeTab === 'spec' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">Datenblatt - {TYPE_LABEL[orderType] || orderType}</h3>
-              <div className="flex items-center gap-3">
+            <SuggestionBanner orderId={orderId} />
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <h3 className="hidden sm:block font-semibold">Datenblatt - {TYPE_LABEL[orderType] || orderType}</h3>
+                <button
+                  type="button"
+                  onClick={() => setEditingDatasheet(v => !v)}
+                  className={`flex shrink-0 items-center gap-2 px-2.5 py-1.5 text-sm rounded-lg transition-all ${
+                    editingDatasheet
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_14px_rgba(251,191,36,0.55)] animate-pulse'
+                  }`}
+                  title={editingDatasheet ? 'Bearbeitung aktiv (entsperrt)' : 'Bearbeitung gesperrt'}
+                >
+                  <span aria-hidden>{editingDatasheet ? '🔓' : '🔒'}</span>
+                  <span className="hidden sm:inline">{editingDatasheet ? 'Bearbeitung aktiv' : 'Bearbeitung gesperrt'}</span>
+                  <span className="sm:hidden">{editingDatasheet ? 'Offen' : 'Gesperrt'}</span>
+                </button>
+              </div>
+              <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-3">
+                {/* Kunden-Datenblatt: ausfüllbares PDF + Import */}
+                <CustomerDatasheetActions orderId={orderId} />
+
                 {/* Datenblatt aktualisieren Button */}
                 <button
                   onClick={() => {
                     // Seite neu laden um aktuellste Daten zu bekommen
                     window.location.reload();
                   }}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-lg text-slate-200"
+                  className="flex items-center gap-2 px-2.5 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-lg text-slate-200"
                   title="Datenblatt mit neuesten Änderungen aktualisieren"
                 >
-                  🔄 Aktualisieren
+                  <span aria-hidden>🔄</span>
+                  <span className="hidden sm:inline">Aktualisieren</span>
                 </button>
 
                 {/* Direkter PDF-Download */}
@@ -548,11 +677,19 @@ export default function OrderDetailTabsNew({
                   orderTitle={order.title}
                   orderType={orderType}
                   customerName={order.customer?.name || 'Unbekannt'}
-                  specs={specs}
+                  orderCreatedAt={order.createdAt}
+                  specs={Object.entries(specValues).map(([key, value], index) => ({
+                    id: `${key}-${index}`,
+                    key,
+                    value,
+                  }))}
                   activeCategories={activeCategories}
-                  assigneeName={assigneeId ? users.find(u => u.id === assigneeId)?.name : undefined}
+                  assigneeName={order.assignee?.name}
                   finalAmount={shopAmount}
                   paymentStatus={paymentStatus || undefined}
+                  paymentMethod={paymentMethod || undefined}
+                  depositAmount={depositAmountCents != null ? (depositAmountCents / 100).toFixed(2) : undefined}
+                  attachImages={images?.filter(img => img.attach).map(img => ({ id: img.id, path: img.path, comment: img.comment, position: img.position })) || []}
                   buttonText="📄 PDF"
                   // Kein onPDFGenerated = direkter Download
                   datasheetVersion={datasheetVersion}
@@ -564,10 +701,10 @@ export default function OrderDetailTabsNew({
 
             {/* Category Chips - nur anzeigen wenn mehr als eine Kategorie */}
             {categories.length > 1 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
                 <button
                   onClick={() => setActiveCategories(new Set(categories))}
-                  className={`rounded-full px-3 py-1.5 text-sm ${activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  className={`min-h-10 shrink-0 rounded-full px-3 py-1.5 text-sm ${activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                     }`}
                 >
                   Alle
@@ -576,7 +713,7 @@ export default function OrderDetailTabsNew({
                   <button
                     key={category}
                     onClick={() => setActiveCategories(new Set([category]))}
-                    className={`rounded-full px-3 py-1.5 text-sm ${activeCategories.has(category) && activeCategories.size === 1
+                    className={`min-h-10 shrink-0 rounded-full px-3 py-1.5 text-sm ${activeCategories.has(category) && activeCategories.size === 1
                       ? 'bg-slate-600 text-white'
                       : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                       }`}
@@ -589,8 +726,10 @@ export default function OrderDetailTabsNew({
 
             {/* Dynamic Form Fields by Category */}
             <div className="space-y-6">
-              {Array.from(activeCategories).map((category) => {
+              {visibleSpecCategories.map((category) => {
                 const categoryFields = getFieldsForCategory(orderType, category);
+                const readEntries = getReadEntriesForCategory(category);
+                const categoryImages = images?.filter(img => img.scope === category) || [];
                 if (categoryFields.length === 0) return null;
 
                 return (
@@ -600,14 +739,13 @@ export default function OrderDetailTabsNew({
                     </h4>
 
                     {/* Category Images: nur anzeigen, wenn vorhanden */}
-                    {images?.some(img => img.scope === category) && (
+                    {categoryImages.length > 0 && (
                       <div className="mb-4">
                         <div className="text-xs text-slate-400 mb-2">
                           Bilder für {CATEGORY_LABELS[category]}
                         </div>
                         <div className="flex gap-2 overflow-x-auto pb-2">
-                          {images
-                            .filter(img => img.scope === category)
+                          {categoryImages
                             .slice(0, 4)
                             .map((image, idx) => (
                               <div
@@ -641,6 +779,23 @@ export default function OrderDetailTabsNew({
                     )}
 
                     {/* Category Fields - Word-Style Layout: erste Hälfte links, zweite Hälfte rechts */}
+                    {!editingDatasheet ? (
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {readEntries.map((entry) => (
+                          <div
+                            key={entry.key}
+                            className="rounded-lg border border-slate-800/80 bg-slate-900/35 px-3 py-2.5"
+                          >
+                            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                              {entry.label}
+                            </div>
+                            <div className="mt-1 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-slate-100">
+                              {entry.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
                     <div className="grid sm:grid-cols-2 gap-3 text-sm">
                       {(() => {
                         const halfLength = Math.ceil(categoryFields.length / 2);
@@ -664,6 +819,10 @@ export default function OrderDetailTabsNew({
                                   }
                                 }
 
+                                if (!shouldRenderField(fieldKey)) {
+                                  return null;
+                                }
+
 
                                 return (
                                   <label key={fieldKey} className="block">
@@ -679,31 +838,81 @@ export default function OrderDetailTabsNew({
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
+                                    ) : fieldKey === 'pickup_mount_direct' ? (
+                                      <PickupMountInput
+                                        directValue={specValues['pickup_mount_direct'] || ''}
+                                        frameValue={specValues['pickup_mount_frame'] || ''}
+                                        onDirectChange={(v) => updateSpec('pickup_mount_direct', v)}
+                                        onFrameChange={(v) => updateSpec('pickup_mount_frame', v)}
+                                        disabled={!editingDatasheet}
+                                      />
+                                    ) : fieldKey === 'pickup_mount_frame' ? null : fieldKey === 'headstock_logo' ? (
+                                      <HeadstockLogoInput
+                                        logoValue={specValues['headstock_logo'] || ''}
+                                        notesValue={specValues['headstock_logo_notes'] || ''}
+                                        onLogoChange={(v) => updateSpec('headstock_logo', v)}
+                                        onNotesChange={(v) => updateSpec('headstock_logo_notes', v)}
+                                        hasError={!!hasError}
+                                        disabled={!editingDatasheet}
+                                      />
+                                    ) : fieldKey === 'headstock_logo_notes' ? null : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          id={`${fieldKey}-checkbox-left`}
+                                          checked={isTruthySpecValue(specValues[fieldKey])}
+                                          onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+                                          disabled={!editingDatasheet}
+                                          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
+                                        />
+                                        <label htmlFor={`${fieldKey}-checkbox-left`} className="text-sm cursor-pointer">
+                                          {label}
+                                        </label>
+                                      </div>
                                     ) : fieldKey === 'battery_compartment' ? (
                                       <BatteryCompartmentInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : fieldKey === 'spokewheel' ? (
                                       <SpokewheelInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : fieldKey === 'neck_binding' ? (
                                       <NeckBindingInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : fieldKey === 'body_binding' ? (
                                       <BindingInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
+                                    ) : fieldKey === 'body_has_top' ? (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          id={`body-top-checkbox-left-${fieldKey}`}
+                                          checked={isTruthySpecValue(specValues[fieldKey])}
+                                          onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+                                          disabled={!editingDatasheet}
+                                          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
+                                        />
+                                        <label htmlFor={`body-top-checkbox-left-${fieldKey}`} className="text-sm cursor-pointer">
+                                          Top vorhanden
+                                        </label>
+                                      </div>
                                     ) : AUTO_FIELDS.has(fieldKey) ? (
                                       <AutoFillInput
                                         fieldKey={fieldKey}
@@ -711,12 +920,18 @@ export default function OrderDetailTabsNew({
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : (
                                       <input
                                         value={specValues[fieldKey] || ''}
                                         onChange={(e) => updateSpec(fieldKey, e.target.value)}
-                                        className={`w-full rounded bg-slate-950 border px-2 py-1.5 ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600'}`}
+                                        disabled={!editingDatasheet}
+                                        className={`w-full rounded border px-2 py-1.5 transition-colors ${
+                                          hasError
+                                            ? 'border-red-500 focus:border-red-400 bg-slate-950 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                            : 'bg-slate-950 border-slate-800 focus:border-slate-600 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                        } disabled:cursor-not-allowed`}
                                         placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
                                       />
                                     )}
@@ -742,6 +957,10 @@ export default function OrderDetailTabsNew({
                                   }
                                 }
 
+                                if (!shouldRenderField(fieldKey)) {
+                                  return null;
+                                }
+
                                 return (
                                   <label key={fieldKey} className="block">
                                     <div className="text-xs text-slate-400 mb-1 flex items-center gap-1">
@@ -756,31 +975,81 @@ export default function OrderDetailTabsNew({
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
+                                    ) : fieldKey === 'pickup_mount_direct' ? (
+                                      <PickupMountInput
+                                        directValue={specValues['pickup_mount_direct'] || ''}
+                                        frameValue={specValues['pickup_mount_frame'] || ''}
+                                        onDirectChange={(v) => updateSpec('pickup_mount_direct', v)}
+                                        onFrameChange={(v) => updateSpec('pickup_mount_frame', v)}
+                                        disabled={!editingDatasheet}
+                                      />
+                                    ) : fieldKey === 'pickup_mount_frame' ? null : fieldKey === 'headstock_logo' ? (
+                                      <HeadstockLogoInput
+                                        logoValue={specValues['headstock_logo'] || ''}
+                                        notesValue={specValues['headstock_logo_notes'] || ''}
+                                        onLogoChange={(v) => updateSpec('headstock_logo', v)}
+                                        onNotesChange={(v) => updateSpec('headstock_logo_notes', v)}
+                                        hasError={!!hasError}
+                                        disabled={!editingDatasheet}
+                                      />
+                                    ) : fieldKey === 'headstock_logo_notes' ? null : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          id={`${fieldKey}-checkbox-right`}
+                                          checked={isTruthySpecValue(specValues[fieldKey])}
+                                          onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+                                          disabled={!editingDatasheet}
+                                          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
+                                        />
+                                        <label htmlFor={`${fieldKey}-checkbox-right`} className="text-sm cursor-pointer">
+                                          {label}
+                                        </label>
+                                      </div>
                                     ) : fieldKey === 'battery_compartment' ? (
                                       <BatteryCompartmentInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : fieldKey === 'spokewheel' ? (
                                       <SpokewheelInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : fieldKey === 'neck_binding' ? (
                                       <NeckBindingInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : fieldKey === 'body_binding' ? (
                                       <BindingInput
                                         value={specValues[fieldKey] || ''}
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
+                                    ) : fieldKey === 'body_has_top' ? (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          id={`body-top-checkbox-right-${fieldKey}`}
+                                          checked={isTruthySpecValue(specValues[fieldKey])}
+                                          onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
+                                          disabled={!editingDatasheet}
+                                          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
+                                        />
+                                        <label htmlFor={`body-top-checkbox-right-${fieldKey}`} className="text-sm cursor-pointer">
+                                          Top vorhanden
+                                        </label>
+                                      </div>
                                     ) : AUTO_FIELDS.has(fieldKey) ? (
                                       <AutoFillInput
                                         fieldKey={fieldKey}
@@ -788,12 +1057,18 @@ export default function OrderDetailTabsNew({
                                         onChange={(v) => updateSpec(fieldKey, v)}
                                         placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
                                         hasError={!!hasError}
+                                        disabled={!editingDatasheet}
                                       />
                                     ) : (
                                       <input
                                         value={specValues[fieldKey] || ''}
                                         onChange={(e) => updateSpec(fieldKey, e.target.value)}
-                                        className={`w-full rounded bg-slate-950 border px-2 py-1.5 ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600'}`}
+                                        disabled={!editingDatasheet}
+                                        className={`w-full rounded border px-2 py-1.5 transition-colors ${
+                                          hasError
+                                            ? 'border-red-500 focus:border-red-400 bg-slate-950 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                            : 'bg-slate-950 border-slate-800 focus:border-slate-600 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                        } disabled:cursor-not-allowed`}
                                         placeholder={isRequired ? 'Pflichtfeld...' : 'Wert eingeben...'}
                                       />
                                     )}
@@ -807,6 +1082,7 @@ export default function OrderDetailTabsNew({
                         );
                       })()}
                     </div>
+                    )}
                   </div>
                 );
               })}
@@ -816,6 +1092,15 @@ export default function OrderDetailTabsNew({
                   <div className="text-4xl mb-2">📋</div>
                   <div className="text-lg font-medium mb-1">Kategorie auswählen</div>
                   <div className="text-sm">Wähle eine oder mehrere Kategorien aus, um Felder anzuzeigen</div>
+                </div>
+              )}
+
+              {!editingDatasheet && activeCategories.size > 0 && visibleSpecCategories.length === 0 && (
+                <div className="rounded-lg border border-slate-800 bg-slate-900/30 px-4 py-6 text-center">
+                  <div className="text-sm font-medium text-slate-300">Keine sichtbaren Angaben</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Schalte auf Offen, um optionale Felder zu ergaenzen.
+                  </div>
                 </div>
               )}
             </div>
@@ -897,7 +1182,7 @@ export default function OrderDetailTabsNew({
                     >OK</button>
                   </div>
                   {/* Zahlungsstatus Checkboxen */}
-                  <div className="flex items-center gap-4 ml-0 sm:ml-4">
+                  <div className="flex flex-wrap items-center gap-4 ml-0 sm:ml-4">
                     <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
                       <input
                         type="checkbox"
@@ -906,6 +1191,22 @@ export default function OrderDetailTabsNew({
                         onChange={async (e) => {
                           const newStatus = e.target.checked ? 'deposit' : 'open';
                           onPaymentStatusChange?.(newStatus);
+                          if (newStatus !== 'deposit') {
+                            setDepositInput('');
+                            onDepositAmountChange?.(null);
+                            return;
+                          }
+                          if (depositAmountCents != null) {
+                            return;
+                          }
+                          const normalized = (shopAmount || '').replace(',', '.').trim();
+                          const parsed = Number.parseFloat(normalized);
+                          if (!Number.isFinite(parsed) || parsed <= 0) {
+                            return;
+                          }
+                          const defaultDeposit = Math.round(parsed * 100 * 0.5);
+                          setDepositInput((defaultDeposit / 100).toString());
+                          onDepositAmountChange?.(defaultDeposit);
                         }}
                         className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-emerald-500 focus:ring-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
                       />
@@ -923,6 +1224,68 @@ export default function OrderDetailTabsNew({
                       />
                       <span>Bezahlt</span>
                     </label>
+                    {paymentStatus === 'paid' && (
+                      <select
+                        value={paymentMethod || ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          onPaymentMethodChange?.(v === 'paypal' ? 'paypal' : v === 'direktueberweisung' ? 'direktueberweisung' : null);
+                        }}
+                        className="rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200"
+                        title="Zahlungsart"
+                      >
+                        <option value="">— Zahlungsart —</option>
+                        <option value="paypal">PayPal</option>
+                        <option value="direktueberweisung">Direktüberweisung</option>
+                      </select>
+                    )}
+                    {paymentStatus === 'deposit' && (
+                      <>
+                        <select
+                          value={paymentMethod || ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            onPaymentMethodChange?.(v === 'paypal' ? 'paypal' : v === 'direktueberweisung' ? 'direktueberweisung' : null);
+                          }}
+                          className="rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200"
+                          title="Zahlungsart"
+                        >
+                          <option value="">— Zahlungsart —</option>
+                          <option value="paypal">PayPal</option>
+                          <option value="direktueberweisung">Direktüberweisung</option>
+                        </select>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={depositInput}
+                          onChange={(e) => {
+                            setDepositInput(e.target.value);
+                          }}
+                          onBlur={() => {
+                            const raw = depositInput.trim();
+                            if (!raw) {
+                              onDepositAmountChange?.(null);
+                              return;
+                            }
+                            const parsed = Number.parseFloat(raw.replace(',', '.'));
+                            if (!Number.isFinite(parsed) || parsed < 0) {
+                              return;
+                            }
+                            const cents = Math.round(parsed * 100);
+                            onDepositAmountChange?.(cents);
+                            setDepositInput((cents / 100).toString());
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            (e.target as HTMLInputElement).blur();
+                          }}
+                          className="w-28 rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200"
+                          placeholder="Anzahlung €"
+                          title="Anzahlungsbetrag in Euro"
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
@@ -1019,6 +1382,7 @@ export default function OrderDetailTabsNew({
 
         {activeTab === 'comm' && (
           <div className="space-y-3">
+            <SuggestionBanner orderId={orderId} />
             <h3 className="font-semibold">Kommunikation</h3>
             <MessageSystem
               ref={messageSystemRef}
@@ -1027,11 +1391,16 @@ export default function OrderDetailTabsNew({
               currentUserId={currentUserId}
               onMessagesChange={onMessagesChange}
               images={images}
+              onImagesChange={onImagesChange}
               orderTitle={order.title}
               orderType={orderType}
               customerName={order.customer?.name || 'Unbekannt'}
+              customerEmail={order.customer?.email}
+              mails={order.mails}
               specs={specs}
               activeCategories={activeCategories}
+              users={users}
+              tasks={initialTasks}
             />
           </div>
         )}
@@ -1040,20 +1409,23 @@ export default function OrderDetailTabsNew({
 
         {activeTab === 'details' && (
           <div className="space-y-4">
+            <SuggestionBanner orderId={orderId} />
             <h3 className="font-semibold">Details</h3>
+
+            <OrderParts orderId={orderId} />
 
             <div className="grid sm:grid-cols-2 gap-4">
               {/* Kunde */}
               <div className="rounded-xl border border-slate-800 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-semibold">Kunde</div>
-                  {order.customer && (
+                  {order.customer && !editingCustomer && (
                     <button
                       className="text-xs text-slate-400 hover:text-sky-400 flex items-center gap-1"
-                      title={editingCustomer ? "Änderungen speichern" : "Kundendaten bearbeiten"}
-                      onClick={editingCustomer ? saveCustomer : startEditCustomer}
+                      title="Kundendaten bearbeiten"
+                      onClick={startEditCustomer}
                     >
-                      {editingCustomer ? "💾 Speichern" : "✏️ Bearbeiten"}
+                      ✏️ Bearbeiten
                     </button>
                   )}
                 </div>
@@ -1086,12 +1458,12 @@ export default function OrderDetailTabsNew({
                       <div className="w-4 h-4 flex items-center justify-center">
                         <span className="text-slate-400 text-sm">📞</span>
                       </div>
-                      <a
-                        href={`tel:${order.customer.phone}`}
+                      <PhoneLink
+                        phone={order.customer.phone}
                         className="text-xs text-slate-400 hover:text-green-400 transition-colors"
                       >
                         {order.customer.phone}
-                      </a>
+                      </PhoneLink>
                     </div>
                   )}
                   {order.customer && !editingCustomer && (
@@ -1131,8 +1503,9 @@ export default function OrderDetailTabsNew({
                         <input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Ort" value={customerDraft.city} onChange={(e) => setCustomerDraft({ ...customerDraft, city: e.target.value })} />
                         <input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Land" value={customerDraft.country} onChange={(e) => setCustomerDraft({ ...customerDraft, country: e.target.value })} />
                       </div>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-2">
                         <button className="rounded border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800" onClick={() => setEditingCustomer(false)}>Abbrechen</button>
+                        <button className="rounded border border-sky-600 bg-sky-600/20 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-600/30" onClick={saveCustomer}>Speichern</button>
                       </div>
                     </div>
                   )}
@@ -1234,21 +1607,21 @@ export default function OrderDetailTabsNew({
 
       {/* Mobile Navigation unten */}
       <div
-        className="fixed left-0 right-0 bg-slate-900 border-t border-slate-800 md:hidden z-50"
+        className="fixed left-0 right-0 z-50 border-t border-slate-800 bg-slate-950/95 shadow-[0_-12px_30px_rgba(0,0,0,0.35)] backdrop-blur-md md:hidden"
         style={{
           bottom: '0px',
           margin: '0px',
-          padding: '12px 8px 16px 8px'
+          padding: '10px 10px calc(12px + env(safe-area-inset-bottom)) 10px'
         }}
       >
-        <div className="flex justify-around items-center">
+        <div className="mx-auto grid max-w-lg grid-cols-4 gap-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition-colors ${activeTab === tab.id
-                ? 'bg-sky-600 text-white'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              className={`relative flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-2 transition-colors ${activeTab === tab.id
+                ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/30'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                 }`}
             >
               <div className="text-lg">
@@ -1257,7 +1630,10 @@ export default function OrderDetailTabsNew({
                 {tab.id === 'comm' && '💬'}
                 {tab.id === 'details' && '📊'}
               </div>
-              <span className="text-xs font-medium">{tab.label}</span>
+              <span className="max-w-full truncate text-[11px] font-medium leading-tight">{tab.label}</span>
+              {tab.id === 'comm' && hasUnreadComm && activeTab !== 'comm' && (
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
+              )}
             </button>
           ))}
         </div>

@@ -16,11 +16,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
         }
 
-        await moveMail(mailId, targetFolder);
+        const result = await moveMail(mailId, targetFolder);
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, folder: result.folder });
     } catch (error) {
         console.error('Move mail error:', error);
-        return NextResponse.json({ error: 'Failed to move mail' }, { status: 500 });
+        // Den echten IMAP-Grund durchreichen (z.B. "Maximum number of
+        // connections ... exceeded") statt einer nichtssagenden Meldung —
+        // sonst steht in der UI nur "Failed to move mail" ohne Ursache.
+        const err = error as { responseText?: string; response?: string; message?: string };
+        const detail = err?.responseText || err?.response || err?.message || 'Unbekannter Fehler';
+        return NextResponse.json({ error: `Verschieben fehlgeschlagen: ${detail}` }, { status: 500 });
     }
 }

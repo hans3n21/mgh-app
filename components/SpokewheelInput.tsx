@@ -5,9 +5,10 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   hasError?: boolean;
+  disabled?: boolean;
 };
 
-export default function SpokewheelInput({ value, onChange, hasError }: Props) {
+export default function SpokewheelInput({ value, onChange, hasError, disabled }: Props) {
   const [hasSpokewheel, setHasSpokewheel] = useState(false);
 
   // Initialize from prop value ONCE
@@ -31,7 +32,8 @@ export default function SpokewheelInput({ value, onChange, hasError }: Props) {
         id="spokewheel-checkbox"
         checked={hasSpokewheel}
         onChange={(e) => handleSpokewheelChange(e.target.checked)}
-        className={`rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 ${
+        disabled={disabled}
+        className={`rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed ${
           hasError ? 'border-red-500' : ''
         }`}
       />

@@ -1,6 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getPresetForOrderType, getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
+import { touchOrderActivity } from '@/lib/order-activity';
+
+const KEY_ALIASES: Record<string, string> = {
+  korpus_finish: 'body_surface_treatment',
+  body_finish: 'body_surface_treatment',
+  body_ginish: 'body_surface_treatment',
+  body_finish_type: 'body_surface_treatment',
+  has_top: 'body_has_top',
+  top_enabled: 'body_has_top',
+  decke: 'body_has_top',
+};
+
+function normalizeIncomingSpecs(input: Record<string, string>, hasTop: boolean): Record<string, string> {
+  const out: Record<string, string> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(input)) {
+    const key = KEY_ALIASES[rawKey] ?? rawKey;
+    const value = String(rawValue ?? '');
+    const existing = out[key] ?? '';
+    // Bei Doppelwerten längeren/nicht-leeren Wert bevorzugen.
+    out[key] = value.trim().length >= existing.trim().length ? value : existing;
+  }
+
+  // Mit Top ist das Finish in Top/Korpus aufgeteilt: Gesamt-Finish nicht mehr synchronisieren.
+  if (!hasTop) {
+    // Body Finish und Korpus-Finish als semantisch gleich behandeln:
+    // wenn einer fehlt, den vorhandenen übernehmen.
+    const finishBody = (out.finish_body ?? '').trim();
+    const bodyFinish = (out.body_surface_treatment ?? '').trim();
+    if (finishBody && !bodyFinish) out.body_surface_treatment = out.finish_body;
+    if (bodyFinish && !finishBody) out.finish_body = out.body_surface_treatment;
+  }
+
+  return out;
+}
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -57,7 +92,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Accept only string values
-    const candidate = Object.fromEntries(
+    const rawCandidate = Object.fromEntries(
       Object.entries(body as Record<string, unknown>)
         .filter(([, v]) => typeof v === 'string') as [string, string][]
     );
@@ -67,6 +102,18 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (!order) {
       return NextResponse.json({ error: 'Order nicht gefunden' }, { status: 404 });
     }
+
+    // Top-Status ermitteln (aus dieser Anfrage oder dem gespeicherten Stand),
+    // um zu entscheiden, ob das Gesamt-Finish noch synchronisiert werden soll.
+    const existingTopSpecs = await prisma.orderSpecKV.findMany({
+      where: { orderId: id, key: { in: ['body_has_top', 'body_top'] } },
+      select: { key: true, value: true },
+    });
+    const isTruthy = (v?: string) => ['ja', 'true', '1', 'yes'].includes((v || '').trim().toLowerCase());
+    const hasTopValue = (key: string) =>
+      key in rawCandidate ? rawCandidate[key] : existingTopSpecs.find((s) => s.key === key)?.value;
+    const hasTop = isTruthy(hasTopValue('body_has_top')) || Boolean((hasTopValue('body_top') || '').trim());
+    const candidate = normalizeIncomingSpecs(rawCandidate, hasTop);
 
     // Compute allowed and required keys
     const categories = getCategoriesForOrderType(order.type as any);
@@ -115,6 +162,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       })
     );
 
+    await touchOrderActivity(id);
     return NextResponse.json(updates);
   } catch (error) {
     console.error('Error updating specs:', error);

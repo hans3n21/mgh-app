@@ -155,8 +155,8 @@ export default function OrderImages({ orderId, onImagesChange, refreshTrigger }:
 
   return (
     <>
-      <div className="mt-4 pt-3 border-t border-slate-800">
-        <div className="flex items-center justify-between mb-2">
+      <div className="mt-1">
+        <div className="flex items-center justify-between mb-1">
           <h4 className="text-xs font-medium text-slate-400">
             Auftragsbilder ({images.length})
           </h4>
@@ -172,15 +172,15 @@ export default function OrderImages({ orderId, onImagesChange, refreshTrigger }:
         </div>
 
         {images.length === 0 ? (
-          <div className="text-xs text-slate-500 text-center py-4 border border-dashed border-slate-700 rounded">
+          <div className="text-[11px] text-slate-500 text-center py-2 border border-dashed border-slate-700/80 rounded">
             Noch keine Bilder vorhanden
           </div>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-minimal">
             {images.map((image, index) => (
-              <div key={image.id} className="group relative h-20 w-20">
+              <div key={image.id} className="group relative h-14 w-14 shrink-0">
                 <div
-                  className={`w-full h-full border-2 rounded bg-slate-800 overflow-hidden cursor-pointer transition-all ${
+                  className={`w-full h-full border rounded bg-slate-800 overflow-hidden cursor-pointer transition-all ${
                     selectedImages.has(image.id) 
                       ? 'border-sky-500 shadow-lg shadow-sky-500/25' 
                       : 'border-slate-700 hover:border-slate-500'
@@ -204,22 +204,22 @@ export default function OrderImages({ orderId, onImagesChange, refreshTrigger }:
                   
                   {/* Scope-Label */}
                   {image.scope && (
-                    <div className={`absolute top-1 left-1 text-[10px] text-white px-1 py-0.5 rounded ${SCOPE_COLORS[image.scope] || 'bg-slate-600'}`}>
+                    <div className={`absolute top-0.5 left-0.5 text-[9px] leading-none text-white px-1 py-0.5 rounded ${SCOPE_COLORS[image.scope] || 'bg-slate-600'}`}>
                       {SCOPE_LABELS[image.scope] || image.scope}
                     </div>
                   )}
                   
                   {/* Auswahl-Indikator */}
                   {selectedImages.has(image.id) && (
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-sky-600 rounded-full flex items-center justify-center">
-                      <span className="text-white text-[10px]">✓</span>
+                    <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-sky-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-[9px]">✓</span>
                     </div>
                   )}
                 </div>
 
                 {/* Löschen-Button (versteckt, nur bei Hover) */}
                 <button
-                  className="absolute top-1 left-1 w-4 h-4 bg-red-600/90 rounded text-white text-[10px] flex items-center justify-center hover:bg-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-red-600/90 rounded text-white text-[9px] flex items-center justify-center hover:bg-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (confirm(`Möchten Sie das Bild "${image.comment || 'Unbekannt'}" wirklich löschen?`)) {
@@ -233,7 +233,7 @@ export default function OrderImages({ orderId, onImagesChange, refreshTrigger }:
 
                 {/* Auswahl-Button (versteckt, nur bei Hover) */}
                 <button
-                  className="absolute top-1 right-1 w-4 h-4 bg-slate-900/80 rounded text-white text-[10px] flex items-center justify-center hover:bg-slate-900 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-slate-900/80 rounded text-white text-[9px] flex items-center justify-center hover:bg-slate-900 opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleImageSelection(image.id);
@@ -248,7 +248,7 @@ export default function OrderImages({ orderId, onImagesChange, refreshTrigger }:
         )}
 
         {images.length > 0 && (
-          <div className="text-[10px] text-slate-500 mt-2">
+          <div className="text-[10px] text-slate-500 mt-1">
             💡 Klicken zum Vergrößern • Rechts oben klicken zum Markieren
           </div>
         )}

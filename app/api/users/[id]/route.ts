@@ -9,7 +9,7 @@ const updateUserSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   password: z.string().min(6).optional(),
-  role: z.enum(['admin', 'staff']).optional(),
+  role: z.enum(['admin', 'admin_no_feedback', 'staff']).optional(),
 });
 
 
@@ -19,7 +19,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const session = await getServerSession(authOptions);
     
     // Nur Admins können Benutzer bearbeiten
-    if (!session || session.user?.role !== 'admin') {
+    if (!session || (session.user?.role !== 'admin' && session.user?.role !== 'admin_no_feedback')) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -105,7 +105,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const session = await getServerSession(authOptions);
     
     // Nur Admins können Benutzer löschen
-    if (!session || session.user?.role !== 'admin') {
+    if (!session || (session.user?.role !== 'admin' && session.user?.role !== 'admin_no_feedback')) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

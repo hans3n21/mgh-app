@@ -5,9 +5,10 @@ type Props = {
   value: string;
   onChange: (value: string) => void;
   hasError?: boolean;
+  disabled?: boolean;
 };
 
-export default function BatteryCompartmentInput({ value, onChange, hasError }: Props) {
+export default function BatteryCompartmentInput({ value, onChange, hasError, disabled }: Props) {
   const [hasBatteryCompartment, setHasBatteryCompartment] = useState(false);
   const [batteryDetails, setBatteryDetails] = useState('');
 
@@ -41,7 +42,8 @@ export default function BatteryCompartmentInput({ value, onChange, hasError }: P
           id="battery-compartment-checkbox"
           checked={hasBatteryCompartment}
           onChange={(e) => handleBatteryCompartmentChange(e.target.checked)}
-          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
+          disabled={disabled}
+          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
         />
         <label htmlFor="battery-compartment-checkbox" className="text-sm cursor-pointer">
           Batteriefach vorhanden
@@ -53,6 +55,7 @@ export default function BatteryCompartmentInput({ value, onChange, hasError }: P
           type="text"
           value={batteryDetails}
           onChange={(e) => handleDetailsChange(e.target.value)}
+          disabled={disabled}
           onDragOver={(e) => {
             e.preventDefault();
             e.currentTarget.classList.add('border-emerald-500', 'bg-emerald-500/5');
@@ -72,7 +75,7 @@ export default function BatteryCompartmentInput({ value, onChange, hasError }: P
           placeholder="Batteriefach Details (z.B. Größe, Position)..."
           className={`w-full rounded bg-slate-950 border px-2 py-1.5 text-sm transition-colors ${
             hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600 hover:border-slate-700'
-          }`}
+          } disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed`}
           title="Text hierhin ziehen oder eingeben"
         />
       )}

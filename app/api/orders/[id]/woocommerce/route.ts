@@ -3,7 +3,12 @@ import { prisma } from '@/lib/prisma';
 import { createWooOrderForInternal } from '@/lib/woocommerce';
 import { z } from 'zod';
 
-const BodySchema = z.object({ mode: z.enum(['full','deposit','balance']).optional(), amountCents: z.number().int().positive().optional(), customLabel: z.string().optional() });
+const BodySchema = z.object({
+  mode: z.enum(['full', 'deposit', 'balance']).optional(),
+  amountCents: z.number().int().positive().optional(),
+  depositAmountCents: z.number().int().positive().optional(),
+  customLabel: z.string().optional(),
+});
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -14,7 +19,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let body: any = {};
     try { body = await req.json(); } catch {}
     const parsed = BodySchema.safeParse(body);
-    const opts = parsed.success ? { mode: parsed.data.mode, amountCents: parsed.data.amountCents, customLabel: parsed.data.customLabel } : {};
+    const opts = parsed.success
+      ? {
+          mode: parsed.data.mode,
+          amountCents: parsed.data.amountCents,
+          depositAmountCents: parsed.data.depositAmountCents,
+          customLabel: parsed.data.customLabel,
+        }
+      : {};
 
     const { wooOrderId } = await createWooOrderForInternal(id, opts);
     const updated = await prisma.order.update({
@@ -24,6 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // setze paymentStatus heuristisch anhand mode
         paymentStatus: opts.mode === 'deposit' ? 'deposit' : (opts.mode === 'balance' ? 'paid' : undefined),
         finalAmountCents: opts.amountCents ?? undefined,
+        depositAmountCents: opts.mode === 'deposit' ? opts.depositAmountCents ?? undefined : undefined,
       },
       include: {
         customer: true,

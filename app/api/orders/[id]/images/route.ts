@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { persistAttachment } from '@/lib/mail/attachments';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 const createImageSchema = z.object({
   path: z.string(),
@@ -10,6 +12,53 @@ const createImageSchema = z.object({
   scope: z.string().optional(),
   fieldKey: z.string().optional(),
 });
+
+function getAttachmentIdFromApiPath(imagePath: string): string | null {
+  const match = imagePath.match(/^\/api\/attachments\/([^/?#]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+async function ensureAttachmentIsPersisted(attachmentId: string) {
+  const attachment = await prisma.attachment.findUnique({
+    where: { id: attachmentId },
+    select: { id: true, isPersisted: true, path: true },
+  });
+
+  if (!attachment) {
+    return { ok: false as const, status: 404, error: 'Attachment not found' };
+  }
+
+  if (!attachment.isPersisted || !attachment.path) {
+    try {
+      await persistAttachment(attachmentId);
+    } catch (error) {
+      console.warn('[order-images] Could not persist mail attachment before linking', {
+        attachmentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        ok: false as const,
+        status: 409,
+        error: 'Attachment could not be persisted',
+      };
+    }
+  }
+
+  const refreshed = await prisma.attachment.findUnique({
+    where: { id: attachmentId },
+    select: { isPersisted: true, path: true },
+  });
+
+  if (!refreshed?.isPersisted || !refreshed.path) {
+    return {
+      ok: false as const,
+      status: 409,
+      error: 'Attachment could not be persisted',
+    };
+  }
+
+  return { ok: true as const };
+}
 
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -35,6 +84,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { id } = await params;
     const body = await request.json();
     const validatedData = createImageSchema.parse(body);
+    const attachmentId = getAttachmentIdFromApiPath(validatedData.path);
+
+    if (attachmentId) {
+      const persisted = await ensureAttachmentIsPersisted(attachmentId);
+      if (!persisted.ok) {
+        return NextResponse.json(
+          { error: persisted.error },
+          { status: persisted.status }
+        );
+      }
+    }
 
     const image = await prisma.orderImage.create({
       data: {
@@ -43,6 +103,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     });
 
+    await touchOrderActivity(id);
     return NextResponse.json(image);
   } catch (error) {
     if (error instanceof z.ZodError) {

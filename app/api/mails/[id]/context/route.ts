@@ -3,8 +3,14 @@ import { prisma } from '@/lib/prisma';
 import { suggestOrderTypes } from '@/lib/mail/suggestOrderType';
 import { buildSuggestions } from '@/lib/mail/buildSuggestions';
 import { parseMail } from '@/lib/mail/parseMail';
+import { auth } from '@/lib/auth';
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { id } = await params;
   const mail = await prisma.mail.findUnique({
     where: { id },
@@ -63,5 +69,4 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     parsedContact,
   });
 }
-
 

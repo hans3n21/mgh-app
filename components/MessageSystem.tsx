@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useImperativeHandle, forwardRef } from 'react';
+import { useState, useImperativeHandle, forwardRef, useMemo } from 'react';
 import DatasheetPDFGenerator from './DatasheetPDFGenerator';
 import VoiceInputButton from './VoiceInputButton';
+import ImageCarouselModal from './ImageCarouselModal';
 
 interface Message {
   id: string;
@@ -10,6 +11,32 @@ interface Message {
   createdAt: Date;
   senderType: string; // "staff" | "customer"
   sender?: { id: string; name: string } | null;
+  isEmail?: boolean;
+}
+
+interface MailEntry {
+  id: string;
+  messageId?: string;
+  subject: string | null;
+  fromName: string | null;
+  fromEmail: string;
+  text: string | null;
+  html: string | null;
+  date: Date;
+  folder: string;
+  senderId: string | null;
+  attachments: Array<{ id: string; filename: string; mimeType: string | null; size: number }>;
+}
+
+interface OrderTaskEntry {
+  id: string;
+  title: string;
+  note: string | null;
+  status: string;
+  completedAt: string | null;
+  createdAt: string;
+  assignee: { id: string; name: string };
+  creator: { id: string; name: string };
 }
 
 interface MessageSystemProps {
@@ -17,37 +44,413 @@ interface MessageSystemProps {
   messages: Message[];
   currentUserId: string;
   onMessagesChange: (messages: Message[]) => void;
-  images?: { id: string; path: string; comment?: string }[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  images?: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onImagesChange?: (images: any[]) => void;
   onPDFAttachment?: (pdfBlob: Blob, filename: string) => void;
-  // Für PDF-Generierung
+  mails?: MailEntry[];
   orderTitle?: string;
   orderType?: string;
   customerName?: string;
+  customerEmail?: string | null;
   specs?: { id: string; key: string; value: string }[];
   activeCategories?: Set<string>;
+  users?: Array<{ id: string; name: string }>;
+  tasks?: OrderTaskEntry[];
+  onTasksChange?: (tasks: OrderTaskEntry[]) => void;
+}
+
+type TimelineEntry =
+  | { kind: 'message'; data: Message; date: Date }
+  | { kind: 'mail-in'; data: MailEntry; date: Date }
+  | { kind: 'mail-out'; data: MailEntry; date: Date }
+  | { kind: 'task'; data: OrderTaskEntry; date: Date };
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function getMailDedupKey(mail: MailEntry): string {
+  const messageId = (mail.messageId || '').trim().toLowerCase();
+  if (messageId && !messageId.startsWith('no-id-')) {
+    return `msgid:${messageId}`;
+  }
+  const subject = normalizeWhitespace(mail.subject || '');
+  const from = normalizeWhitespace(mail.fromEmail || '');
+  const date = new Date(mail.date).toISOString().slice(0, 16); // minute precision
+  const snippet = normalizeWhitespace((mail.text || stripHtml(mail.html || '')).slice(0, 200));
+  return `fp:${from}|${subject}|${date}|${snippet}`;
+}
+
+function getMailPriority(mail: MailEntry): number {
+  let score = 0;
+  if (mail.folder === 'INBOX') score += 4;
+  if (mail.folder === 'Sent') score += 3;
+  if (mail.folder === 'Trash') score -= 5;
+  if ((mail.attachments || []).length > 0) score += 1;
+  return score;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  return btoa(binary);
+}
+
+const MAX_IMAGE_DIMENSION = 1920;
+const IMAGE_QUALITY = 0.8;
+
+async function compressImage(src: string): Promise<{ base64: string; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+        const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Canvas nicht verfügbar'));
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
+      const base64 = dataUrl.split(',')[1];
+      resolve({ base64, contentType: 'image/jpeg' });
+    };
+    img.onerror = () => reject(new Error('Bild konnte nicht geladen werden'));
+    img.src = src;
+  });
+}
+
+function stripHtml(html: string): string {
+  if (typeof document === 'undefined') return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const el = document.createElement('div');
+  el.innerHTML = html;
+  return el.textContent || '';
+}
+
+function splitQuotedContent(text: string): { newContent: string; quoted: string } {
+  const lines = text.split('\n');
+  const patterns = [
+    /^-{3,}\s*(Urspr|Original|Weitergeleitete)/i,
+    /^_{3,}/,
+    /^Am\s.+\sschrieb\s.+:$/,
+    /^On\s.+\swrote:$/,
+  ];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    for (const pat of patterns) {
+      if (pat.test(line)) {
+        return {
+          newContent: lines.slice(0, i).join('\n').trimEnd(),
+          quoted: lines.slice(i).join('\n'),
+        };
+      }
+    }
+
+    if (/^Von:\s/i.test(line) || /^From:\s/i.test(line)) {
+      const next = (lines[i + 1] || '').trim();
+      if (/^(Gesendet|Sent|An|To|Datum|Date):\s/i.test(next)) {
+        return {
+          newContent: lines.slice(0, i).join('\n').trimEnd(),
+          quoted: lines.slice(i).join('\n'),
+        };
+      }
+    }
+  }
+
+  const firstQuote = lines.findIndex(l => l.startsWith('>'));
+  if (firstQuote > 0 && lines.slice(firstQuote).filter(l => l.startsWith('>')).length >= 2) {
+    return {
+      newContent: lines.slice(0, firstQuote).join('\n').trimEnd(),
+      quoted: lines.slice(firstQuote).join('\n'),
+    };
+  }
+
+  return { newContent: text, quoted: '' };
 }
 
 const MessageSystem = forwardRef<
   { attachPDF: (blob: Blob, filename: string) => void },
   MessageSystemProps
->(function MessageSystem({ 
-  orderId, 
-  messages, 
-  currentUserId, 
+>(function MessageSystem({
+  orderId,
+  messages,
+  currentUserId,
   onMessagesChange,
   images,
+  onImagesChange,
   onPDFAttachment,
   orderTitle,
   orderType,
   customerName,
+  customerEmail,
+  mails,
   specs,
   activeCategories,
+  users,
+  tasks: tasksProp,
+  onTasksChange,
 }, ref) {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendMode, setSendMode] = useState<'internal' | 'email' | 'task'>('email');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [attachedPDF, setAttachedPDF] = useState<{ blob: Blob; filename: string } | null>(null);
   const [optimizing, setOptimizing] = useState(false);
+  const [taskAssigneeId, setTaskAssigneeId] = useState<string>('');
+  const [localTasks, setLocalTasks] = useState<OrderTaskEntry[]>(tasksProp || []);
+  const [attachmentLightbox, setAttachmentLightbox] = useState<{
+    images: Array<{ id: string; url: string; filename: string; mimeType?: string | null }>;
+    index: number;
+  } | null>(null);
+  const [imagePickerLightbox, setImagePickerLightbox] = useState<{ index: number } | null>(null);
+  const [expandedMails, setExpandedMails] = useState<Set<string>>(new Set());
+  const [expandedQuotes, setExpandedQuotes] = useState<Set<string>>(new Set());
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [deletingImages, setDeletingImages] = useState(false);
+  const [hiddenMailIds, setHiddenMailIds] = useState<Set<string>>(new Set());
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+
+  const deleteSelectedImages = async () => {
+    if (!selectedImages.length || !images || !onImagesChange) return;
+    if (!window.confirm(`${selectedImages.length} Datei(en) unwiderruflich löschen?`)) return;
+    setDeletingImages(true);
+    try {
+      for (const imgId of selectedImages) {
+        await fetch(`/api/orders/${orderId}/images?imageId=${imgId}`, { method: 'DELETE' });
+      }
+      onImagesChange(images.filter(img => !selectedImages.includes(img.id)));
+      setSelectedImages([]);
+    } catch (error) {
+      console.error('Fehler beim Löschen:', error);
+      alert('Fehler beim Löschen der Bilder');
+    } finally {
+      setDeletingImages(false);
+    }
+  };
+
+  const isImageFile = (mime: string | null, filename: string) => {
+    if (mime?.startsWith('image/')) return true;
+    const ext = (filename || '').split('.').pop()?.toLowerCase();
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '');
+  };
+  const isPdfFile = (mime: string | null, filename: string) =>
+    (mime || '').includes('pdf') || (filename || '').toLowerCase().endsWith('.pdf');
+
+  const isNonImageFile = (path: string, comment?: string) => {
+    const name = (comment || path || '').toLowerCase();
+    return name.match(/\.(pdf|docx?|xlsx?|txt|csv|zip|rar|7z)$/);
+  };
+
+  const getFileIconForPath = (name: string): string => {
+    const lower = name.toLowerCase();
+    if (lower.endsWith('.pdf')) return '📄';
+    if (lower.match(/\.docx?$/)) return '📝';
+    if (lower.match(/\.xlsx?$/)) return '📊';
+    if (lower.match(/\.(zip|rar|7z)$/)) return '📦';
+    return '📎';
+  };
+
+  const dedupedMails = useMemo(() => {
+    const unique = new Map<string, MailEntry>();
+    for (const mail of mails || []) {
+      if (hiddenMailIds.has(mail.id)) continue;
+      const key = getMailDedupKey(mail);
+      const existing = unique.get(key);
+      if (!existing) {
+        unique.set(key, mail);
+        continue;
+      }
+      const existingScore = getMailPriority(existing);
+      const currentScore = getMailPriority(mail);
+      if (currentScore > existingScore) {
+        unique.set(key, mail);
+      }
+    }
+    return Array.from(unique.values());
+  }, [mails, hiddenMailIds]);
+
+  const attachmentMetaById = useMemo(() => {
+    const meta = new Map<string, { filename: string; size: number; mimeType: string | null }>();
+    for (const mail of mails || []) {
+      for (const att of mail.attachments || []) {
+        meta.set(att.id, {
+          filename: att.filename,
+          size: att.size,
+          mimeType: att.mimeType,
+        });
+      }
+    }
+    return meta;
+  }, [mails]);
+
+  const dedupedSelectableImages = useMemo(() => {
+    if (!images || images.length === 0) return [];
+
+    const byKey = new Map<string, any>();
+    for (const img of images) {
+      const rawComment = (img.comment || '').trim();
+      const attachmentId = typeof img.path === 'string'
+        ? (img.path.match(/\/api\/attachments\/([^/?#]+)/)?.[1] || null)
+        : null;
+
+      // Für Mail-Anhänge nur "wirklich gleiche" Dateien zusammenfassen.
+      // Dazu nutzen wir die Attachment-Metadaten (filename+size+mimeType).
+      // Fehlen Metadaten, dedupen wir NICHT aggressiv und fallen auf die
+      // eindeutige attachmentId/Pfad-Referenz zurück.
+      let key: string;
+      if (rawComment.toLowerCase().startsWith('mail-anhang:') && attachmentId) {
+        const meta = attachmentMetaById.get(attachmentId);
+        if (meta) {
+          key = `mail:${meta.filename.toLowerCase()}|${meta.size}|${(meta.mimeType || '').toLowerCase()}`;
+        } else {
+          key = `mail-id:${attachmentId}`;
+        }
+      } else {
+        key = `path:${(img.path || '').toLowerCase()}`;
+      }
+
+      if (!byKey.has(key)) {
+        byKey.set(key, img);
+      }
+    }
+
+    return Array.from(byKey.values());
+  }, [images, attachmentMetaById]);
+
+  const deleteInternalMessage = async (message: Message) => {
+    if (!window.confirm('Diese Notiz wirklich löschen?')) return;
+    setDeletingEntryId(message.id);
+    try {
+      const res = await fetch(`/api/orders/${orderId}/messages?messageId=${encodeURIComponent(message.id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      onMessagesChange(messages.filter((m) => m.id !== message.id));
+    } catch (error) {
+      console.error('Fehler beim Löschen der Nachricht:', error);
+      alert('Nachricht konnte nicht gelöscht werden.');
+    } finally {
+      setDeletingEntryId(null);
+    }
+  };
+
+  const deleteMailEntry = async (mail: MailEntry) => {
+    if (!window.confirm('Diese Mail inkl. verknüpfter Artefakte wirklich löschen?')) return;
+    setDeletingEntryId(mail.id);
+    try {
+      const res = await fetch(`/api/mails/${encodeURIComponent(mail.id)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      setHiddenMailIds((prev) => {
+        const next = new Set(prev);
+        next.add(mail.id);
+        return next;
+      });
+      onMessagesChange(messages.filter((m) => !m.body.includes(`[Mail:${mail.id}]`)));
+    } catch (error) {
+      console.error('Fehler beim Löschen der Mail:', error);
+      alert('Mail konnte nicht gelöscht werden.');
+    } finally {
+      setDeletingEntryId(null);
+    }
+  };
+
+  const timeline = useMemo<TimelineEntry[]>(() => {
+    const entries: TimelineEntry[] = [];
+
+    for (const msg of messages) {
+      const mailToken = msg.body.match(/\[Mail:([a-zA-Z0-9]+)\]/);
+      if (mailToken && dedupedMails.some(m => m.id === mailToken[1])) {
+        continue;
+      }
+
+      if (msg.isEmail) {
+        entries.push({
+          kind: 'mail-out',
+          data: {
+            id: msg.id,
+            subject: null,
+            fromName: msg.sender?.name || null,
+            fromEmail: '',
+            text: msg.body,
+            html: null,
+            date: msg.createdAt,
+            folder: 'Sent',
+            senderId: msg.sender?.id || null,
+            attachments: [],
+          },
+          date: new Date(msg.createdAt),
+        });
+      } else {
+        entries.push({ kind: 'message', data: msg, date: new Date(msg.createdAt) });
+      }
+    }
+
+    for (const mail of dedupedMails) {
+      const isOutgoing = mail.folder === 'Sent' || !!mail.senderId;
+      entries.push({
+        kind: isOutgoing ? 'mail-out' : 'mail-in',
+        data: mail,
+        date: new Date(mail.date),
+      });
+    }
+
+    for (const task of localTasks) {
+      entries.push({
+        kind: 'task',
+        data: task,
+        date: new Date(task.createdAt),
+      });
+    }
+
+    entries.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return entries;
+  }, [messages, dedupedMails, localTasks]);
+
+  const lastIncomingId = useMemo(() => {
+    for (let i = timeline.length - 1; i >= 0; i--) {
+      const e = timeline[i];
+      if (e.kind === 'mail-in') return (e.data as MailEntry).id;
+      if (e.kind === 'message' && (e.data as Message).senderType === 'customer') return (e.data as Message).id;
+    }
+    return null;
+  }, [timeline]);
+
+  const handleAcknowledge = async () => {
+    try {
+      await fetch(`/api/orders/${orderId}/acknowledge`, { method: 'POST' });
+      setAcknowledged(true);
+    } catch {}
+  };
+
+  const handleCompleteTask = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'done' }),
+      });
+      if (res.ok) {
+        const updated = localTasks.map(t =>
+          t.id === taskId ? { ...t, status: 'done', completedAt: new Date().toISOString() } : t
+        );
+        setLocalTasks(updated);
+        onTasksChange?.(updated);
+      }
+    } catch {}
+  };
 
   useImperativeHandle(ref, () => ({
     attachPDF: (blob: Blob, filename: string) => {
@@ -58,37 +461,115 @@ const MessageSystem = forwardRef<
   const sendMessage = async () => {
     if (!newMessage.trim() || sending) return;
 
+    if (sendMode === 'task') {
+      if (!taskAssigneeId) {
+        alert('Bitte einen Kollegen auswählen.');
+        return;
+      }
+      setSending(true);
+      try {
+        const noteRefs: string[] = [];
+        if (selectedImages.length > 0 && images) {
+          for (const imgId of selectedImages) {
+            const img = images.find((i) => i.id === imgId);
+            if (!img?.path) continue;
+            noteRefs.push(`🖼️ ${img.path}`);
+          }
+        }
+        if (attachedPDF) {
+          noteRefs.push(`📄 ${attachedPDF.filename}`);
+        }
+        const note = noteRefs.length > 0 ? '📎 Anhänge:\n' + noteRefs.join('\n') : undefined;
+
+        const res = await fetch(`/api/orders/${orderId}/tasks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: newMessage.trim(), assigneeId: taskAssigneeId, note }),
+        });
+        if (res.ok) {
+          const created: OrderTaskEntry = await res.json();
+          const updated = [...localTasks, created];
+          setLocalTasks(updated);
+          onTasksChange?.(updated);
+          setNewMessage('');
+          setTaskAssigneeId('');
+          setSelectedImages([]);
+          setAttachedPDF(null);
+        }
+      } catch (error) {
+        console.error('Fehler beim Erstellen der Aufgabe:', error);
+        alert('Fehler beim Erstellen der Aufgabe');
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    const isEmail = sendMode === 'email';
+
+    if (isEmail && !window.confirm('Nachricht als E-Mail an den Kunden senden?')) {
+      return;
+    }
+
     setSending(true);
     try {
-      // Nachricht mit ausgewählten Bildern und PDFs zusammenstellen
       let messageBody = newMessage.trim();
-      const attachments: string[] = [];
-      
-      if (selectedImages.length > 0) {
-        const imageUrls = selectedImages.map(id => {
-          const img = images?.find(i => i.id === id);
-          return img?.path;
-        }).filter(Boolean);
-        
-        attachments.push(...imageUrls.map(url => `🖼️ ${url}`));
+      const bodyRefs: string[] = [];
+      const requestAttachments: { filename: string; content: string; contentType: string }[] = [];
+
+      if (selectedImages.length > 0 && images) {
+        let imgIndex = 0;
+        for (const id of selectedImages) {
+          const img = images.find((i) => i.id === id);
+          if (!img?.path) continue;
+          imgIndex += 1;
+          const filename = `bild-${imgIndex}.jpg`;
+          if (img.path.startsWith('/api/attachments/') || (!img.path.startsWith('data:') && !img.path.startsWith('http') && !img.path.startsWith('blob:'))) {
+            try {
+              const src = img.path.startsWith('/') ? img.path : img.path;
+              const compressed = await compressImage(src);
+              requestAttachments.push({ filename, content: compressed.base64, contentType: compressed.contentType });
+              bodyRefs.push(`🖼️ ${filename}`);
+            } catch {
+              bodyRefs.push(`🖼️ ${img.path}`);
+            }
+          } else if (img.path.startsWith('data:') || img.path.startsWith('blob:') || img.path.startsWith('http')) {
+            try {
+              const compressed = await compressImage(img.path);
+              requestAttachments.push({ filename, content: compressed.base64, contentType: compressed.contentType });
+              bodyRefs.push(`🖼️ ${filename}`);
+            } catch {
+              bodyRefs.push(`🖼️ ${img.path}`);
+            }
+          }
+        }
       }
-      
+
       if (attachedPDF) {
-        attachments.push(`📄 ${attachedPDF.filename}`);
+        const buf = await attachedPDF.blob.arrayBuffer();
+        const base64 = arrayBufferToBase64(buf);
+        requestAttachments.push({ filename: attachedPDF.filename, content: base64, contentType: 'application/pdf' });
+        bodyRefs.push(`📄 ${attachedPDF.filename}`);
       }
-      
-      if (attachments.length > 0) {
-        messageBody += '\n\n📎 Anhänge:\n' + attachments.join('\n');
+
+      if (bodyRefs.length > 0) {
+        messageBody += '\n\n📎 Anhänge:\n' + bodyRefs.join('\n');
+      }
+
+      const payload: Record<string, unknown> = {
+        body: messageBody,
+        senderType: 'staff',
+        senderId: currentUserId,
+        sendEmail: isEmail && !!customerEmail,
+      };
+      if (requestAttachments.length > 0) {
+        payload.attachments = requestAttachments;
       }
 
       const response = await fetch(`/api/orders/${orderId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          body: messageBody,
-          senderType: 'staff',
-          senderId: currentUserId,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -97,6 +578,7 @@ const MessageSystem = forwardRef<
         setNewMessage('');
         setSelectedImages([]);
         setAttachedPDF(null);
+        fetch(`/api/orders/${orderId}/acknowledge`, { method: 'POST' }).catch(() => {});
       }
     } catch (error) {
       console.error('Fehler beim Senden:', error);
@@ -106,25 +588,16 @@ const MessageSystem = forwardRef<
     }
   };
 
-  // Text optimieren via N8N
   const optimizeText = async () => {
     if (!newMessage.trim() || optimizing) return;
-    
     setOptimizing(true);
     try {
       const res = await fetch('/api/compose-message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: newMessage,
-          customerName: customerName,
-          orderTitle: orderTitle,
-          language: 'de'
-        }),
+        body: JSON.stringify({ text: newMessage, customerName, orderTitle, language: 'de' }),
       });
-      
       const data = await res.json();
-      
       if (data.text && !data.fallback) {
         setNewMessage(data.text);
       } else if (data.fallback) {
@@ -140,189 +613,695 @@ const MessageSystem = forwardRef<
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleString('de-DE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
     });
   };
 
+  const getDisplayBody = (message: Message): string => {
+    let body = message.body;
+    body = body.replace(/\n\n📎 Anhänge:\n[\s\S]*?(?=\n\n|$)/, '').replace(/\n$/, '').trim();
+    return body.replace(/\s*\[Mail:[a-zA-Z0-9]+\]\s*$/, '').trim();
+  };
+
+  const getMessageAttachments = (message: Message) => {
+    const result: Array<{ id: string; url: string; filename: string; mimeType: string | null; size?: number; isImage: boolean; isPdf: boolean }> = [];
+    const mailMatch = message.body.match(/\[Mail:([a-zA-Z0-9]+)\]/);
+    if (mailMatch && mails?.length) {
+      const mail = mails.find((m) => m.id === mailMatch[1]);
+      if (mail?.attachments?.length) {
+        for (const a of mail.attachments) {
+          const img = isImageFile(a.mimeType, a.filename);
+          const pdf = isPdfFile(a.mimeType, a.filename);
+          result.push({ id: a.id, url: `/api/attachments/${a.id}`, filename: a.filename, mimeType: a.mimeType, size: a.size, isImage: img, isPdf: pdf });
+        }
+      }
+    }
+    const anhangBlock = message.body.match(/📎 Anhänge:\n([\s\S]*?)(?=\n\n|$)/);
+    if (anhangBlock) {
+      const lines = anhangBlock[1].split('\n').filter(Boolean);
+      for (const line of lines) {
+        const imgMatch = line.match(/🖼️\s+(\S+)/);
+        const pdfMatch = line.match(/📄\s+(.+)/);
+        if (imgMatch) {
+          const path = imgMatch[1];
+          const id = path.startsWith('/api/') ? path.split('/').pop() || path : `path-${result.length}`;
+          result.push({ id: `staff-img-${id}`, url: path, filename: path.startsWith('data:') ? 'Bild' : (path.split('/').pop() || 'Bild'), mimeType: 'image/jpeg', isImage: true, isPdf: false });
+        } else if (pdfMatch) {
+          result.push({ id: `staff-pdf-${pdfMatch[1]}`, url: '#', filename: pdfMatch[1].trim(), mimeType: 'application/pdf', isImage: false, isPdf: true });
+        }
+      }
+    }
+    return result;
+  };
+
+  function renderMailEntry(entry: TimelineEntry & { kind: 'mail-in' | 'mail-out' }) {
+    const mail = entry.data;
+    const isOut = entry.kind === 'mail-out';
+    const fullText = mail.text || stripHtml(mail.html || '');
+    const { newContent, quoted } = splitQuotedContent(fullText);
+    const showQuoted = expandedQuotes.has(mail.id);
+    const displayText = newContent || fullText;
+    const expanded = expandedMails.has(mail.id);
+    const preview = displayText.slice(0, 200);
+    const isLong = displayText.length > 200;
+    const hasAttachments = mail.attachments && mail.attachments.length > 0;
+
+    return (
+      <div
+        key={`mail-${mail.id}`}
+        className={`rounded-lg p-3 ${
+          isOut
+            ? 'bg-emerald-500/10 border border-emerald-500/20 ml-4'
+            : 'bg-amber-500/10 border border-amber-500/20 mr-4'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2">
+            <span className={`text-sm ${isOut ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {isOut ? '📤' : '📨'}
+            </span>
+            <span className="text-sm font-medium">
+              {isOut ? 'Gesendet' : (mail.fromName || mail.fromEmail)}
+            </span>
+            <span className="text-xs text-slate-500">E-Mail</span>
+          </div>
+          <span className="text-xs text-slate-400">{formatDate(entry.date)}</span>
+        </div>
+        {mail.subject && (
+          <div className="text-xs text-slate-400 mb-1">Betreff: {mail.subject}</div>
+        )}
+        <div className="text-sm text-slate-200 whitespace-pre-wrap">
+          {expanded ? displayText : (preview + (isLong ? '…' : ''))}
+        </div>
+        {showQuoted && quoted && (
+          <div className="mt-2 border-l-2 border-slate-600 pl-3 text-xs text-slate-400 whitespace-pre-wrap">
+            {quoted}
+          </div>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => deleteMailEntry(mail)}
+            disabled={deletingEntryId === mail.id}
+            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+          >
+            {deletingEntryId === mail.id ? 'Löscht…' : '🗑 Löschen'}
+          </button>
+          {isLong && (
+            <button
+              type="button"
+              onClick={() => setExpandedMails((prev) => {
+                const next = new Set(prev);
+                if (next.has(mail.id)) next.delete(mail.id); else next.add(mail.id);
+                return next;
+              })}
+              className="text-xs text-sky-400 hover:text-sky-300"
+            >
+              {expanded ? 'Weniger' : 'Mehr anzeigen'}
+            </button>
+          )}
+          {quoted && (
+            <button
+              type="button"
+              onClick={() => setExpandedQuotes((prev) => {
+                const next = new Set(prev);
+                if (next.has(mail.id)) next.delete(mail.id); else next.add(mail.id);
+                return next;
+              })}
+              className="text-xs text-slate-500 hover:text-slate-300"
+            >
+              {showQuoted ? '▲ Zitat ausblenden' : '▼ Zitat anzeigen'}
+            </button>
+          )}
+          {hasAttachments && (
+            <div className="flex flex-wrap gap-1">
+              {mail.attachments.map((a) => {
+                const isImg = isImageFile(a.mimeType, a.filename);
+                const isPdf = isPdfFile(a.mimeType, a.filename);
+                const viewableInLightbox = isImg || isPdf;
+                const viewableAtts = mail.attachments.filter((x) => isImageFile(x.mimeType, x.filename) || isPdfFile(x.mimeType, x.filename));
+                const viewableIdx = viewableAtts.findIndex((x) => x.id === a.id);
+                if (viewableInLightbox) {
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => {
+                        setAttachmentLightbox({
+                          images: viewableAtts.map((x) => ({
+                            id: x.id,
+                            url: `/api/attachments/${x.id}`,
+                            filename: x.filename,
+                            mimeType: x.mimeType,
+                          })),
+                          index: Math.max(0, viewableIdx),
+                        });
+                      }}
+                      className={`group relative h-10 w-10 overflow-hidden rounded border border-slate-700 bg-slate-800 ${isPdf ? 'flex items-center justify-center' : ''}`}
+                      title={a.filename}
+                    >
+                      {isImg ? (
+                        <img src={`/api/attachments/${a.id}`} className="h-full w-full object-cover" alt={a.filename} />
+                      ) : (
+                        <span className="text-lg">📄</span>
+                      )}
+                    </button>
+                  );
+                }
+                return (
+                  <a
+                    key={a.id}
+                    href={`/api/attachments/${a.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 py-0.5 px-2 rounded border border-slate-700 bg-slate-800/50 text-xs text-slate-300 hover:bg-slate-800"
+                  >
+                    📎 {a.filename}
+                  </a>
+                );
+              })}
+            </div>
+          )}
+          {!isOut && mail.id === lastIncomingId && !acknowledged && (
+            <button
+              type="button"
+              onClick={handleAcknowledge}
+              className="ml-auto text-xs px-2.5 py-1 rounded-lg border border-emerald-600/40 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20 transition-colors"
+            >
+              ✓ Erledigt
+            </button>
+          )}
+          {!isOut && mail.id === lastIncomingId && acknowledged && (
+            <span className="ml-auto text-xs text-emerald-500/60 italic">Erledigt</span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderMessageEntry(entry: TimelineEntry & { kind: 'message' }) {
+    const message = entry.data;
+    const attachments = getMessageAttachments(message);
+    const formatSize = (bytes?: number) =>
+      bytes != null
+        ? bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+        : '';
+
+    return (
+      <div
+        key={`msg-${message.id}`}
+        className={`rounded-lg border-dashed p-2.5 text-sm ${
+          message.senderType === 'staff'
+            ? 'bg-violet-500/5 border border-violet-500/25 ml-6'
+            : 'bg-slate-700/20 border border-slate-600/40 mr-6'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className={`text-xs ${message.senderType === 'staff' ? 'text-violet-400' : 'text-slate-400'}`}>
+              📝
+            </span>
+            <span className="text-xs font-medium text-slate-300">
+              {message.senderType === 'staff' ? message.sender?.name || 'Mitarbeiter' : 'Kunde'}
+            </span>
+            <span className="text-[10px] text-slate-500 italic">Notiz</span>
+          </div>
+          <span className="text-[10px] text-slate-500">{formatDate(message.createdAt)}</span>
+        </div>
+        <div className="mb-1.5 flex justify-end">
+          <button
+            type="button"
+            onClick={() => deleteInternalMessage(message)}
+            disabled={deletingEntryId === message.id}
+            className="text-[10px] text-red-400 hover:text-red-300 disabled:opacity-50"
+          >
+            {deletingEntryId === message.id ? 'Löscht…' : '🗑 Löschen'}
+          </button>
+        </div>
+        <div className="text-xs text-slate-300 whitespace-pre-wrap">{getDisplayBody(message)}</div>
+        {attachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {attachments.map((a) => {
+              const viewableInLightbox = (a.isImage || a.isPdf) && a.url && !a.url.startsWith('#');
+              const viewableAtts = attachments.filter((x) => (x.isImage || x.isPdf) && x.url && !x.url.startsWith('#'));
+              const viewableIdx = viewableAtts.findIndex((x) => x.id === a.id);
+              if (viewableInLightbox) {
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => {
+                      setAttachmentLightbox({
+                        images: viewableAtts.map((x) => ({ id: x.id, url: x.url, filename: x.filename, mimeType: x.mimeType })),
+                        index: Math.max(0, viewableIdx),
+                      });
+                    }}
+                    className={`group relative h-8 w-8 overflow-hidden rounded border border-slate-700 bg-slate-800 hover:border-emerald-500/60 ${a.isPdf ? 'flex items-center justify-center' : ''}`}
+                    title={a.filename}
+                  >
+                    {a.isImage ? (
+                      <img src={a.url} className="h-full w-full object-cover" alt={a.filename} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : (
+                      <span className="text-sm">📄</span>
+                    )}
+                  </button>
+                );
+              }
+              return a.url.startsWith('/api/') ? (
+                <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 py-0.5 px-2 rounded border border-slate-700 bg-slate-800/50 text-xs text-slate-300 hover:bg-slate-800">
+                  📄 {a.filename} {a.size != null ? <span className="text-slate-500">{formatSize(a.size)}</span> : null}
+                </a>
+              ) : (
+                <span key={a.id} className="inline-flex items-center gap-1 py-0.5 px-2 rounded border border-slate-700 bg-slate-800/50 text-xs text-slate-300">
+                  📄 {a.filename} {a.size != null ? <span className="text-slate-500">{formatSize(a.size)}</span> : null}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        {message.senderType === 'customer' && message.id === lastIncomingId && !acknowledged && (
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={handleAcknowledge}
+              className="text-xs px-2.5 py-1 rounded-lg border border-emerald-600/40 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20 transition-colors"
+            >
+              ✓ Erledigt
+            </button>
+          </div>
+        )}
+        {message.senderType === 'customer' && message.id === lastIncomingId && acknowledged && (
+          <div className="mt-2 flex justify-end">
+            <span className="text-xs text-emerald-500/60 italic">Erledigt</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function parseTaskAttachments(note: string | null) {
+    if (!note) return { text: '', attachments: [] as { type: 'image' | 'pdf'; path: string; filename: string }[] };
+    const lines = note.split('\n');
+    const textLines: string[] = [];
+    const attachments: { type: 'image' | 'pdf'; path: string; filename: string }[] = [];
+    let inAttachBlock = false;
+    for (const line of lines) {
+      if (line.startsWith('📎 Anhänge:')) { inAttachBlock = true; continue; }
+      if (inAttachBlock) {
+        const imgMatch = line.match(/🖼️\s+(\S+)/);
+        const pdfMatch = line.match(/📄\s+(.+)/);
+        if (imgMatch) {
+          const path = imgMatch[1];
+          attachments.push({ type: 'image', path, filename: path.split('/').pop() || 'Bild' });
+        } else if (pdfMatch) {
+          attachments.push({ type: 'pdf', path: '#', filename: pdfMatch[1].trim() });
+        }
+      } else {
+        textLines.push(line);
+      }
+    }
+    return { text: textLines.join('\n').trim(), attachments };
+  }
+
+  function renderTaskEntry(entry: TimelineEntry & { kind: 'task' }) {
+    const task = entry.data;
+    const isDone = task.status === 'done';
+    const canComplete = !isDone && task.assignee.id === currentUserId;
+    const { text: noteText, attachments: taskAttachments } = parseTaskAttachments(task.note);
+
+    return (
+      <div
+        key={`task-${task.id}`}
+        className={`rounded-lg border p-3 ${
+          isDone
+            ? 'bg-slate-800/30 border-slate-700/50'
+            : 'bg-orange-500/10 border-orange-500/25'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">{isDone ? '✅' : '📋'}</span>
+            <span className="text-sm font-medium text-orange-300">Aufgabe</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+              isDone ? 'bg-emerald-600/20 text-emerald-400' : 'bg-orange-600/20 text-orange-400'
+            }`}>
+              {isDone ? 'Erledigt' : 'Offen'}
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">{formatDate(new Date(task.createdAt))}</span>
+        </div>
+        <div className="text-sm text-slate-200">{task.title}</div>
+        {noteText && <div className="text-xs text-slate-400 mt-1">{noteText}</div>}
+        {taskAttachments.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {taskAttachments.map((a, i) => {
+              const viewableAtts = taskAttachments.filter(x => (x.type === 'image' || x.type === 'pdf') && x.path && !x.path.startsWith('#'));
+              const viewableIdx = viewableAtts.findIndex(x => x.path === a.path);
+              const viewable = (a.type === 'image' || a.type === 'pdf') && a.path && !a.path.startsWith('#');
+              return viewable ? (
+                <button
+                  key={`task-att-${i}`}
+                  type="button"
+                  onClick={() => {
+                    setAttachmentLightbox({
+                      images: viewableAtts.map(x => ({ id: x.path, url: x.path, filename: x.filename, mimeType: x.type === 'pdf' ? 'application/pdf' : 'image/jpeg' })),
+                      index: Math.max(0, viewableIdx),
+                    });
+                  }}
+                  className={`group relative h-10 w-10 overflow-hidden rounded border border-slate-700 bg-slate-800 hover:border-orange-500/60 ${a.type === 'pdf' ? 'flex items-center justify-center' : ''}`}
+                  title={a.filename}
+                >
+                  {a.type === 'image' ? (
+                  <img src={a.path} className="h-full w-full object-cover" alt={a.filename} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                ) : (
+                  <span className="text-lg">📄</span>
+                )}
+                </button>
+              ) : (
+                <span key={`task-att-${i}`} className="inline-flex items-center gap-1 py-0.5 px-2 rounded border border-slate-700 bg-slate-800/50 text-xs text-slate-300">
+                  📄 {a.filename}
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+          <span>Von {task.creator.name} → {task.assignee.name}</span>
+          {canComplete && (
+            <button
+              type="button"
+              onClick={() => handleCompleteTask(task.id)}
+              className="px-2.5 py-1 rounded-lg border border-emerald-600/40 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20 transition-colors"
+            >
+              ✓ Erledigt
+            </button>
+          )}
+          {isDone && task.completedAt && (
+            <span className="text-emerald-500/60 italic">
+              Erledigt am {formatDate(new Date(task.completedAt))}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {/* Messages */}
-      <div className="space-y-3 max-h-96 overflow-y-auto">
-        {messages.length === 0 ? (
+      {/* Legende */}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 px-1">
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-400" /> Eingehende Mail</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-400" /> Gesendete Mail</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded border border-dashed border-violet-400" /> Interne Notiz</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-orange-400" /> Aufgabe</span>
+      </div>
+
+      {/* Offene Aufgaben */}
+      {localTasks.filter(t => t.status === 'open').length > 0 && (
+        <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">📋</span>
+            <span className="text-sm font-semibold text-orange-300">Offene Aufgaben</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-600/20 text-orange-400 border border-orange-600/30">
+              {localTasks.filter(t => t.status === 'open').length}
+            </span>
+          </div>
+          {localTasks.filter(t => t.status === 'open').map(task => {
+            const { text: noteText, attachments: att } = parseTaskAttachments(task.note);
+            const canComplete = task.assignee.id === currentUserId;
+            return (
+              <div key={`open-${task.id}`} className="flex items-start justify-between gap-2 rounded border border-slate-700/40 bg-slate-900/40 p-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-slate-200">{task.title}</div>
+                  {noteText && <div className="text-xs text-slate-400 mt-0.5">{noteText}</div>}
+                  {att.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {att.map((a, i) => {
+                        const viewableAtts = att.filter(x => (x.type === 'image' || x.type === 'pdf') && x.path && !x.path.startsWith('#'));
+                        const viewableIdx = viewableAtts.findIndex(x => x.path === a.path);
+                        const viewable = (a.type === 'image' || a.type === 'pdf') && a.path && !a.path.startsWith('#');
+                        return viewable ? (
+                          <button
+                            key={`ot-att-${i}`}
+                            type="button"
+                            onClick={() => {
+                              setAttachmentLightbox({
+                                images: viewableAtts.map(x => ({ id: x.path, url: x.path, filename: x.filename, mimeType: x.type === 'pdf' ? 'application/pdf' : 'image/jpeg' })),
+                                index: Math.max(0, viewableIdx),
+                              });
+                            }}
+                            className={`h-8 w-8 overflow-hidden rounded border border-slate-700 bg-slate-800 ${a.type === 'pdf' ? 'flex items-center justify-center' : ''}`}
+                            title={a.filename}
+                          >
+                            {a.type === 'image' ? (
+                              <img src={a.path} className="h-full w-full object-cover" alt={a.filename} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                            ) : (
+                              <span className="text-sm">📄</span>
+                            )}
+                          </button>
+                        ) : (
+                          <span key={`ot-att-${i}`} className="text-xs text-slate-400">📄 {a.filename}</span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    Von {task.creator.name} → {task.assignee.name} · {formatDate(new Date(task.createdAt))}
+                  </div>
+                </div>
+                {canComplete && (
+                  <button
+                    type="button"
+                    onClick={() => handleCompleteTask(task.id)}
+                    className="flex-shrink-0 text-xs px-2 py-1 rounded-lg border border-emerald-600/40 bg-emerald-600/10 text-emerald-400 hover:bg-emerald-600/20 transition-colors"
+                  >
+                    ✓ Erledigt
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Timeline */}
+      <div className="space-y-3 max-h-[32rem] overflow-y-auto">
+        {timeline.length === 0 ? (
           <div className="text-slate-500 text-sm text-center py-4">
-            Noch keine Nachrichten
+            Noch keine Kommunikation
           </div>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={`rounded-lg p-3 ${
-                message.senderType === 'staff'
-                  ? 'bg-sky-500/10 border border-sky-500/20 ml-4'
-                  : 'bg-slate-700/30 border border-slate-600/50 mr-4'
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      message.senderType === 'staff' ? 'bg-sky-500' : 'bg-slate-400'
-                    }`}
-                  />
-                  <span className="text-sm font-medium">
-                    {message.senderType === 'staff'
-                      ? message.sender?.name || 'Mitarbeiter'
-                      : 'Kunde'}
-                  </span>
-                </div>
-                <span className="text-xs text-slate-400">
-                  {formatDate(message.createdAt)}
-                </span>
-              </div>
-              <div className="text-sm text-slate-200 whitespace-pre-wrap">
-                {message.body}
-              </div>
-            </div>
-          ))
+          timeline.map((entry) => {
+            if (entry.kind === 'message') return renderMessageEntry(entry as TimelineEntry & { kind: 'message' });
+            if (entry.kind === 'task') return renderTaskEntry(entry as TimelineEntry & { kind: 'task' });
+            return renderMailEntry(entry as TimelineEntry & { kind: 'mail-in' | 'mail-out' });
+          })
         )}
       </div>
 
-      {/* Message Input */}
+      {/* Compose */}
       <div className="rounded-lg border border-slate-700 p-3 space-y-3">
-        <div className="text-sm font-medium">Neue Nachricht</div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium">Neue Nachricht</div>
+          <div className="flex items-center gap-1 rounded-lg border border-slate-700 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setSendMode('internal')}
+              className={`px-3 py-1.5 text-xs transition-colors ${sendMode === 'internal' ? 'bg-sky-600 text-white' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'}`}
+            >
+              Interne Notiz
+            </button>
+            <button
+              type="button"
+              onClick={() => setSendMode('email')}
+              className={`px-3 py-1.5 text-xs transition-colors ${sendMode === 'email' ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'}`}
+            >
+              E-Mail an Kunde
+            </button>
+            {users && users.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSendMode('task')}
+                className={`px-3 py-1.5 text-xs transition-colors ${sendMode === 'task' ? 'bg-orange-600 text-white' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'}`}
+              >
+                Aufgabe
+              </button>
+            )}
+          </div>
+        </div>
+
+        {sendMode === 'task' && users && users.length > 0 && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-400">Zuweisen an:</label>
+            <select
+              value={taskAssigneeId}
+              onChange={(e) => setTaskAssigneeId(e.target.value)}
+              className="flex-1 rounded bg-slate-950 border border-slate-700 px-2 py-1.5 text-sm"
+            >
+              <option value="">Kollege wählen…</option>
+              {users.filter(u => u.id !== currentUserId).map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {sendMode === 'email' && !customerEmail && (
+          <div className="text-xs text-amber-400 bg-amber-400/10 rounded px-2 py-1">
+            Kein Kunden-E-Mail hinterlegt. Nachricht kann nur intern gespeichert werden.
+          </div>
+        )}
+
         <textarea
-          placeholder="Nachricht eingeben... (Enter zum Senden, Shift+Enter für neue Zeile)"
+          placeholder={sendMode === 'task' ? 'Aufgabenbeschreibung…' : sendMode === 'internal' ? 'Interne Notiz (nur für Team sichtbar)…' : 'Nachricht an Kunden…'}
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (newMessage.trim()) sendMessage(); }
+          }}
           className="w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm resize-none"
           rows={3}
         />
         <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            {/* Voice Input Button */}
+          <div className="flex items-center gap-2 flex-wrap">
             <VoiceInputButton
-              onTranscript={(text) => {
-                setNewMessage((prev) => {
-                  const separator = prev.trim() ? '\n' : '';
-                  return prev + separator + text;
-                });
-              }}
+              onTranscript={(text) => setNewMessage((prev) => { const sep = prev.trim() ? '\n' : ''; return prev + sep + text; })}
               language="de"
               disabled={sending}
             />
-            <button
-              onClick={optimizeText}
-              disabled={!newMessage.trim() || optimizing || sending}
-              className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-all bg-purple-700 hover:bg-purple-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Text via N8N optimieren"
-            >
-              {optimizing ? (
-                <>
-                  <span className="text-lg">⏳</span>
-                  <span>Optimiere...</span>
-                </>
-              ) : (
-                <>
-                  <span className="text-lg">✨</span>
-                  <span>Optimieren</span>
-                </>
-              )}
-            </button>
-            <div className="text-xs text-slate-500">
-              {newMessage.length}/500 Zeichen
-            </div>
+            {sendMode === 'email' && (
+              <>
+                <button
+                  onClick={() => {
+                    const staffFull = users?.find(u => u.id === currentUserId)?.name || 'Dein Ansprechpartner';
+                    const staffFirst = staffFull.split(' ')[0];
+                    const custFirst = (customerName || 'du').split(' ')[0];
+                    const defaultTpl = 'Hallo {kundenname},\n\nhier ein kurzes Update:\n\n\n\nBei Fragen melde dich gerne.\n\nViele Grüße\n{mitarbeiter}';
+                    const tpl = (typeof window !== 'undefined' && localStorage.getItem('update-template')) || defaultTpl;
+                    const text = tpl.replace(/\{kundenname\}/g, custFirst).replace(/\{mitarbeiter\}/g, staffFirst);
+                    setNewMessage(text);
+                  }}
+                  disabled={sending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all bg-sky-700 hover:bg-sky-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Update-Nachricht an Kunden generieren"
+                >
+                  📝 Update
+                </button>
+                <button
+                  onClick={optimizeText}
+                  disabled={!newMessage.trim() || optimizing || sending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all bg-purple-700 hover:bg-purple-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Text via N8N optimieren"
+                >
+                  {optimizing ? <><span>⏳</span> Optimiere…</> : <><span>✨</span> Optimieren</>}
+                </button>
+              </>
+            )}
+            <div className="text-xs text-slate-500">{newMessage.length}/500</div>
             {selectedImages.length > 0 && (
-              <div className="text-xs bg-sky-600 text-white px-2 py-0.5 rounded">
-                {selectedImages.length} Bild(er) ausgewählt
-              </div>
+              <div className="text-xs bg-sky-600 text-white px-2 py-0.5 rounded">{selectedImages.length} Bild(er)</div>
             )}
             {attachedPDF && (
               <div className="flex items-center gap-2 text-xs bg-green-600 text-white px-2 py-0.5 rounded">
                 <span>📄 {attachedPDF.filename}</span>
-                <button
-                  onClick={() => setAttachedPDF(null)}
-                  className="hover:bg-green-700 px-1 rounded"
-                  title="PDF entfernen"
-                >
-                  ×
-                </button>
+                <button onClick={() => setAttachedPDF(null)} className="hover:bg-green-700 px-1 rounded" title="PDF entfernen">×</button>
               </div>
             )}
           </div>
           <button
             onClick={sendMessage}
-            disabled={sending || !newMessage.trim() || newMessage.length > 500}
-            className="rounded bg-slate-700 hover:bg-slate-600 px-3 py-1.5 text-sm font-medium disabled:opacity-50 text-slate-200"
+            disabled={sending || !newMessage.trim() || newMessage.length > 500 || (sendMode === 'email' && !customerEmail) || (sendMode === 'task' && !taskAssigneeId)}
+            className={`rounded px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+              sendMode === 'email'
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                : sendMode === 'task'
+                  ? 'bg-orange-600 hover:bg-orange-500 text-white'
+                  : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+            }`}
           >
-            {sending ? 'Sendet...' : 'Senden'}
+            {sending ? 'Sendet…' : sendMode === 'task' ? 'Aufgabe erstellen' : sendMode === 'email' ? 'E-Mail senden' : 'Notiz speichern'}
           </button>
         </div>
       </div>
 
-      {/* Dateien als Anhang Panel - unter "Neue Nachricht" */}
-      {(images && images.length > 0) || (specs && specs.length > 0) ? (
+      {/* Bild-Anhänge & PDF */}
+      {(dedupedSelectableImages.length > 0) || (specs && specs.length > 0) ? (
         <div className="rounded-lg border border-slate-700 p-3 space-y-3">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium">📎 Dateien als Anhang hinzufügen</div>
             {selectedImages.length > 0 && (
-              <button
-                onClick={() => setSelectedImages([])}
-                className="text-xs text-slate-400 hover:text-slate-300"
-              >
-                Auswahl zurücksetzen
-              </button>
+              <div className="flex items-center gap-2">
+                {onImagesChange && (
+                  <button
+                    onClick={deleteSelectedImages}
+                    disabled={deletingImages}
+                    className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                  >
+                    {deletingImages ? 'Lösche…' : `🗑 ${selectedImages.length} löschen`}
+                  </button>
+                )}
+                <button onClick={() => setSelectedImages([])} className="text-xs text-slate-400 hover:text-slate-300">Auswahl zurücksetzen</button>
+              </div>
             )}
           </div>
-          {images && images.length > 0 && (
+          {dedupedSelectableImages.length > 0 && (
             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 max-h-40 overflow-y-auto">
-              {images.map((img) => (
-              <div key={img.id} className="relative group">
-                <img
-                  src={img.path}
-                  className={`w-full h-16 object-cover rounded cursor-pointer border-2 transition-colors ${
-                    selectedImages.includes(img.id)
-                      ? 'border-sky-500 shadow-lg shadow-sky-500/25'
-                      : 'border-slate-600 hover:border-slate-400'
-                  }`}
-                  title={img.comment || 'Bild als Anhang auswählen'}
-                  onClick={() => {
-                    setSelectedImages(prev => 
-                      prev.includes(img.id) 
-                        ? prev.filter(id => id !== img.id)
-                        : [...prev, img.id]
-                    );
-                  }}
-                />
-                {selectedImages.includes(img.id) && (
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-sky-600 rounded-full flex items-center justify-center">
-                    <span className="text-white text-xs">✓</span>
+              {dedupedSelectableImages.map((img, idx) => {
+                const nonImage = isNonImageFile(img.path, img.comment);
+                const icon = nonImage ? getFileIconForPath(img.comment || img.path) : null;
+                const selected = selectedImages.includes(img.id);
+                return (
+                  <div key={img.id} className="relative group">
+                    {nonImage ? (
+                      <div
+                        className={`w-full h-16 flex flex-col items-center justify-center rounded cursor-pointer border-2 transition-colors bg-slate-800 ${
+                          selected ? 'border-sky-500 shadow-lg shadow-sky-500/25' : 'border-slate-600 hover:border-slate-400'
+                        }`}
+                        title={img.comment || 'Datei als Anhang auswählen'}
+                        onClick={() => setSelectedImages(prev => prev.includes(img.id) ? prev.filter(id => id !== img.id) : [...prev, img.id])}
+                      >
+                        <span className="text-xl">{icon}</span>
+                        <span className="text-[9px] text-slate-400 truncate max-w-full px-1">
+                          {(img.comment || '').replace('Mail-Anhang: ', '').replace('Hochgeladen: ', '').split('/').pop()?.slice(0, 12)}
+                        </span>
+                      </div>
+                    ) : (
+                      <img
+                        src={img.path}
+                        alt={img.comment || 'Bild als Anhang auswählen'}
+                        className={`w-full h-16 object-cover rounded cursor-pointer border-2 transition-colors ${
+                          selected ? 'border-sky-500 shadow-lg shadow-sky-500/25' : 'border-slate-600 hover:border-slate-400'
+                        }`}
+                        title={img.comment || 'Bild als Anhang auswählen'}
+                        onClick={() => setSelectedImages(prev => prev.includes(img.id) ? prev.filter(id => id !== img.id) : [...prev, img.id])}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="absolute top-0.5 right-0.5 p-1 rounded bg-black/50 hover:bg-black/70 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Im Vollbild ansehen"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImagePickerLightbox({ index: idx });
+                      }}
+                    >
+                      🔍
+                    </button>
+                    {selected && (
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-sky-600 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs">✓</span>
+                      </div>
+                    )}
                   </div>
-                )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
-          
-          {/* PDF-Datenblatt Sektion */}
           {specs && specs.length > 0 && orderTitle && orderType && customerName && activeCategories && (
             <div className="border-t border-slate-600 pt-3">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-medium">📄 Datenblatt-PDF</div>
-              </div>
+              <div className="text-sm font-medium mb-3">📄 Datenblatt-PDF</div>
               <DatasheetPDFGenerator
                 orderId={orderId}
                 orderTitle={orderTitle}
@@ -330,55 +1309,61 @@ const MessageSystem = forwardRef<
                 customerName={customerName}
                 specs={specs}
                 activeCategories={activeCategories}
-                assigneeName={undefined} // TODO: Assignee-Daten in MessageSystem verfügbar machen
-                finalAmount={undefined} // TODO: Preis-Daten in MessageSystem verfügbar machen
+                assigneeName={undefined}
+                finalAmount={undefined}
+                attachImages={dedupedSelectableImages.filter(img => selectedImages.includes(img.id)).map(img => ({ id: img.id, path: img.path, comment: img.comment, position: img.position })) || []}
                 buttonText="📧 Datenblatt-PDF anhängen"
                 stringCount={specs.find(s => s.key === 'string_count')?.value || '–'}
-                onPDFGenerated={(pdfBlob, filename) => {
-                  setAttachedPDF({ blob: pdfBlob, filename });
-                }}
+                onPDFGenerated={(pdfBlob, filename) => setAttachedPDF({ blob: pdfBlob, filename })}
               />
             </div>
           )}
-          
           <div className="text-xs text-slate-500">
-            💡 Klicke auf Bilder, um sie als Anhang auszuwählen. PDFs werden automatisch angehängt.
+            Klicke auf Bilder, um sie als Anhang auszuwählen.
+            {images && images.length > dedupedSelectableImages.length
+              ? ` (${images.length - dedupedSelectableImages.length} Duplikate ausgeblendet)`
+              : ''}
           </div>
         </div>
       ) : null}
 
-      {/* Customer Message Simulation */}
-      <div className="rounded-lg border border-slate-600/50 bg-slate-800/30 p-3">
-        <div className="text-sm font-medium mb-2">💡 Kunde simulieren</div>
-        <div className="text-xs text-slate-400 mb-2">
-          Für Demo-Zwecke: Nachricht als Kunde senden
-        </div>
-        <button
-          onClick={async () => {
-            try {
-              const response = await fetch(`/api/orders/${orderId}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  body: 'Hallo! Wie ist der Stand meines Auftrags? Freue mich auf Updates!',
-                  senderType: 'customer',
-                  senderId: null,
-                }),
-              });
+      {/* Lightbox (Mail/Task-Anhänge) */}
+      {attachmentLightbox && attachmentLightbox.images.length > 0 && (
+        <ImageCarouselModal
+          images={attachmentLightbox.images.map((a, i) => ({ id: a.id, path: a.url, comment: a.filename, position: i, attach: false, scope: 'attachment', mimeType: a.mimeType || undefined }))}
+          index={Math.min(attachmentLightbox.index, attachmentLightbox.images.length - 1)}
+          scopes={[]}
+          onClose={() => setAttachmentLightbox(null)}
+          onUpdate={async () => {}}
+          onDelete={async () => {}}
+        />
+      )}
 
-              if (response.ok) {
-                const createdMessage = await response.json();
-                onMessagesChange([...messages, createdMessage]);
-              }
-            } catch (error) {
-              console.error('Fehler:', error);
+      {/* Lightbox Picker (Bilder als Anhang auswählen) */}
+      {imagePickerLightbox !== null && dedupedSelectableImages.length > 0 && (
+        <ImageCarouselModal
+          images={dedupedSelectableImages.map((img, i) => ({
+            id: img.id,
+            path: img.path,
+            comment: img.comment,
+            position: i,
+            attach: selectedImages.includes(img.id),
+            scope: undefined,
+          }))}
+          index={Math.min(imagePickerLightbox.index, dedupedSelectableImages.length - 1)}
+          scopes={[]}
+          pickerMode
+          onClose={() => setImagePickerLightbox(null)}
+          onUpdate={async (id, patch) => {
+            if ('attach' in patch) {
+              setSelectedImages(prev =>
+                patch.attach ? [...prev, id] : prev.filter(x => x !== id)
+              );
             }
           }}
-          className="text-xs rounded border border-slate-600 px-2 py-1 hover:bg-slate-700"
-        >
-          📱 Kunde-Nachricht simulieren
-        </button>
-      </div>
+          onDelete={async () => {}}
+        />
+      )}
     </div>
   );
 });

@@ -1,6 +1,11 @@
 import { put, del } from '@vercel/blob';
 import path from 'path';
+import fs from 'fs';
 import { Readable } from 'stream';
+import { simpleParser } from 'mailparser';
+import { prisma } from '@/lib/prisma';
+import { getImapClient } from './client';
+import { TRASH_FOLDER_CANDIDATES } from './folders';
 
 export interface AttachmentMetadata {
     filename: string;
@@ -108,16 +113,34 @@ export async function saveAttachment(
         throw new Error(`Unsupported stream type: ${typeof stream}`);
     }
 
-    const blobResult = await put(relativePath, blob, {
-        access: 'public',
-        contentType: mimeType,
-        addRandomSuffix: false,
-    });
+    // Try Vercel Blob first; fall back to local filesystem if no token / Blob fails (e.g. local dev)
+    try {
+        if (process.env.BLOB_READ_WRITE_TOKEN) {
+            const blobResult = await put(relativePath, blob, {
+                access: 'public',
+                contentType: mimeType,
+                addRandomSuffix: false,
+            });
+            return {
+                filename,
+                path: blobResult.url,
+                size: blob.size,
+                mimeType,
+            };
+        }
+    } catch {
+        /* fall through to local */
+    }
 
+    const localDir = path.join(process.cwd(), 'uploads', 'mail', mailId);
+    fs.mkdirSync(localDir, { recursive: true });
+    const localPath = path.join(localDir, path.basename(relativePath));
+    const buf = Buffer.from(await blob.arrayBuffer());
+    fs.writeFileSync(localPath, buf);
     return {
         filename,
-        path: blobResult.url, // Store blob URL in DB
-        size: blob.size,
+        path: `local:${path.relative(process.cwd(), localPath).replace(/\\/g, '/')}`,
+        size: buf.length,
         mimeType,
     };
 }
@@ -140,4 +163,150 @@ export async function deleteAttachment(blobUrl: string): Promise<void> {
  */
 export function getAttachmentAbsolutePath(blobUrl: string): string {
     return blobUrl;
+}
+
+/**
+ * Fetches a single attachment's raw content on-demand from the IMAP server.
+ *
+ * Used when isPersisted=false and the user opens/downloads the attachment.
+ * We re-fetch the full message, re-parse it, and find the attachment by
+ * filename + cid so we don't need to store per-part IMAP offsets.
+ *
+ * Returns null when the message no longer exists on the server.
+ */
+export async function fetchAttachmentFromImap(
+    attachmentId: string
+): Promise<{ content: Buffer; filename: string; mimeType: string } | null> {
+    const att = await prisma.attachment.findUnique({
+        where: { id: attachmentId },
+        include: { mail: { include: { account: true } } },
+    });
+    if (!att || !att.imapUid || !att.imapFolder) return null;
+
+    const account = att.mail.account;
+    const foldersToTry = Array.from(new Set(
+        [att.imapFolder, att.mail.folder, ...TRASH_FOLDER_CANDIDATES, 'INBOX', 'Sent'].filter(Boolean)
+    ));
+
+    try {
+        const client = await getImapClient(account);
+
+        for (const folder of foldersToTry) {
+            let lock: Awaited<ReturnType<typeof client.getMailboxLock>> | null = null;
+            try {
+                lock = await client.getMailboxLock(folder);
+                const msgs: Buffer[] = [];
+                for await (const msg of client.fetch(
+                    String(att.imapUid),
+                    { source: true },
+                    { uid: true }
+                )) {
+                    if (msg.source) msgs.push(Buffer.isBuffer(msg.source) ? msg.source : Buffer.from(msg.source));
+                }
+                if (msgs.length === 0) continue;
+
+                const parsed = await simpleParser(msgs[0]);
+                // Find the best matching attachment deterministically:
+                // 1) exact cid match, 2) filename+size, 3) filename.
+                const candidates = parsed.attachments
+                    .map((a) => {
+                        const cidMatches = !!att.cid && !!a.cid && a.cid === att.cid;
+                        const filenameMatches = !!a.filename && a.filename === att.filename;
+                        const sizeMatches = typeof a.size === 'number' && a.size === att.size;
+
+                        let score = 0;
+                        if (cidMatches) score += 100;
+                        if (filenameMatches && sizeMatches) score += 50;
+                        else if (filenameMatches) score += 10;
+
+                        return { a, score };
+                    })
+                    .filter((entry) => entry.score > 0)
+                    .sort((left, right) => right.score - left.score);
+                const match = candidates[0]?.a;
+                if (!match) continue;
+
+                return {
+                    content: Buffer.isBuffer(match.content) ? match.content : Buffer.from(match.content),
+                    filename: att.filename,
+                    mimeType: att.mimeType ?? match.contentType ?? 'application/octet-stream',
+                };
+            } catch {
+                continue;
+            } finally {
+                lock?.release();
+            }
+        }
+
+        return null;
+    } catch (err) {
+        console.warn(`[attachments] IMAP fetch failed for attachment ${attachmentId}:`, err);
+        return null;
+    }
+}
+
+/**
+ * Fetches an attachment from IMAP and stores it persistently (Blob or local).
+ * Sets isPersisted=true and path on the record afterwards.
+ *
+ * Called when a mail is linked to an order so that order images / downloads
+ * remain available even after the source mail is removed from IMAP.
+ */
+export async function persistAttachment(attachmentId: string): Promise<void> {
+    const att = await prisma.attachment.findUnique({ where: { id: attachmentId } });
+    if (!att || att.isPersisted) return; // already done
+
+    const fetched = await fetchAttachmentFromImap(attachmentId);
+    if (!fetched) {
+        // Message gone from IMAP — nothing we can do, leave isPersisted=false.
+        console.warn(`[attachments] Cannot persist ${attachmentId}: message no longer on IMAP server`);
+        return;
+    }
+
+    const saved = await saveAttachment(
+        fetched.content,
+        fetched.filename,
+        att.mailId,
+        fetched.mimeType
+    );
+
+    await prisma.attachment.update({
+        where: { id: attachmentId },
+        data: {
+            path: saved.path,
+            isPersisted: true,
+        },
+    });
+}
+
+/**
+ * Loads attachment content as Buffer for email sending.
+ * Returns null if attachment not found or cannot be read.
+ */
+export async function loadAttachmentForEmail(
+    attachmentId: string
+): Promise<{ filename: string; content: Buffer; contentType: string } | null> {
+    const att = await prisma.attachment.findUnique({ where: { id: attachmentId } });
+    if (!att || !att.path) return null;
+
+    let buf: Buffer;
+    if (att.path.startsWith('local:')) {
+        const relPath = att.path.slice(6);
+        const localPath = path.join(process.cwd(), relPath);
+        if (!fs.existsSync(localPath)) return null;
+        buf = fs.readFileSync(localPath);
+    } else if (att.path.startsWith('http://') || att.path.startsWith('https://')) {
+        const response = await fetch(att.path);
+        if (!response.ok) return null;
+        const arrBuf = await response.arrayBuffer();
+        buf = Buffer.from(arrBuf);
+    } else {
+        return null;
+    }
+
+    return {
+        filename: att.filename,
+        content: buf,
+        contentType: att.mimeType || 'application/octet-stream',
+    };
 }

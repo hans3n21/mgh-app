@@ -2,10 +2,18 @@ import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
 import type { MailAccount } from '@prisma/client';
 
-// Singleton storage for active connections
-// Key: accountId
-const imapClients: Map<string, ImapFlow> = new Map();
-const smtpTransports: Map<string, nodemailer.Transporter> = new Map();
+// Singleton storage for active connections, keyed by accountId.
+// WICHTIG: an globalThis haengen (wie lib/prisma.ts). Sonst legt jeder
+// HMR-Reload im Dev-Modus einen frischen Pool an, waehrend die alten IMAP-
+// Verbindungen des vorherigen Modul-Stands verwaist offen bleiben. Ueber viele
+// Reloads sammeln sich so Dutzende Verbindungen an, bis der Mailserver neue
+// Logins ablehnt ("Maximum number of connections from user+IP exceeded").
+const globalForMail = globalThis as unknown as {
+    __imapClients?: Map<string, ImapFlow>;
+    __smtpTransports?: Map<string, nodemailer.Transporter>;
+};
+const imapClients: Map<string, ImapFlow> = globalForMail.__imapClients ?? (globalForMail.__imapClients = new Map());
+const smtpTransports: Map<string, nodemailer.Transporter> = globalForMail.__smtpTransports ?? (globalForMail.__smtpTransports = new Map());
 
 /**
  * Returns an authenticated ImapFlow instance for the given account.
@@ -38,6 +46,16 @@ export async function getImapClient(account: MailAccount): Promise<ImapFlow> {
         // Lima-City specific settings (from original script)
         disableAutoEnable: true,
         missingIdleCommand: 'NOOP',
+    });
+
+    // Ohne Handler landet ein asynchroner Socket-Fehler (z.B. ETIMEOUT waehrend
+    // eines langen Fetches) als uncaughtException und kann den Prozess beenden.
+    client.on('error', (err: Error) => {
+        console.error(`IMAP connection error for ${account.email}:`, err.message);
+        imapClients.delete(account.id);
+    });
+    client.on('close', () => {
+        imapClients.delete(account.id);
     });
 
     // Wait for connection

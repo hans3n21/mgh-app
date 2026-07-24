@@ -25,7 +25,10 @@ export async function autoLinkOrderForMail(mailId: string): Promise<string | nul
 
 	// 2) Fallback: by fromEmail and unique open order of that customer
 	if (mail.fromEmail) {
-		const customer = await prisma.customer.findFirst({ where: { email: mail.fromEmail } });
+		const fromEmail = mail.fromEmail;
+		const customer = await prisma.customer.findFirst({
+			where: { OR: [{ email: fromEmail }, { additionalEmails: { has: fromEmail.toLowerCase() } }] },
+		});
 		if (customer) {
 			const openOrders = await prisma.order.findMany({
 				where: { customerId: customer.id, status: { not: 'complete' } },

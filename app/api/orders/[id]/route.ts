@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { z } from 'zod';
+import { touchOrderActivity } from '@/lib/order-activity';
+import { notify } from '@/lib/notify';
+import { auth } from '@/lib/auth';
 
 const updateOrderSchema = z.object({
-  status: z.enum(['intake', 'quote', 'in_progress', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
+  status: z.enum(['intake', 'quote', 'in_progress', 'waiting_parts', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
+  nextStep: z.string().max(200).nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   title: z.string().optional(),
   finalAmountCents: z.number().int().nonnegative().nullable().optional(),
   paymentStatus: z.enum(['open','deposit','paid']).optional(),
+  paymentMethod: z.enum(['paypal', 'direktueberweisung']).nullable().optional(),
+  depositAmountCents: z.number().int().nonnegative().nullable().optional(),
 });
 
 interface RouteParams { params: Promise<{ id: string }> }
@@ -83,6 +89,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         messages: { include: { sender: true } },
       },
     });
+
+    await touchOrderActivity(id);
+
+    // Bei Neuzuweisung den neuen Bearbeiter benachrichtigen (außer Selbstzuweisung)
+    if (validatedData.assigneeId) {
+      const session = await auth();
+      if (session?.user?.id && session.user.id !== validatedData.assigneeId) {
+        await notify({
+          userId: validatedData.assigneeId,
+          type: 'order_assigned',
+          title: `Auftrag dir zugewiesen: ${order.title}`,
+          href: `/app/orders/${order.id}`,
+        });
+      }
+    }
 
     // Entferne Duplikate in Specs: behalte den "besten" Wert pro Key
     if (order.specs && Array.isArray(order.specs)) {

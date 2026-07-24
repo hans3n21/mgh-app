@@ -25,7 +25,8 @@ export async function computeThreadId(
 ): Promise<ThreadResult> {
     // 1. Try direct parent (In-Reply-To)
     if (inReplyTo) {
-        const parent = await prisma.mail.findUnique({
+        // messageId is no longer globally unique – use findFirst (cross-account threading is intentional)
+        const parent = await prisma.mail.findFirst({
             where: { messageId: inReplyTo },
             select: { threadId: true, orderId: true },
         });
@@ -41,7 +42,7 @@ export async function computeThreadId(
         const recentRefs = references.slice(-5).reverse();
 
         for (const refId of recentRefs) {
-            const parent = await prisma.mail.findUnique({
+            const parent = await prisma.mail.findFirst({
                 where: { messageId: refId },
                 select: { threadId: true, orderId: true },
             });

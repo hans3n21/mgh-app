@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import ensureOrderFromMail from '@/lib/mail/ensureOrderFromMail';
 import linkMailArtifactsToOrder from '@/lib/mail/linkArtifacts';
+import { auth } from '@/lib/auth';
 
 const BodySchema = z.object({
   orderType: z.enum(['GUITAR','BODY','NECK','REPAIR','PICKGUARD','PICKUPS','ENGRAVING','FINISH_ONLY']),
@@ -12,6 +13,11 @@ const BodySchema = z.object({
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id: mailId } = await params;
     const mail = await prisma.mail.findUnique({ where: { id: mailId } });
     if (!mail) return NextResponse.json({ error: 'Mail not found' }, { status: 404 });
@@ -19,7 +25,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const bodyRaw = await req.json().catch(() => ({}));
     const body = BodySchema.parse(bodyRaw);
 
-    const { order } = await ensureOrderFromMail(mailId);
+    const { order } = await ensureOrderFromMail(mailId, {
+      orderType: body.orderType,
+      customer: body.customer,
+    });
     
     // Update order type if provided
     if (body.orderType) {
@@ -57,5 +66,3 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Server error' }, { status: 500 });
   }
 }
-
-

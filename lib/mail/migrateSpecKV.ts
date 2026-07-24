@@ -7,6 +7,16 @@ export type Kv = Record<string, string>;
 const GLOBAL_ALIASES: Record<string, string> = {
   color: 'farbe',
   finish_color: 'finish_body',
+  korpus_finish: 'body_surface_treatment',
+  neck_finish: 'finish_neck',
+  headstockFinish: 'headstock_finish',
+  headstock_finish_type: 'headstock_finish',
+  body_finish: 'body_surface_treatment',
+  body_ginish: 'body_surface_treatment',
+  body_finish_type: 'body_surface_treatment',
+  has_top: 'body_has_top',
+  top_enabled: 'body_has_top',
+  decke: 'body_has_top',
   guitar_model: 'body_shape',
   neck_profile: 'headstock_type',
   pickguard_color: 'pg_color_finish',
@@ -20,6 +30,29 @@ export function applyAliases(kv: Kv, orderType: string): Kv {
     if (oldKey in out && !(newKey in out)) {
       out[newKey] = out[oldKey];
       delete out[oldKey];
+    }
+  }
+  // Altdaten: Wenn Top/Decken-Dicke gepflegt ist, setze Decke implizit auf Ja.
+  if (!('body_has_top' in out)) {
+    const hasTopDetails = Boolean((out.body_top || '').trim()) || Boolean((out.body_top_thickness || '').trim());
+    if (hasTopDetails) out.body_has_top = 'Ja';
+  }
+  // Mit Top wird das Finish in Top/Korpus aufgeteilt: altes Gesamt-Finish gilt als Top-Finish.
+  const hasTop = ['ja', 'true', '1', 'yes'].includes((out.body_has_top || '').trim().toLowerCase());
+  if (hasTop) {
+    const legacyFinish = (out.finish_body || '').trim() || (out.body_surface_treatment || '').trim();
+    if (legacyFinish && !(out.finish_body_top || '').trim()) {
+      out.finish_body_top = legacyFinish;
+    }
+    delete out.finish_body;
+    delete out.body_surface_treatment;
+  } else {
+    // Body Finish / Korpus-Finish zusammenführen, falls nur eines gepflegt ist.
+    if ((out.finish_body || '').trim() && !(out.body_surface_treatment || '').trim()) {
+      out.body_surface_treatment = out.finish_body;
+    }
+    if ((out.body_surface_treatment || '').trim() && !(out.finish_body || '').trim()) {
+      out.finish_body = out.body_surface_treatment;
     }
   }
   // entferne Keys, die im aktuellen Preset nicht vorkommen

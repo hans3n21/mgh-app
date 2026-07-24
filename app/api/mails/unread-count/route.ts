@@ -1,16 +1,42 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { auth } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
 	try {
-		// Count unread mails using isRead field (unread = isRead: false)
-		const unreadCount = await prisma.mail.count({
-			where: {
-				isRead: false,
-			},
+		const session = await auth();
+		if (!session?.user) {
+			return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		const { searchParams } = new URL(req.url);
+		const accountId = searchParams.get('accountId') || null;
+
+		if (accountId) {
+			// Count for a specific account. isDeleted ausschliessen — sonst zaehlt
+			// der Badge ungelesene Mails mit, die per Reconcile als geloescht
+			// markiert wurden und in der Liste gar nicht mehr auftauchen (Phantom).
+			const count = await prisma.mail.count({
+				where: { folder: 'INBOX', isRead: false, isDeleted: false, accountId },
+			});
+			return NextResponse.json({ count });
+		}
+
+		// Return counts per account + total
+		const accounts = await prisma.mailAccount.findMany({
+			where: { isActive: true },
+			select: { id: true },
 		});
 
-		return NextResponse.json({ count: unreadCount });
+		const counts: Record<string, number> = {};
+		for (const acc of accounts) {
+			counts[acc.id] = await prisma.mail.count({
+				where: { folder: 'INBOX', isRead: false, isDeleted: false, accountId: acc.id },
+			});
+		}
+
+		const total = Object.values(counts).reduce((a, b) => a + b, 0);
+		return NextResponse.json({ count: total, perAccount: counts });
 	} catch (error) {
 		console.error('Error counting unread mails:', error);
 		return NextResponse.json({ error: 'Failed to count unread mails' }, { status: 500 });

@@ -1,9 +1,18 @@
 import { NextRequest } from 'next/server';
 import { subscribe, unsubscribe } from '@/lib/realtime';
+import { auth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(_req: NextRequest) {
+	const session = await auth();
+	if (!session) {
+		return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
 	return new Response(new ReadableStream({
 		start(controller) {
 			const encoder = new TextEncoder();

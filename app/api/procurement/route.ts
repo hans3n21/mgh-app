@@ -36,10 +36,53 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const suggest = searchParams.get('suggest') === 'true';
+    const query = searchParams.get('q')?.trim() ?? '';
     const showArchived = searchParams.get('archived') === 'true';
     const status = searchParams.get('status');
 
+    if (suggest) {
+      if (query.length < 2) {
+        return NextResponse.json([]);
+      }
+
+      const items = await prisma.procurementItem.findMany({
+        where: {
+          OR: [
+            { name: { contains: query, mode: 'insensitive' } },
+            { link: { contains: query, mode: 'insensitive' } },
+          ],
+        },
+        select: {
+          name: true,
+          link: true,
+          note: true,
+          updatedAt: true,
+        },
+        orderBy: {
+          updatedAt: 'desc',
+        },
+        take: 30,
+      });
+
+      const unique = new Map<string, typeof items[number]>();
+      for (const item of items) {
+        const key = `${item.name}::${item.link ?? ''}`;
+        if (!unique.has(key)) {
+          unique.set(key, item);
+        }
+      }
+
+      return NextResponse.json(Array.from(unique.values()).slice(0, 8));
+    }
+
     const where: any = {};
+
+    // Optional: nur Teile eines bestimmten Auftrags (für den Auftragsdetail-Block)
+    const orderId = searchParams.get('orderId');
+    if (orderId) {
+      where.orderId = orderId;
+    }
 
     if (!showArchived) {
       where.status = { not: 'archiviert' };
@@ -172,7 +215,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Nur Admin kann Status ändern oder Items archivieren
-    if (updateData.status && session.user.role !== 'admin') {
+    if (updateData.status && session.user.role !== 'admin' && session.user.role !== 'admin_no_feedback') {
       return NextResponse.json({ error: 'Keine Berechtigung für Status-Änderung' }, { status: 403 });
     }
 
@@ -205,7 +248,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const session = await auth();
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!session?.user || (session.user.role !== 'admin' && session.user.role !== 'admin_no_feedback')) {
       return NextResponse.json({ error: 'Admin-Berechtigung erforderlich' }, { status: 403 });
     }
 

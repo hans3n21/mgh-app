@@ -4,60 +4,22 @@ import { z } from 'zod';
 import { mapToDatasheet } from '@/lib/mail/mapToDatasheet';
 import linkMailArtifactsToOrder from '@/lib/mail/linkArtifacts';
 import { parseMail } from '@/lib/mail/parseMail';
+import { auth } from '@/lib/auth';
+import ensureOrderFromMail from '@/lib/mail/ensureOrderFromMail';
+import { touchOrderActivity } from '@/lib/order-activity';
 
 const bodySchema = z.object({
   mailId: z.string().min(1),
   overrides: z.record(z.string(), z.any()).optional(),
 });
 
-async function ensureOrderFromMail(mailId: string) {
-  const mail = await prisma.mail.findUnique({ where: { id: mailId } });
-  if (!mail) throw new Error('Mail not found');
-
-  if (mail.orderId) {
-    const order = await prisma.order.findUnique({ where: { id: mail.orderId } });
-    if (!order) throw new Error('Order not found');
-    return { order, mail } as const;
-  }
-
-  // Create minimal customer if necessary
-  let customer = await prisma.customer.findFirst({ where: { email: mail.fromEmail || undefined } });
-  if (!customer) {
-    customer = await prisma.customer.create({
-      data: {
-        name: mail.fromName || mail.fromEmail || 'Unbekannt',
-        email: mail.fromEmail || undefined,
-      },
-    });
-  }
-
-  // Create order id similar to /api/orders POST
-  const lastOrder = await prisma.order.findFirst({ orderBy: { id: 'desc' } });
-  let orderNumber = 1;
-  if (lastOrder) {
-    const match = lastOrder.id.match(/ORD-(\d{4})-(\d{3})/);
-    if (match) orderNumber = parseInt(match[2]) + 1;
-  }
-  const currentYear = new Date().getFullYear();
-  const orderId = `ORD-${currentYear}-${orderNumber.toString().padStart(3, '0')}`;
-
-  const createdOrder = await prisma.order.create({
-    data: {
-      id: orderId,
-      title: mail.subject || 'Neuer Auftrag aus Mail',
-      type: 'GUITAR',
-      customerId: customer.id,
-    },
-  });
-
-  // link mail to order
-  await prisma.mail.update({ where: { id: mail.id }, data: { orderId: createdOrder.id } });
-
-  return { order: createdOrder, mail } as const;
-}
-
 export async function POST(req: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const json = await req.json();
     const { mailId, overrides } = bodySchema.parse(json);
 
@@ -81,6 +43,7 @@ export async function POST(req: NextRequest) {
     // Link attachments + message into order (idempotent)
     await linkMailArtifactsToOrder(mail.id, order.id);
 
+    await touchOrderActivity(order.id);
     return NextResponse.json({
       ok: true,
       orderId: order.id,
@@ -96,5 +59,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to create datasheet' }, { status: 500 });
   }
 }
-
-
