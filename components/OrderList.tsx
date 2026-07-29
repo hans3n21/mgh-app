@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import DeleteOrderButton from '@/components/DeleteOrderButton';
 import CompleteOrderButton from '@/components/CompleteOrderButton';
+import QuickCustomerUpdateButton from '@/components/QuickCustomerUpdateButton';
 import {
     WORKFLOW_STATUSES,
     WORKFLOW_STATUS_LABEL,
@@ -23,6 +24,7 @@ type OrderWithRelations = {
     nextStep?: string | null;
     customer: {
         name: string;
+        email?: string | null;
     } | null;
     assignee: {
         name: string;
@@ -86,38 +88,38 @@ function ActivityBadge({ lastActivityAt, status }: { lastActivityAt?: Date | str
     );
 }
 
+// Zahlungsstand. Bewusst ein €-Zeichen statt eines Hakens: der Haken war nicht
+// vom "Auftrag abschliessen"-Knopf daneben zu unterscheiden. Der Zustand steckt
+// zusaetzlich in der Fuellung (leer -> halb -> voll), nicht nur in der Farbe.
 function PaymentBadge({ paymentStatus }: { paymentStatus?: string | null }) {
     const normalized = paymentStatus || 'open';
-    const map: Record<string, { label: string; symbol: string; cls: string }> = {
+    const map: Record<string, { label: string; cls: string }> = {
         open: {
-            symbol: '○',
-            label: 'Offen',
-            cls: 'bg-slate-800 text-slate-300 border-slate-700',
+            label: 'Zahlung offen',
+            cls: 'border-slate-600 bg-slate-800/60 text-slate-400',
         },
         deposit: {
-            symbol: '◐',
-            label: 'Anzahlung',
-            cls: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
+            label: 'Anzahlung erhalten',
+            cls: 'border-amber-500/70 bg-amber-900/40 text-amber-300',
         },
         paid: {
-            symbol: '✓',
             label: 'Bezahlt',
-            cls: 'bg-emerald-900/30 text-emerald-300 border-emerald-700/50',
+            cls: 'border-emerald-500 bg-emerald-600 text-white font-semibold',
         },
     };
     const entry = map[normalized] || map.open;
     return (
         <span
-            className={`inline-flex h-6 w-6 items-center justify-center text-sm rounded-full border ${entry.cls}`}
+            className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border text-xs leading-none ${entry.cls}`}
             title={entry.label}
             aria-label={entry.label}
         >
-            {entry.symbol}
+            €
         </span>
     );
 }
 
-export default function OrderList({ orders }: { orders: OrderWithRelations[] }) {
+export default function OrderList({ orders, currentUserId }: { orders: OrderWithRelations[]; currentUserId?: string | null }) {
     const router = useRouter();
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('ALL');
@@ -268,45 +270,59 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                 </div>
             )}
 
-            {/* Mobile View (Cards) */}
-            <div className="grid gap-3 md:hidden">
+            {/* Mobile View (Cards)
+                grid-cols-1 ist Absicht: ohne die feste Spalte richtet sich das
+                Raster nach dem laengsten Auftragstitel — eine einzige lange
+                Bezeichnung hat bisher ALLE Karten ueber den Bildschirmrand
+                geschoben (Zahlungssymbol und Loeschen-Knopf abgeschnitten).
+                minmax(0,1fr) laesst die Spalte schrumpfen, dann greift truncate. */}
+            <div className="grid grid-cols-1 gap-3 md:hidden">
                 {sortedOrders.map((order) => (
                     <Link
                         key={order.id}
                         href={`/app/orders/${order.id}`}
                         className="block bg-slate-900/40 border border-slate-800 rounded-xl p-4 hover:bg-slate-800/60 transition-colors relative"
                     >
-                        <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2">
-                                <div>
-                                    <div className="font-medium text-slate-200">{order.title}</div>
-                                    <div className="text-xs text-slate-500 font-mono">{order.id}</div>
-                                    {order.nextStep && (
-                                        <div className="text-xs text-sky-300/80 mt-0.5">→ {order.nextStep}</div>
+                        {/* Kopf: Auftrag links, Status + Zahlung nebeneinander rechts.
+                            Untereinander wirkte das Zahlungssymbol wie verrutscht. */}
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="truncate font-medium text-slate-200">{order.title}</span>
+                                    {order.hasUnread && (
+                                        <span className="h-2 w-2 flex-shrink-0 rounded-full bg-sky-500 animate-pulse" title="Neue Nachricht" />
                                     )}
                                 </div>
-                                {order.hasUnread && (
-                                    <span className="flex-shrink-0 w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" title="Neue Nachricht" />
+                                <div className="font-mono text-xs text-slate-500">{order.id}</div>
+                                {order.nextStep && (
+                                    <div className="mt-0.5 text-xs text-sky-300/80">→ {order.nextStep}</div>
                                 )}
                             </div>
-                            <div className="flex flex-col items-end gap-1">
+                            <div className="flex flex-shrink-0 items-center gap-1.5">
                                 <StatusBadge status={order.status} />
                                 <PaymentBadge paymentStatus={order.paymentStatus} />
                             </div>
                         </div>
 
-                        <div className="flex justify-between items-center text-sm text-slate-400 mt-2">
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-slate-300">{order.customer?.name || 'Unbekannt'}</span>
-                                <span className="text-xs opacity-70">{TYPE_LABEL[order.type] || order.type} · <ActivityBadge lastActivityAt={order.lastActivityAt} status={order.status} /></span>
+                        {/* Fuss: Kunde links, Aktionen rechts — durch eine Linie
+                            abgesetzt, damit die Knoepfe eine eigene Zone haben. */}
+                        <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-800 pt-2.5">
+                            <div className="min-w-0">
+                                <div className="truncate text-sm text-slate-300">{order.customer?.name || 'Unbekannt'}</div>
+                                <div className="text-xs text-slate-500">
+                                    {TYPE_LABEL[order.type] || order.type} · <ActivityBadge lastActivityAt={order.lastActivityAt} status={order.status} />
+                                </div>
                             </div>
 
-                            {/* Delete Button positioned absolutely or inline with stopPropagation */}
-                            <div className="z-10">
-                                <div className="flex items-center gap-2">
-                                    <CompleteOrderButton orderId={order.id} status={order.status} />
-                                    <DeleteOrderButton orderId={order.id} />
-                                </div>
+                            <div className="z-10 flex flex-shrink-0 items-center gap-1.5">
+                                <QuickCustomerUpdateButton
+                                    orderId={order.id}
+                                    customerName={order.customer?.name}
+                                    customerEmail={order.customer?.email}
+                                    currentUserId={currentUserId}
+                                />
+                                <CompleteOrderButton orderId={order.id} status={order.status} />
+                                <DeleteOrderButton orderId={order.id} />
                             </div>
                         </div>
                     </Link>
@@ -416,6 +432,12 @@ export default function OrderList({ orders }: { orders: OrderWithRelations[] }) 
                                 <td className="py-2 pr-4">{order.assignee?.name || '—'}</td>
                                 <td className="py-2 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
                                     <div className="flex items-center gap-2 justify-end">
+                                        <QuickCustomerUpdateButton
+                                            orderId={order.id}
+                                            customerName={order.customer?.name}
+                                            customerEmail={order.customer?.email}
+                                            currentUserId={currentUserId}
+                                        />
                                         <CompleteOrderButton orderId={order.id} status={order.status} />
                                         <DeleteOrderButton orderId={order.id} />
                                     </div>

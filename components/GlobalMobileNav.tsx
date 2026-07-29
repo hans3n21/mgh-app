@@ -74,7 +74,9 @@ export default function GlobalMobileNav() {
           padding: '12px 0 16px 0'
         }}
       >
-        <div className="flex overflow-x-auto px-4 gap-2 no-scrollbar">
+        {/* scrollbar-hide statt no-scrollbar: die Klasse hiess nie so,
+            der Balken war deshalb immer sichtbar (globals.css). */}
+        <div className="flex overflow-x-auto px-4 gap-2 scrollbar-hide">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (

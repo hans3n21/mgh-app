@@ -34,7 +34,7 @@ export default function DeleteOrderButton({ orderId, onDeleted }: { orderId: str
       onClick={handleDelete}
       disabled={loading}
       title="Löschen"
-      className="inline-flex items-center justify-center rounded-lg border border-red-800/60 text-red-300 hover:bg-red-900/20 px-2 py-1"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-300 transition-colors hover:bg-red-900/30 disabled:opacity-40"
       aria-label="Auftrag löschen"
     >
       {/* simples Trash-Icon (Heroicons Outline Trash) */}

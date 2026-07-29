@@ -18,6 +18,7 @@ import {
   ImageScope
 } from '@/lib/order-presets';
 import ImageUploader from './ImageUploader';
+import { TOOLBAR_BUTTON } from '@/lib/ui-classes';
 
 import MessageSystem from './MessageSystem';
 import ImageCarouselModal, { type CarouselImage } from './ImageCarouselModal';
@@ -636,9 +637,11 @@ export default function OrderDetailTabsNew({
         {activeTab === 'spec' && (
           <div className="space-y-4">
             <SuggestionBanner orderId={orderId} />
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <h3 className="hidden sm:block font-semibold">Datenblatt - {TYPE_LABEL[orderType] || orderType}</h3>
+            {/* Eine einzige Umbruchzeile: alle Werkzeuge sind Geschwister und
+                brechen einzeln um. Vorher war die rechte Gruppe ein Block —
+                dadurch stand der Sperrknopf allein in seiner Zeile. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h3 className="hidden sm:block font-semibold">Datenblatt - {TYPE_LABEL[orderType] || orderType}</h3>
                 <button
                   type="button"
                   onClick={() => setEditingDatasheet(v => !v)}
@@ -651,10 +654,13 @@ export default function OrderDetailTabsNew({
                 >
                   <span aria-hidden>{editingDatasheet ? '🔓' : '🔒'}</span>
                   <span className="hidden sm:inline">{editingDatasheet ? 'Bearbeitung aktiv' : 'Bearbeitung gesperrt'}</span>
-                  <span className="sm:hidden">{editingDatasheet ? 'Offen' : 'Gesperrt'}</span>
+                  <span className="sm:hidden">{editingDatasheet ? 'Entsperrt' : 'Gesperrt'}</span>
                 </button>
-              </div>
-              <div className="ml-auto flex shrink-0 items-center justify-end gap-2 sm:gap-3">
+
+                {/* Ab hier die Werkzeuge — auf grossen Schirmen rechtsbuendig,
+                    auf kleinen fliessen sie direkt hinter dem Sperrknopf weiter. */}
+                <span className="hidden sm:ml-auto sm:block" aria-hidden />
+
                 {/* Kunden-Datenblatt: ausfüllbares PDF + Import */}
                 <CustomerDatasheetActions orderId={orderId} />
 
@@ -664,11 +670,11 @@ export default function OrderDetailTabsNew({
                     // Seite neu laden um aktuellste Daten zu bekommen
                     window.location.reload();
                   }}
-                  className="flex items-center gap-2 px-2.5 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-lg text-slate-200"
+                  className={TOOLBAR_BUTTON}
                   title="Datenblatt mit neuesten Änderungen aktualisieren"
                 >
                   <span aria-hidden>🔄</span>
-                  <span className="hidden sm:inline">Aktualisieren</span>
+                  <span>Aktualisieren</span>
                 </button>
 
                 {/* Direkter PDF-Download */}
@@ -696,12 +702,13 @@ export default function OrderDetailTabsNew({
                   datasheetUpdatedAt={datasheetUpdatedAt}
                   stringCount={specValues['string_count'] || '–'}
                 />
-              </div>
             </div>
 
-            {/* Category Chips - nur anzeigen wenn mehr als eine Kategorie */}
+            {/* Category Chips - nur anzeigen wenn mehr als eine Kategorie.
+                scrollbar-hide (so heisst die Klasse in globals.css): der sichtbare
+                Balken unter den Kategorien wirkte wie ein Fehler. Wischen geht weiter. */}
             {categories.length > 1 && (
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+              <div className="scrollbar-hide -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
                 <button
                   onClick={() => setActiveCategories(new Set(categories))}
                   className={`min-h-10 shrink-0 rounded-full px-3 py-1.5 text-sm ${activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'

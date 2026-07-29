@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { FIELD_LABELS, CATEGORY_LABELS, getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
+import { TOOLBAR_BUTTON } from '@/lib/ui-classes';
 
 interface OrderSpec {
   id: string;
@@ -754,7 +755,7 @@ export default function DatasheetPDFGenerator({
     <button
       onClick={generatePDF}
       disabled={generating}
-      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-slate-200"
+      className={`${TOOLBAR_BUTTON} whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed`}
     >
       {generating ? 'Erstelle PDF...' : buttonText}
     </button>

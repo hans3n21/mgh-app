@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { importDatasheetPdf } from '@/lib/datasheet-import-client';
+import { TOOLBAR_BUTTON } from '@/lib/ui-classes';
 
 // Buttons im Datenblatt-Tab: ausfuellbares Kunden-PDF herunterladen (vorbefuellt
 // aus dem Auftrag) und ein vom Kunden ausgefuelltes PDF wieder importieren.
@@ -30,26 +31,31 @@ export default function CustomerDatasheetActions({ orderId }: { orderId: string 
     }
   };
 
+  // Fragment statt eigenem Container: so sind die Knoepfe Geschwister der
+  // uebrigen Werkzeuge und brechen einzeln um, statt als Block. Sonst steht
+  // der Sperrknopf auf schmalen Schirmen allein in seiner Zeile.
   return (
-    <div className="flex items-center gap-2">
+    <>
       <a
         href={`/api/datasheets/fillable?orderId=${encodeURIComponent(orderId)}`}
-        className="flex items-center gap-2 px-2.5 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-lg text-slate-200"
+        className={TOOLBAR_BUTTON}
         title="Ausfüllbares Kunden-Datenblatt (PDF) herunterladen – vorbefüllt mit den aktuellen Auftragsdaten"
         download
       >
         <span aria-hidden>🖊️</span>
-        <span className="hidden sm:inline">Kunden-PDF</span>
+        {/* Beschriftung auch auf dem Handy: ein Stift-Symbol allein sagt
+            niemandem, dass dahinter das Kundenformular steckt. */}
+        <span>Kunden-PDF</span>
       </a>
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
         disabled={importing}
-        className="flex items-center gap-2 px-2.5 py-1.5 text-sm bg-violet-700/70 hover:bg-violet-600/70 rounded-lg text-violet-100 disabled:opacity-50"
+        className={`${TOOLBAR_BUTTON} disabled:opacity-50`}
         title="Vom Kunden ausgefülltes Datenblatt (PDF) importieren – Werte erscheinen als Vorschläge"
       >
         <span aria-hidden>📥</span>
-        <span className="hidden sm:inline">{importing ? 'Importiere…' : 'PDF-Import'}</span>
+        <span>{importing ? 'Importiere…' : 'Import'}</span>
       </button>
       <input
         ref={fileInputRef}
@@ -61,6 +67,6 @@ export default function CustomerDatasheetActions({ orderId }: { orderId: string 
           if (f) handleFile(f);
         }}
       />
-    </div>
+    </>
   );
 }

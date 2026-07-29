@@ -53,7 +53,7 @@ export default function CompleteOrderButton({ orderId, status, onCompleted }: Co
         onClick={openConfirm}
         disabled={loading}
         title="Als fertig markieren"
-        className="inline-flex items-center justify-center rounded-lg border border-emerald-700/70 text-emerald-300 hover:bg-emerald-900/20 px-2 py-1"
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-emerald-300 transition-colors hover:bg-emerald-900/30 disabled:opacity-40"
         aria-label="Auftrag abschließen"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
