@@ -61,7 +61,7 @@ export default async function OrdersPage() {
         <h2 className="text-lg font-semibold">Aufträge</h2>
       </div>
 
-      <OrderList orders={ordersWithUnread} />
+      <OrderList orders={ordersWithUnread} currentUserId={userId ?? null} />
     </section>
   );
 }

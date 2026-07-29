@@ -5,6 +5,7 @@ import { replyToMail } from '@/lib/mail/actions';
 import { loadAttachmentForEmail } from '@/lib/mail/attachments';
 import { z } from 'zod';
 import { touchOrderActivity } from '@/lib/order-activity';
+import { pickAccountForOrder } from '@/lib/mail/pick-account';
 
 function parseAttachmentRefsFromBody(body: string): string[] {
   const ids: string[] = [];
@@ -33,6 +34,8 @@ const createMessageSchema = z.object({
   senderId: z.string().nullable(),
   sendEmail: z.boolean().optional(),
   attachments: z.array(attachmentSchema).optional(),
+  /** Ausdrueckliche Postfachwahl aus der Oberflaeche */
+  accountId: z.string().optional(),
 });
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -65,7 +68,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const body = await request.json();
     const validatedData = createMessageSchema.parse(body);
 
-    const { sendEmail, attachments: rawAttachments, ...messageData } = validatedData;
+    // accountId gehoert nicht in die Message-Tabelle - nur zur Postfachwahl.
+    const { sendEmail, attachments: rawAttachments, accountId: _accountId, ...messageData } = validatedData;
 
     if (sendEmail && messageData.senderType === 'staff') {
       const order = await prisma.order.findUnique({
@@ -76,16 +80,23 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!customerEmail) {
         return NextResponse.json({ error: 'Keine Kunden-E-Mail hinterlegt' }, { status: 400 });
       }
-      const account = await prisma.mailAccount.findFirst({
-        where: { isDefault: true },
-      }) ?? await prisma.mailAccount.findFirst({
-        where: { isActive: true },
+
+      // Postfachwahl siehe lib/mail/pick-account: Antwort an die Adresse, an die
+      // der Kunde geschrieben hat — sonst nach Auftragstyp, NICHT ueber das
+      // globale Standardkonto.
+      const account = await pickAccountForOrder({
+        orderId: id,
+        orderType: order?.type,
+        customerId: order?.customerId,
+        preferredAccountId: validatedData.accountId,
       });
       if (!account) {
         return NextResponse.json({ error: 'Kein aktiver Mail-Account' }, { status: 400 });
       }
 
-      const subject = `Auftrag ${order?.title ?? id} – Nachricht von MGH`;
+      // Bewusst ohne Auftragsnamen und ohne Kontonamen: der Kunde soll eine
+      // schlichte Update-Mail bekommen, keine interne Auftragsbezeichnung.
+      const subject = 'Update von MGH Guitars';
       const html = messageData.body.replace(/\n/g, '<br>');
 
       const attachmentIds = parseAttachmentRefsFromBody(messageData.body);

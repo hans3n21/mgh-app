@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useImperativeHandle, forwardRef, useMemo } from 'react';
+import { useState, useImperativeHandle, forwardRef, useMemo, useRef } from 'react';
 import DatasheetPDFGenerator from './DatasheetPDFGenerator';
 import VoiceInputButton from './VoiceInputButton';
 import ImageCarouselModal from './ImageCarouselModal';
+import { compressImageSource, compressImageFile } from '@/lib/image-compress';
 
 interface Message {
   id: string;
@@ -103,35 +104,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-const MAX_IMAGE_DIMENSION = 1920;
-const IMAGE_QUALITY = 0.8;
-
-async function compressImage(src: string): Promise<{ base64: string; contentType: string }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-        const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return reject(new Error('Canvas nicht verfügbar'));
-      ctx.drawImage(img, 0, 0, width, height);
-      const dataUrl = canvas.toDataURL('image/jpeg', IMAGE_QUALITY);
-      const base64 = dataUrl.split(',')[1];
-      resolve({ base64, contentType: 'image/jpeg' });
-    };
-    img.onerror = () => reject(new Error('Bild konnte nicht geladen werden'));
-    img.src = src;
-  });
-}
-
 function stripHtml(html: string): string {
   if (typeof document === 'undefined') return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   const el = document.createElement('div');
@@ -207,6 +179,9 @@ const MessageSystem = forwardRef<
   const [sending, setSending] = useState(false);
   const [sendMode, setSendMode] = useState<'internal' | 'email' | 'task'>('email');
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [uploadedPhotos, setUploadedPhotos] = useState<{ file: File; previewUrl: string }[]>([]);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoDragOver, setPhotoDragOver] = useState(false);
   const [attachedPDF, setAttachedPDF] = useState<{ blob: Blob; filename: string } | null>(null);
   const [optimizing, setOptimizing] = useState(false);
   const [taskAssigneeId, setTaskAssigneeId] = useState<string>('');
@@ -222,6 +197,15 @@ const MessageSystem = forwardRef<
   const [deletingImages, setDeletingImages] = useState(false);
   const [hiddenMailIds, setHiddenMailIds] = useState<Set<string>>(new Set());
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+
+  /** Nimmt Bilder aus Dateidialog, Drag&Drop oder Kamera entgegen. */
+  const addPhotoFiles = (files: FileList | File[] | null) => {
+    if (!files) return;
+    const next = Array.from(files)
+      .filter((f) => f.type.startsWith('image/'))
+      .map((file) => ({ file, previewUrl: URL.createObjectURL(file) }));
+    if (next.length > 0) setUploadedPhotos((prev) => [...prev, ...next]);
+  };
 
   const deleteSelectedImages = async () => {
     if (!selectedImages.length || !images || !onImagesChange) return;
@@ -495,6 +479,13 @@ const MessageSystem = forwardRef<
           setTaskAssigneeId('');
           setSelectedImages([]);
           setAttachedPDF(null);
+        } else {
+          let errorText = 'Unbekannter Fehler';
+          try {
+            const errorBody = await res.json();
+            errorText = errorBody?.error || errorText;
+          } catch { /* keine JSON-Antwort */ }
+          alert(`Aufgabe konnte nicht erstellt werden: ${errorText}`);
         }
       } catch (error) {
         console.error('Fehler beim Erstellen der Aufgabe:', error);
@@ -527,7 +518,7 @@ const MessageSystem = forwardRef<
           if (img.path.startsWith('/api/attachments/') || (!img.path.startsWith('data:') && !img.path.startsWith('http') && !img.path.startsWith('blob:'))) {
             try {
               const src = img.path.startsWith('/') ? img.path : img.path;
-              const compressed = await compressImage(src);
+              const compressed = await compressImageSource(src);
               requestAttachments.push({ filename, content: compressed.base64, contentType: compressed.contentType });
               bodyRefs.push(`🖼️ ${filename}`);
             } catch {
@@ -535,12 +526,25 @@ const MessageSystem = forwardRef<
             }
           } else if (img.path.startsWith('data:') || img.path.startsWith('blob:') || img.path.startsWith('http')) {
             try {
-              const compressed = await compressImage(img.path);
+              const compressed = await compressImageSource(img.path);
               requestAttachments.push({ filename, content: compressed.base64, contentType: compressed.contentType });
               bodyRefs.push(`🖼️ ${filename}`);
             } catch {
               bodyRefs.push(`🖼️ ${img.path}`);
             }
+          }
+        }
+      }
+
+      if (uploadedPhotos.length > 0) {
+        for (let i = 0; i < uploadedPhotos.length; i++) {
+          const filename = `foto-${i + 1}.jpg`;
+          try {
+            const compressed = await compressImageFile(uploadedPhotos[i].file);
+            requestAttachments.push({ filename, content: compressed.base64, contentType: compressed.contentType });
+            bodyRefs.push(`🖼️ ${filename}`);
+          } catch (error) {
+            console.error('Foto konnte nicht verarbeitet werden:', error);
           }
         }
       }
@@ -577,8 +581,21 @@ const MessageSystem = forwardRef<
         onMessagesChange([...messages, createdMessage]);
         setNewMessage('');
         setSelectedImages([]);
+        uploadedPhotos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+        setUploadedPhotos([]);
         setAttachedPDF(null);
         fetch(`/api/orders/${orderId}/acknowledge`, { method: 'POST' }).catch(() => {});
+      } else {
+        let errorText = 'Unbekannter Fehler';
+        try {
+          const errorBody = await response.json();
+          errorText = errorBody?.error || errorText;
+        } catch { /* keine JSON-Antwort */ }
+        alert(
+          isEmail
+            ? `E-Mail konnte nicht gesendet werden: ${errorText}`
+            : `Nachricht konnte nicht gespeichert werden: ${errorText}`
+        );
       }
     } catch (error) {
       console.error('Fehler beim Senden:', error);
@@ -1154,16 +1171,43 @@ const MessageSystem = forwardRef<
           </div>
         )}
 
-        <textarea
-          placeholder={sendMode === 'task' ? 'Aufgabenbeschreibung…' : sendMode === 'internal' ? 'Interne Notiz (nur für Team sichtbar)…' : 'Nachricht an Kunden…'}
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (newMessage.trim()) sendMessage(); }
+        {/* Bilder lassen sich auch direkt auf das Textfeld ziehen. */}
+        <div
+          className="relative"
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes('Files')) return;
+            e.preventDefault();
+            setPhotoDragOver(true);
           }}
-          className="w-full rounded bg-slate-950 border border-slate-700 px-3 py-2 text-sm resize-none"
-          rows={3}
-        />
+          onDragLeave={(e) => {
+            // Nur zuruecksetzen, wenn der Zeiger den Bereich wirklich verlaesst,
+            // nicht beim Wechsel auf ein Kindelement.
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+            setPhotoDragOver(false);
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.types.includes('Files')) return;
+            e.preventDefault();
+            setPhotoDragOver(false);
+            addPhotoFiles(e.dataTransfer.files);
+          }}
+        >
+          <textarea
+            placeholder={sendMode === 'task' ? 'Aufgabenbeschreibung…' : sendMode === 'internal' ? 'Interne Notiz (nur für Team sichtbar)…' : 'Nachricht an Kunden…'}
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (newMessage.trim()) sendMessage(); }
+            }}
+            className={`w-full rounded bg-slate-950 border px-3 py-2 text-sm resize-none transition-colors ${photoDragOver ? 'border-sky-500' : 'border-slate-700'}`}
+            rows={3}
+          />
+          {photoDragOver && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-sky-950/70 text-sm text-sky-200">
+              Bilder hier ablegen
+            </div>
+          )}
+        </div>
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2 flex-wrap">
             <VoiceInputButton
@@ -1173,12 +1217,37 @@ const MessageSystem = forwardRef<
             />
             {sendMode === 'email' && (
               <>
+                {/* Natives Label statt JS-Klick: oeffnet den Dateidialog zuverlaessig.
+                    Bewusst OHNE `capture`: das wuerde am Handy direkt die Kamera
+                    erzwingen, die Auswahl aus der Galerie verhindern und `multiple`
+                    aushebeln. Ohne capture fragt das Handy "Kamera oder Galerie?" —
+                    und aus der Galerie lassen sich mehrere Bilder auf einmal waehlen. */}
+                <label
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-all bg-slate-700 text-slate-200 ${sending ? 'opacity-50 pointer-events-none' : 'cursor-pointer hover:bg-slate-600'}`}
+                  title="Fotos aufnehmen oder aus der Galerie/vom Rechner auswählen (mehrere möglich)"
+                >
+                  📷 Foto
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    disabled={sending}
+                    className="sr-only"
+                    onChange={(e) => {
+                      addPhotoFiles(e.target.files);
+                      if (photoInputRef.current) photoInputRef.current.value = '';
+                    }}
+                  />
+                </label>
                 <button
                   onClick={() => {
                     const staffFull = users?.find(u => u.id === currentUserId)?.name || 'Dein Ansprechpartner';
                     const staffFirst = staffFull.split(' ')[0];
                     const custFirst = (customerName || 'du').split(' ')[0];
-                    const defaultTpl = 'Hallo {kundenname},\n\nhier ein kurzes Update:\n\n\n\nBei Fragen melde dich gerne.\n\nViele Grüße\n{mitarbeiter}';
+                    // Ohne "Bei Fragen melde dich gerne" - bewusst keine Einladung
+                    // zu Rueckfragen, die wir nicht bedienen wollen.
+                    const defaultTpl = 'Hallo {kundenname},\n\nhier ein kurzes Update zu deinem Auftrag.\n\n\n\nViele Grüße\n{mitarbeiter}';
                     const tpl = (typeof window !== 'undefined' && localStorage.getItem('update-template')) || defaultTpl;
                     const text = tpl.replace(/\{kundenname\}/g, custFirst).replace(/\{mitarbeiter\}/g, staffFirst);
                     setNewMessage(text);
@@ -1203,6 +1272,25 @@ const MessageSystem = forwardRef<
             {selectedImages.length > 0 && (
               <div className="text-xs bg-sky-600 text-white px-2 py-0.5 rounded">{selectedImages.length} Bild(er)</div>
             )}
+            {uploadedPhotos.map((p, idx) => (
+              <div key={p.previewUrl} className="relative">
+                <img src={p.previewUrl} alt={`Foto ${idx + 1}`} className="h-8 w-8 rounded object-cover border border-slate-600" />
+                <button
+                  onClick={() => {
+                    setUploadedPhotos((prev) => {
+                      const next = [...prev];
+                      const [removed] = next.splice(idx, 1);
+                      if (removed) URL.revokeObjectURL(removed.previewUrl);
+                      return next;
+                    });
+                  }}
+                  className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-600 text-white text-[10px] leading-4"
+                  title="Foto entfernen"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
             {attachedPDF && (
               <div className="flex items-center gap-2 text-xs bg-green-600 text-white px-2 py-0.5 rounded">
                 <span>📄 {attachedPDF.filename}</span>
@@ -1330,7 +1418,7 @@ const MessageSystem = forwardRef<
       {/* Lightbox (Mail/Task-Anhänge) */}
       {attachmentLightbox && attachmentLightbox.images.length > 0 && (
         <ImageCarouselModal
-          images={attachmentLightbox.images.map((a, i) => ({ id: a.id, path: a.url, comment: a.filename, position: i, attach: false, scope: 'attachment', mimeType: a.mimeType || undefined }))}
+          images={attachmentLightbox.images.map((a, i) => ({ id: a.id, path: a.url, comment: a.filename, position: i, attach: false, scope: 'attachment', mimeType: a.mimeType || undefined, filename: a.filename }))}
           index={Math.min(attachmentLightbox.index, attachmentLightbox.images.length - 1)}
           scopes={[]}
           onClose={() => setAttachmentLightbox(null)}
