@@ -1,6 +1,11 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import {
+  HEADSTOCK_LOGOS,
+  HEADSTOCK_LOGOS_WITH_IMAGE,
+  findHeadstockLogo,
+} from '@/lib/headstock-logos';
 
 type Props = {
   logoValue: string;
@@ -10,8 +15,6 @@ type Props = {
   hasError?: boolean;
   disabled?: boolean;
 };
-
-const LOGO_OPTIONS = ['Kein Logo', 'Altes Logo', 'Neues Logo', 'Eigenes Logo'];
 
 export default function HeadstockLogoInput({
   logoValue,
@@ -31,6 +34,8 @@ export default function HeadstockLogoInput({
   useEffect(() => {
     setLocalNotes(notesValue || '');
   }, [notesValue]);
+
+  const selected = findHeadstockLogo(localLogo);
 
   return (
     <div className="space-y-2">
@@ -53,12 +58,48 @@ export default function HeadstockLogoInput({
         }`}
       >
         <option value="">Bitte wählen...</option>
-        {LOGO_OPTIONS.map((option) => (
-          <option key={option} value={option}>
-            {option}
+        {HEADSTOCK_LOGOS.map((logo) => (
+          <option key={logo.value} value={logo.value}>
+            {logo.value}
           </option>
         ))}
       </select>
+
+      {/* Referenzbilder: die ausgewählte Variante wird hervorgehoben. */}
+      <div className="grid grid-cols-3 gap-2">
+        {HEADSTOCK_LOGOS_WITH_IMAGE.map((logo) => {
+          const isActive = selected?.value === logo.value;
+          return (
+            <button
+              key={logo.value}
+              type="button"
+              onClick={() => {
+                if (disabled) return;
+                setLocalLogo(logo.value);
+                onLogoChange(logo.value);
+              }}
+              disabled={disabled}
+              title={logo.description ? `${logo.value} – ${logo.description}` : logo.value}
+              className={`group overflow-hidden rounded border text-left transition-colors ${
+                isActive
+                  ? 'border-sky-500 ring-1 ring-sky-500/50'
+                  : 'border-slate-700 hover:border-slate-500'
+              } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={logo.thumb}
+                alt={`Headstock mit ${logo.value}`}
+                className="h-16 w-full bg-slate-900 object-cover"
+                loading="lazy"
+              />
+              <span className="block truncate px-1.5 py-1 text-[11px] text-slate-300">
+                {logo.value}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       <input
         type="text"

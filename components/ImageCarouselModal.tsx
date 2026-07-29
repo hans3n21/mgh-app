@@ -11,6 +11,26 @@ export interface CarouselImage {
   position: number;
   /** Bei PDFs: wenn gesetzt/erkannt, wird ein iframe statt img gerendert */
   mimeType?: string;
+  /** Dateiname fuer den Download-Knopf (sonst wird `comment` bzw. der Pfad genutzt) */
+  filename?: string;
+}
+
+/** Dateiname zum Speichern — Anhaenge fuehren ihn mit, sonst aus dem Pfad ableiten. */
+function downloadName(image: CarouselImage): string {
+  if (image.filename) return image.filename;
+  if (image.comment && /\.[a-z0-9]{2,5}$/i.test(image.comment)) return image.comment;
+  const fromPath = image.path.split('?')[0].split('/').pop();
+  return fromPath || 'download';
+}
+
+/**
+ * Serverseitiges Speichern erzwingen. Noetig, weil `/api/attachments/...` bei
+ * ausgelagerten Dateien auf eine andere Domain weiterleitet — dort greift das
+ * `download`-Attribut des Links nicht mehr.
+ */
+function downloadUrl(image: CarouselImage): string {
+  if (!image.path.startsWith('/api/attachments/')) return image.path;
+  return `${image.path}${image.path.includes('?') ? '&' : '?'}download=1`;
 }
 
 interface ImageCarouselModalProps {
@@ -35,6 +55,8 @@ export default function ImageCarouselModal({
 }: ImageCarouselModalProps) {
   const [currentIndex, setCurrentIndex] = useState(index);
   const [currentComment, setCurrentComment] = useState<string>('');
+  // Erzwingt ein Neuladen der PDF-Vorschau (siehe key am iframe)
+  const [reloadCount, setReloadCount] = useState(0);
   const touchStartXRef = useRef<number | null>(null);
   const mouseStartXRef = useRef<number | null>(null);
 
@@ -139,11 +161,35 @@ export default function ImageCarouselModal({
           }}
         >
           {isPdf(image) ? (
-            <iframe
-              src={image.path}
-              title={image.comment || 'PDF'}
-              className="h-[62vh] w-full max-w-4xl rounded-lg border border-white/20 bg-white sm:h-[80vh]"
-            />
+            <div className="flex h-[62vh] w-full max-w-4xl flex-col gap-2 sm:h-[80vh]">
+              <iframe
+                // Der reload-Zaehler haengt im key: bricht die Anfrage ab (z. B. weil
+                // der Anhang erst vom Mailserver geholt werden musste), bleibt das
+                // iframe sonst dauerhaft leer und laedt von allein nie nach.
+                key={`${image.id}-${reloadCount}`}
+                src={image.path}
+                title={downloadName(image)}
+                className="min-h-0 w-full flex-1 rounded-lg border border-white/20 bg-white"
+              />
+              <div className="flex flex-shrink-0 items-center justify-center gap-2 text-xs text-white/70">
+                <span className="truncate">Nichts zu sehen?</span>
+                <button
+                  type="button"
+                  onClick={() => setReloadCount((v) => v + 1)}
+                  className="rounded border border-white/20 bg-white/10 px-2 py-1 hover:bg-white/20"
+                >
+                  Neu laden
+                </button>
+                <a
+                  href={image.path}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded border border-white/20 bg-white/10 px-2 py-1 hover:bg-white/20"
+                >
+                  In neuem Tab öffnen
+                </a>
+              </div>
+            </div>
           ) : (
             <img
               src={image.path}
@@ -153,9 +199,22 @@ export default function ImageCarouselModal({
             />
           )}
 
-          {/* Subtile Positionsanzeige */}
-          <div className="absolute top-3 left-3 text-xs text-white/80 bg-black/40 px-2 py-0.5 rounded border border-white/10">
-            {currentIndex + 1} / {images.length}
+          {/* Positionsanzeige + Download. Bewusst links: oben rechts sitzt das Schliessen-X. */}
+          <div className="absolute top-3 left-3 flex items-center gap-2">
+            <span className="rounded border border-white/10 bg-black/40 px-2 py-1 text-xs text-white/80">
+              {currentIndex + 1} / {images.length}
+            </span>
+            {/* Herunterladen — um die Datei z. B. per WhatsApp weiterzuschicken */}
+            <a
+              href={downloadUrl(image)}
+              download={downloadName(image)}
+              onClick={(e) => e.stopPropagation()}
+              title={`"${downloadName(image)}" auf dem Rechner speichern`}
+              className="flex items-center gap-1.5 rounded border border-white/10 bg-black/40 px-2 py-1 text-xs text-white/90 hover:bg-black/60"
+            >
+              <span aria-hidden>⬇</span>
+              <span className="hidden sm:inline">Herunterladen</span>
+            </a>
           </div>
         </div>
 

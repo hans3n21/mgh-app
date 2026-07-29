@@ -15,6 +15,37 @@ export interface AttachmentMetadata {
 }
 
 /**
+ * Obergrenze fuer das Nachladen eines Anhangs vom IMAP-Server.
+ * Ohne Limit wartet `getMailboxLock` unbegrenzt, wenn gerade eine Synchronisierung
+ * das Postfach haelt — Vorschau und Datenblatt-Import haengen dann endlos, ohne
+ * dass der Bediener eine Rueckmeldung bekommt.
+ */
+const IMAP_FETCH_TIMEOUT_MS = Number(process.env.IMAP_ATTACHMENT_TIMEOUT_MS || 25_000);
+const IMAP_LOCK_TIMEOUT_MS = 10_000;
+
+export class AttachmentTimeoutError extends Error {
+    constructor(ms: number) {
+        super(`Anhang konnte nicht innerhalb von ${Math.round(ms / 1000)}s vom Mailserver geladen werden`);
+        this.name = 'AttachmentTimeoutError';
+    }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, onLateResolve?: (value: T) => void): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+            // Der abgebrochene Vorgang laeuft weiter — ein spaet erhaltener
+            // Mailbox-Lock muss freigegeben werden, sonst blockiert er alles Weitere.
+            if (onLateResolve) p.then(onLateResolve, () => {});
+            reject(new AttachmentTimeoutError(ms));
+        }, ms);
+        p.then(
+            (value) => { clearTimeout(timer); resolve(value); },
+            (error) => { clearTimeout(timer); reject(error); },
+        );
+    });
+}
+
+/**
  * Type guard to check if a value is a ReadableStream.
  * Works with both Web ReadableStream and Node.js ReadableStream.
  */
@@ -188,13 +219,25 @@ export async function fetchAttachmentFromImap(
         [att.imapFolder, att.mail.folder, ...TRASH_FOLDER_CANDIDATES, 'INBOX', 'Sent'].filter(Boolean)
     ));
 
+    const deadline = Date.now() + IMAP_FETCH_TIMEOUT_MS;
+
     try {
         const client = await getImapClient(account);
 
         for (const folder of foldersToTry) {
+            if (Date.now() > deadline) {
+                console.warn(`[attachments] Zeitlimit beim Nachladen von ${attachmentId} erreicht`);
+                return null;
+            }
             let lock: Awaited<ReturnType<typeof client.getMailboxLock>> | null = null;
             try {
-                lock = await client.getMailboxLock(folder);
+                // Begrenzt: laeuft gerade eine Synchronisierung, wartet
+                // getMailboxLock sonst unbegrenzt auf das Postfach.
+                lock = await withTimeout(
+                    client.getMailboxLock(folder),
+                    IMAP_LOCK_TIMEOUT_MS,
+                    (late) => late.release(),
+                );
                 const msgs: Buffer[] = [];
                 for await (const msg of client.fetch(
                     String(att.imapUid),

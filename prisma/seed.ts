@@ -394,7 +394,6 @@ async function main() {
     { key: 'hardware_color', value: 'Schwarz' },
     { key: 'tuners', value: 'Gotoh SG381-07 MG-T 6L' },
     { key: 'strings', value: '.009–.042, Standard Tuning' },
-    { key: 'action_12th', value: '1.5 mm' },
     { key: 'strap_pins', value: 'Standard' },
     { key: 'notes', value: '' },
     { key: 'price', value: '3020 €' },

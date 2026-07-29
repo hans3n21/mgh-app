@@ -19,7 +19,12 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 		if (!att) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
 		const contentType = att.mimeType || 'application/octet-stream';
-		const disposition = `inline; filename="${att.filename}"`;
+		// ?download=1 erzwingt den Speichern-Dialog. Das `download`-Attribut eines
+		// Links greift nicht, sobald hier auf eine andere Domain weitergeleitet wird.
+		const wantsDownload = new URL(_req.url).searchParams.get('download') === '1';
+		// Anfuehrungszeichen im Dateinamen wuerden den Header zerlegen.
+		const safeName = att.filename.replace(/"/g, '');
+		const disposition = `${wantsDownload ? 'attachment' : 'inline'}; filename="${safeName}"`;
 
 		// ── Not yet persisted: fetch on-demand from IMAP ──────────────────────
 		if (!att.isPersisted || !att.path) {
@@ -78,6 +83,17 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 
 		// ── Persisted: serve from Blob or local filesystem ────────────────────
 		if (att.path.startsWith('http://') || att.path.startsWith('https://')) {
+			// Beim Download nicht weiterleiten, sondern durchreichen — nur so
+			// kommt der Speichern-Header beim Browser an.
+			if (wantsDownload) {
+				const remote = await fetch(att.path);
+				if (!remote.ok) {
+					return NextResponse.json({ error: 'Failed to fetch attachment' }, { status: 404 });
+				}
+				return new NextResponse(await remote.blob(), {
+					headers: { 'Content-Type': contentType, 'Content-Disposition': disposition },
+				});
+			}
 			return NextResponse.redirect(att.path, {
 				headers: {
 					'Content-Type': contentType,

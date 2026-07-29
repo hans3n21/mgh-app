@@ -7,6 +7,7 @@ import AiToolbar from '@/components/mail/AiToolbar';
 import SmartReply from '@/components/mail/SmartReply';
 import PriceCheckBanner from '@/components/mail/PriceCheckBanner';
 import { textToSafeHtml } from '@/lib/mail/linkify';
+import { DATASHEET_TYPE_LABELS } from '@/lib/customer-datasheet';
 import type { PriceValidationHint } from '@/lib/ai/price-matcher';
 
 type Template = { id: string; key: string; lang: string; body: string; subject?: string | null; variables?: string[] };
@@ -24,6 +25,8 @@ type Props = {
 	accountId?: string;
 	originalMailText?: string;
 	customerName?: string;
+	/** Auftrag, dem die Mail zugeordnet ist — bestimmt die Vorbelegung des Datenblatts */
+	orderId?: string | null;
 };
 
 function renderTemplate(tpl: string, values: Record<string, string>) {
@@ -42,7 +45,7 @@ async function filesToPayload(files: File[]): Promise<Array<{ name: string; cont
 
 type ToastType = 'success' | 'error' | 'warn' | 'info';
 
-export default function ReplyComposer({ open, onClose, mailId, defaultSubject = '', defaultTo, defaultBody = '', parsedFields = [], initialLangGuess, accountId, originalMailText, customerName }: Props) {
+export default function ReplyComposer({ open, onClose, mailId, defaultSubject = '', defaultTo, defaultBody = '', parsedFields = [], initialLangGuess, accountId, originalMailText, customerName, orderId }: Props) {
 	const [lang, setLang] = useState<'de' | 'en'>(() => (initialLangGuess || detectLang(defaultBody)) === 'DE' ? 'de' : 'en');
 	const [templates, setTemplates] = useState<Template[]>([]);
 	const [selectedTpl, setSelectedTpl] = useState<Template | null>(null);
@@ -52,6 +55,10 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 	const [sending, setSending] = useState(false);
 	const [files, setFiles] = useState<File[]>([]);
 	const [linkedAttachments, setLinkedAttachments] = useState<LinkedAttachment[]>([]);
+	// Ausfuellbares Kunden-Datenblatt. Das PDF entsteht erst beim Senden auf dem
+	// Server — hier steht nur, welches angehaengt werden soll.
+	const [datasheet, setDatasheet] = useState<{ orderId?: string; type?: string } | null>(null);
+	const [datasheetType, setDatasheetType] = useState('GUITAR');
 	const [bulletsBusy, setBulletsBusy] = useState(false);
 	const [translateBusy, setTranslateBusy] = useState(false);
 	const [toast, setToast] = useState<{ text: string; type: ToastType } | null>(null);
@@ -120,7 +127,7 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 	}, [toast]);
 
 	const variables = useMemo(() => (selectedTpl?.variables || []) as string[], [selectedTpl]);
-	const attachCount = files.length + linkedAttachments.length;
+	const attachCount = files.length + linkedAttachments.length + (datasheet ? 1 : 0);
 
 	function showToast(text: string, type: ToastType = 'info') { setToast({ text, type }); }
 
@@ -205,6 +212,7 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 		try {
 			const attachments = [
 				...linkedAttachments.map((a) => ({ id: a.id })),
+				...(datasheet ? [{ datasheet }] : []),
 				...(await filesToPayload(files)),
 			];
 			const html = textToSafeHtml(body);
@@ -225,6 +233,7 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 			setBody('');
 			setFiles([]);
 			setLinkedAttachments([]);
+			setDatasheet(null);
 			setBullets('');
 			setShowExtras(null);
 			if (fileInputRef.current) fileInputRef.current.value = '';
@@ -473,8 +482,58 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 						className="text-xs text-slate-300"
 						onChange={(e) => { setFiles(prev => [...prev, ...Array.from(e.target.files || [])]); }}
 					/>
-					{(linkedAttachments.length > 0 || files.length > 0) && (
+
+					{/* Ausfuellbares Kunden-Datenblatt mitschicken */}
+					<div className="flex items-center gap-1.5 flex-wrap border-t border-slate-800 pt-2">
+						<span className="text-[10px] text-slate-500 mr-1 flex-shrink-0">Datenblatt:</span>
+						{orderId ? (
+							<button
+								type="button"
+								disabled={Boolean(datasheet)}
+								onClick={() => setDatasheet({ orderId })}
+								className="rounded border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200 hover:border-sky-500/60 disabled:opacity-40 disabled:hover:border-slate-600"
+								title={`Ausfuellbares Kunden-Datenblatt zu ${orderId} anhaengen (vorbefuellt mit den Auftragsdaten)`}
+							>
+								🖊️ Aus {orderId} anhängen
+							</button>
+						) : (
+							<>
+								<select
+									value={datasheetType}
+									onChange={(e) => setDatasheetType(e.target.value)}
+									className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-300"
+									title="Auftragstyp für das leere Datenblatt"
+								>
+									{Object.entries(DATASHEET_TYPE_LABELS).map(([value, label]) => (
+										<option key={value} value={value}>{label}</option>
+									))}
+								</select>
+								<button
+									type="button"
+									disabled={Boolean(datasheet)}
+									onClick={() => setDatasheet({ type: datasheetType })}
+									className="rounded border border-slate-600 bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200 hover:border-sky-500/60 disabled:opacity-40 disabled:hover:border-slate-600"
+									title="Leeres Kunden-Datenblatt anhaengen — diese Mail ist keinem Auftrag zugeordnet"
+								>
+									🖊️ Blanko anhängen
+								</button>
+							</>
+						)}
+					</div>
+
+					{(linkedAttachments.length > 0 || files.length > 0 || datasheet) && (
 						<div className="space-y-1">
+							{datasheet && (
+								<div className="flex items-center justify-between text-xs text-sky-300">
+									<span>
+										🖊️ Kunden-Datenblatt{' '}
+										{datasheet.orderId
+											? `(${datasheet.orderId}, vorbefüllt)`
+											: `(${DATASHEET_TYPE_LABELS[datasheet.type || ''] || datasheet.type}, blanko)`}
+									</span>
+									<button type="button" onClick={() => setDatasheet(null)} className="text-slate-600 hover:text-slate-300">✕</button>
+								</div>
+							)}
 							{linkedAttachments.map((a) => (
 								<div key={a.id} className="flex items-center justify-between text-xs text-slate-400">
 									<span>📎 {a.name || a.id}</span>

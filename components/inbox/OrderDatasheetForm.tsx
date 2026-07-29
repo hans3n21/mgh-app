@@ -50,7 +50,7 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 	// Lade vorhandene Spezifikationen
 	useEffect(() => {
 		let active = true;
-		(async () => {
+		const load = async () => {
 			if (!orderId) return;
 			try {
 				const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/spec`);
@@ -64,13 +64,19 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 						return acc;
 					}, {});
 					setSpecValues(values);
-					console.log('OrderDatasheetForm: Specs geladen', { orderId, orderType, categories, activeCategories: Array.from(activeCategories), valuesCount: Object.keys(values).length });
 				}
 			} catch (error) {
 				console.error('Fehler beim Laden der Spezifikationen:', error);
 			}
-		})();
-		return () => { active = false; };
+		};
+		load();
+		// Nach dem Uebernehmen eines Vorschlags stehen neue Werte in der DB —
+		// ohne dieses Neuladen zeigt das Formular weiter den alten Stand.
+		window.addEventListener('mgh:suggestions-applied', load);
+		return () => {
+			active = false;
+			window.removeEventListener('mgh:suggestions-applied', load);
+		};
 	}, [orderId, orderType]);
 
 	// Debounced Save

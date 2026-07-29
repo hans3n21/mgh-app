@@ -5,12 +5,21 @@ import { replyToMail } from '@/lib/mail/actions';
 import { textToSafeHtml } from '@/lib/mail/linkify';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { buildDatasheetForOrder, DatasheetBuildError } from '@/lib/pdf/datasheet-for-order';
 
 const AttachmentSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
   content: z.string().optional(),
   contentType: z.string().optional(),
+  // Ausfuellbares Kunden-Datenblatt, serverseitig erzeugt. Entweder vorbefuellt
+  // aus einem Auftrag (orderId) oder blanko fuer einen Auftragstyp (type).
+  datasheet: z
+    .object({
+      orderId: z.string().optional(),
+      type: z.string().optional(),
+    })
+    .optional(),
 });
 
 const Body = z.object({
@@ -43,7 +52,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const atts: Array<{ filename: string; content: Buffer; contentType: string }> = [];
     for (const a of body.attachments || []) {
-      if (a.id) {
+      if (a.datasheet) {
+        // Datenblatt hier erzeugen statt im Browser: gleiches PDF wie beim
+        // Download im Auftrag, inklusive Herkunftsstempel fuer den Reimport.
+        // Ein ausdruecklich angeforderter Typ bedeutet "blanko" — dann darf der
+        // Auftrag der Mail nicht heimlich doch die Vorbelegung liefern.
+        const explicitBlank = !a.datasheet.orderId && Boolean(a.datasheet.type);
+        const sheet = await buildDatasheetForOrder({
+          orderId: explicitBlank ? undefined : a.datasheet.orderId || mail.orderId || undefined,
+          type: a.datasheet.type,
+        });
+        atts.push({
+          filename: sheet.filename,
+          content: Buffer.from(sheet.bytes),
+          contentType: 'application/pdf',
+        });
+      } else if (a.id) {
         const att = await prisma.attachment.findUnique({ where: { id: a.id } });
         if (att?.path) {
           const fs = await import('fs/promises');
@@ -80,6 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: true, mode: 'sent', mailId: sentMail.id });
   } catch (e) {
     if (e instanceof z.ZodError) return NextResponse.json({ error: 'Invalid body', details: e.issues }, { status: 400 });
+    if (e instanceof DatasheetBuildError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error('mail reply error', e);
     const msg = e instanceof Error ? e.message : 'Server error';
     return NextResponse.json({ error: msg }, { status: 500 });

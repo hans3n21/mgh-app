@@ -71,6 +71,10 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
       if (res.ok) {
         const updated = await res.json();
         setSuggestions(updated);
+        if (action === 'accept') {
+          // Formulare, die den Auftrag anzeigen, muessen den neuen Wert nachladen.
+          window.dispatchEvent(new CustomEvent('mgh:suggestions-applied'));
+        }
       }
     } catch { /* ignore */ }
     setProcessing(null);

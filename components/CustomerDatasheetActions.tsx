@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { importDatasheetPdf } from '@/lib/datasheet-import-client';
 
 // Buttons im Datenblatt-Tab: ausfuellbares Kunden-PDF herunterladen (vorbefuellt
 // aus dem Auftrag) und ein vom Kunden ausgefuelltes PDF wieder importieren.
@@ -12,24 +13,17 @@ export default function CustomerDatasheetActions({ orderId }: { orderId: string 
   const handleFile = async (file: File) => {
     setImporting(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch(`/api/orders/${orderId}/datasheet/import`, {
-        method: 'POST',
-        body: fd,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert(`Import fehlgeschlagen: ${data.error || res.statusText}`);
+      const outcome = await importDatasheetPdf({ orderId, file, filename: file.name });
+      if (outcome.status === 'cancelled') {
+        alert('Import abgebrochen - es wurde nichts uebernommen.');
+        return;
+      }
+      if (outcome.status === 'error') {
+        alert(`Import fehlgeschlagen: ${outcome.message}`);
         return;
       }
       window.dispatchEvent(new CustomEvent('mgh:suggestions-updated'));
-      const parts = [`${data.created} neue Vorschlaege angelegt`];
-      if (data.unchanged) parts.push(`${data.unchanged} unveraendert/bereits vorhanden`);
-      if (data.ignored) parts.push(`${data.ignored} ignoriert`);
-      alert(`Datenblatt importiert: ${parts.join(', ')}.\n\nDie Vorschlaege kannst du im lila Banner pro Feld uebernehmen oder ablehnen.`);
-    } catch {
-      alert('Import fehlgeschlagen (Netzwerkfehler).');
+      alert(outcome.message);
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

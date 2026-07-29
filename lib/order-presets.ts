@@ -29,7 +29,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
     categories: ["body","neck","finish"],
     fields: {
       body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard","battery_compartment","body_extras","body_surface_treatment","finish_body_top","finish_body_back","body_notes"],
-      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","neck_extras","finish_neck","headstock_finish","neck_notes"],
+      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","tuners","neck_binding","spokewheel","neck_extras","finish_neck","headstock_finish","neck_notes"],
       finish: ["finish_body","finish_body_top","finish_body_back","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","electronics","pickups","elektronikparts","hardware_color","strap_pins","strings","tuning","notes"],
       oberflaeche: [],
       repair: [],
@@ -63,7 +63,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
     categories: ["neck"],
     fields: {
       body: [],
-      neck: ["string_count","headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","action_12th","tuners","neck_binding","spokewheel","neck_extras","neck_foot","customer_provides_body","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","neck_notes"],
+      neck: ["string_count","headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","tuners","neck_binding","spokewheel","neck_extras","neck_foot","customer_provides_body","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","neck_notes"],
       finish: [],
       oberflaeche: [],
       repair: [],
@@ -187,7 +187,6 @@ export const FIELD_LABELS: Record<string, string> = {
   nut: "Sattel",
   side_dots: "Side-Dots",
   neck_shape: "Halsform",
-  action_12th: "Saitenlage 12. Bund",
   tuners: "Mechaniken",
   neck_binding: "Hals Binding",
   spokewheel: "Spokewheel",
@@ -211,7 +210,9 @@ export const FIELD_LABELS: Record<string, string> = {
   elektronikparts: "Elektronikparts",
   hardware_color: "Hardware-Farbe",
   strap_pins: "Gurtpins",
-  strings: "Saiten",
+  // Bewusst "Saitenstärke", nicht "Saiten": sonst kommen Markenwünsche zurück,
+  // die wir nicht bedienen. Gefragt ist allein der Gauge.
+  strings: "Saitenstärke",
   tuning: "Tuning",
   notes: "Notizen",
 

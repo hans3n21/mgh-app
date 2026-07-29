@@ -3,6 +3,8 @@
 // überarbeitet (häufigste Schreibweisen zuerst, ungenutzte Fantasie-Optionen entfernt,
 // MGH-eigene Modelle/Profile ergänzt). Ja/Nein-Felder haben bewusst eine kurze Liste,
 // damit die Schreibweise einheitlich bleibt.
+import { HEADSTOCK_LOGO_OPTIONS } from './headstock-logos';
+
 export const AUTO_FIELDS = new Set<string>([
   // Body
   'body_shape','string_count','body_material','body_thickness','body_has_top','body_top',
@@ -11,7 +13,7 @@ export const AUTO_FIELDS = new Set<string>([
   'body_surface_treatment','pickguard','battery_compartment','neck_pocket','customer_provides_neck',
   // Neck
   'headstock_type','neck_wood','neck_shape','fretboard_scale','fretboard_radius','fretboard_material',
-  'inlays','frets','nut','side_dots','action_12th','tuners','neck_binding','spokewheel',
+  'inlays','frets','nut','side_dots','tuners','neck_binding','spokewheel',
   'finish_neck','headstock_finish','headstock_logo','neck_foot','customer_provides_body',
   // Finish / Allgemein
   'finish_body','finish_body_top','finish_body_back','electronics','hardware_color','strap_pins','strings','tuning',
@@ -63,13 +65,13 @@ export const AUTOFILL_OPTIONS: Record<string,string[]> = {
   frets: ['22 Medium','22 Medium Jumbo','22 Jumbo','24 Medium','24 Medium Jumbo','24 Jumbo','24 Jumbo Stainless Steel','24 Extra Jumbo Stainless Steel','21 Vintage','Fretless'],
   nut: ['Bone','Bone 42mm','Bone 43mm','Tusq','Graphtech Black Tusq XL','Locking Nut 42mm','Locking Nut (Floyd Rose R2/R3)','Headless-Sattel','Corian','Custom'],
   side_dots: ['Standard','Luminlay','Luminlay Grün','Schwarz','Weiß','Keine','Custom'],
-  action_12th: ['1.5 mm / 0.059"','1.8 mm / 0.071"','2.0 mm / 0.079"','2.2 mm / 0.087"','2.5 mm / 0.098"','Custom Setup'],
   tuners: ['6R in Line','6L in Line','6R in Line Locking','6L in Line Locking','7R in Line Locking','3L+3R','3L+3R Locking','Gotoh SG381 MG-T Locking','Schaller Locking','Headless (Steinberger-Style)','4L+2R','Kunde liefert'],
   neck_binding: ['Nein','Weiß','Creme','Schwarz','Custom'],
   spokewheel: JA_NEIN,
   finish_neck: ['Oil/Wax','Natural Satin','Satin','Gloss','Raw Wood','Vintage Tint Nitro','Lackiert wie Body','Custom'],
   headstock_finish: ['Matching Headstock','Schwarz Matt','Schwarz High Gloss','Natural','Satin','Gloss','Oil/Wax','Custom'],
-  headstock_logo: ['Altes Logo','Neues Logo','Eigenes Logo','Kein Logo'],
+  // Quelle: lib/headstock-logos.ts (dort haengen auch die Beispielbilder dran)
+  headstock_logo: HEADSTOCK_LOGO_OPTIONS,
   neck_foot: ['Fender-Standard','Gibson-Style','PRS-Pattern','Custom'],
   customer_provides_body: JA_NEIN,
 

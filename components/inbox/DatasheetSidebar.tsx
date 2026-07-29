@@ -11,6 +11,7 @@ import { normalizeWorkflowStatus } from '@/lib/order-status';
 import { getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
 import PhoneLink from '@/components/PhoneLink';
 import CreateReturnLabelButton from '@/components/CreateReturnLabelButton';
+import SuggestionBanner from '@/components/SuggestionBanner';
 
 type Props = {
 	message: Message | null;
@@ -1254,6 +1255,9 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 							{/* Zeige OrderDatasheetForm wenn ein Auftrag ausgewählt ist, unabhängig von Mail */}
 							{selectedOrderId && orderType ? (
 								<>
+									{/* Offene Vorschlaege (Mail-Extraktion / importiertes Kunden-Datenblatt).
+									    Ohne diesen Banner landen importierte Werte unsichtbar in der DB. */}
+									<SuggestionBanner orderId={selectedOrderId} />
 									<div className="flex items-center justify-between gap-2 rounded border border-slate-800 bg-slate-900/50 px-2 py-1.5">
 										<div>
 											<div className="text-xs font-medium text-slate-200">Datenblatt</div>

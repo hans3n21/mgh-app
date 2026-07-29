@@ -9,6 +9,7 @@ import type { ExtractedEntity } from '@/lib/mail/extraction';
 import { renderMarkdown } from '@/lib/utils/markdown';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { isTrashFolderName } from '@/lib/mail/folders';
+import { importDatasheetFromAttachment } from '@/lib/datasheet-import-client';
 
 type Props = {
 	message: Message | null;
@@ -146,6 +147,7 @@ function toCarouselImage(attachment: AttachmentLike, position: number): Carousel
 		attach: false,
 		scope: 'attachment',
 		mimeType: attachment.mimeType || undefined,
+		filename: attachment.filename,
 	};
 }
 
@@ -180,6 +182,46 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const [attachmentLightbox, setAttachmentLightbox] = useState<{ open: boolean; index: number; items?: CarouselImage[] }>({ open: false, index: 0 });
+
+	// Datenblatt-PDF aus einem Anhang in den zugeordneten Auftrag uebernehmen
+	const [datasheetImportId, setDatasheetImportId] = useState<string | null>(null);
+	const linkedOrderId = message?.assignedTo || message?.orderId || null;
+
+	const importAttachmentAsDatasheet = useCallback(async (attachment: AttachmentLike) => {
+		if (!linkedOrderId) return;
+		setDatasheetImportId(attachment.id);
+		setActionError(null);
+		// Nicht gespeicherte Anhaenge holt der Server erst per IMAP — das dauert
+		// spuerbar, deshalb sofort sagen, dass etwas laeuft.
+		setActionMessage(`Lade "${attachment.filename}" und übertrage nach ${linkedOrderId}…`);
+		try {
+			const outcome = await importDatasheetFromAttachment({
+				orderId: linkedOrderId,
+				attachmentId: attachment.id,
+			});
+			if (outcome.status === 'cancelled') {
+				// Ohne Rueckmeldung wirkt der Abbruch wie ein wirkungsloser Klick.
+				setActionMessage('Import abgebrochen - es wurde nichts uebernommen.');
+				return;
+			}
+			if (outcome.status === 'error') {
+				setActionError(outcome.message);
+				return;
+			}
+			// Der Auftrag rechts zeigt die Vorschlaege sofort an.
+			window.dispatchEvent(new CustomEvent('mgh:suggestions-updated'));
+			setActionMessage(
+				outcome.created > 0
+					? `${outcome.created} Vorschläge in ${linkedOrderId} – rechts im violetten Banner bestätigen.`
+					: `Keine Abweichungen gefunden – ${linkedOrderId} ist bereits auf diesem Stand.`,
+			);
+			// Die Meldung listet auch verworfene Felder — die gehoert in den Dialog,
+			// nicht in den schmalen Hinweisstreifen.
+			alert(outcome.message);
+		} finally {
+			setDatasheetImportId(null);
+		}
+	}, [linkedOrderId]);
 
 	// KI-Toggle: 'original' zeigt die Mail, 'ai' zeigt KI-Ergebnis
 	const [aiView, setAiView] = useState<'original' | 'ai'>('original');
@@ -616,9 +658,13 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 						const isImg = isImageAttachment(a.mimeType, a.filename);
 						const isPdf = isPdfAttachment(a.mimeType, a.filename);
 						const canPreview = isImg || isPdf;
+						// Nur PDFs koennen ein Datenblatt sein, und nur mit zugeordnetem Auftrag
+						// gibt es ein Ziel fuer die Uebernahme.
+						const canImport = isPdf && Boolean(linkedOrderId);
+						const importing = datasheetImportId === a.id;
 						return (
+							<div key={a.id} className="flex items-center gap-1">
 							<a
-								key={a.id}
 								href={a.url}
 								target="_blank"
 								rel="noopener noreferrer"
@@ -647,6 +693,18 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 								)}
 								<span className="text-[11px] text-slate-300 truncate">{a.filename}</span>
 							</a>
+							{canImport && (
+								<button
+									type="button"
+									disabled={importing}
+									onClick={() => importAttachmentAsDatasheet(a)}
+									className="flex-shrink-0 rounded border border-violet-700/60 bg-violet-900/30 px-1.5 py-0.5 text-[10px] text-violet-200 hover:border-violet-500 disabled:opacity-50"
+									title={`Ausgefülltes Datenblatt in Auftrag ${linkedOrderId} übernehmen – legt nur Vorschläge an`}
+								>
+									{importing ? '…' : `→ ${linkedOrderId}`}
+								</button>
+							)}
+							</div>
 						);
 					})}
 				</div>
@@ -925,6 +983,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 					accountId={accountId ?? undefined}
 					originalMailText={previewText || undefined}
 					customerName={message.fromName || undefined}
+					orderId={message.assignedTo || message.orderId || null}
 				/>
 					</div>
 				</>
