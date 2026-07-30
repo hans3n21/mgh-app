@@ -15,6 +15,42 @@ const globalForMail = globalThis as unknown as {
 const imapClients: Map<string, ImapFlow> = globalForMail.__imapClients ?? (globalForMail.__imapClients = new Map());
 const smtpTransports: Map<string, nodemailer.Transporter> = globalForMail.__smtpTransports ?? (globalForMail.__smtpTransports = new Map());
 
+let tlsWarningShown = false;
+
+/**
+ * TLS-Einstellungen für alle Mail-Verbindungen (IMAP wie SMTP).
+ *
+ * Node bringt einen EIGENEN Zertifikatsspeicher mit und liest den von Windows
+ * nicht. Klinkt sich auf dem Rechner etwas in die Verbindung ein — ein
+ * Virenscanner mit HTTPS-Prüfung, eine Firewall, ein Firmen-Proxy — dann sieht
+ * der Browser ein gültiges Zertifikat, Node aber ein selbst ausgestelltes und
+ * bricht ab: SELF_SIGNED_CERT_IN_CHAIN.
+ *
+ * Der saubere Weg ist, Node das Wurzelzertifikat des Mitlesers bekannt zu
+ * machen (Umgebungsvariable NODE_EXTRA_CA_CERTS mit dem Pfad zur .pem-Datei) —
+ * dann bleibt die Prüfung aktiv. Wo das nicht geht, lässt sich die Prüfung mit
+ * IMAP_TLS_REJECT_UNAUTHORIZED=false abschalten.
+ *
+ * ACHTUNG: Über diese Verbindungen laufen die Postfach-Passwörter. Ohne
+ * Prüfung merkt niemand, wenn sich jemand dazwischenschaltet. Nur im eigenen
+ * Netz und nur, wenn der Mitleser bekannt ist.
+ *
+ * Die Variable gab es schon (scripts/imap-check.ts wertet sie aus,
+ * /api/mail/health verlangt sie), nur hat der Client sie nie gelesen.
+ */
+export function getMailTlsOptions(): { rejectUnauthorized: boolean } {
+    const raw = (process.env.IMAP_TLS_REJECT_UNAUTHORIZED || '').trim().toLowerCase();
+    const rejectUnauthorized = !(raw === 'false' || raw === '0' || raw === 'no');
+    if (!rejectUnauthorized && !tlsWarningShown) {
+        tlsWarningShown = true;
+        console.warn(
+            '[mail] TLS-Zertifikate werden NICHT geprueft (IMAP_TLS_REJECT_UNAUTHORIZED=false). ' +
+            'Nur als Notloesung gedacht — besser NODE_EXTRA_CA_CERTS auf das Wurzelzertifikat setzen.'
+        );
+    }
+    return { rejectUnauthorized };
+}
+
 /**
  * Returns an authenticated ImapFlow instance for the given account.
  * reuses existing connections if available and active.
@@ -43,6 +79,7 @@ export async function getImapClient(account: MailAccount): Promise<ImapFlow> {
             pass: account.imapPass,
         },
         logger: false, // Disable verbose logging in production
+        tls: getMailTlsOptions(),
         // Lima-City specific settings (from original script)
         disableAutoEnable: true,
         missingIdleCommand: 'NOOP',
@@ -59,12 +96,44 @@ export async function getImapClient(account: MailAccount): Promise<ImapFlow> {
     });
 
     // Wait for connection
-    await client.connect();
+    try {
+        await client.connect();
+    } catch (error) {
+        throw enrichTlsError(error);
+    }
 
     // Store for reuse
     imapClients.set(account.id, client);
 
     return client;
+}
+
+/** Zertifikatsfehler, die auf einen Mitleser in der Verbindung hindeuten. */
+const TLS_CHAIN_ERRORS = new Set([
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'CERT_UNTRUSTED',
+]);
+
+/**
+ * Haengt an einen Zertifikatsfehler den Hinweis an, was zu tun ist. Ohne das
+ * steht im Protokoll nur "self-signed certificate in certificate chain" — was
+ * nach einem Serverproblem aussieht, obwohl die Ursache auf dem eigenen Rechner
+ * sitzt und der Mailserver voellig in Ordnung ist.
+ */
+export function enrichTlsError(error: unknown): unknown {
+    const code = (error as { code?: string })?.code;
+    if (!code || !TLS_CHAIN_ERRORS.has(code)) return error;
+    if (!(error instanceof Error)) return error;
+    error.message =
+        `${error.message} — Auf diesem Rechner liest etwas die Verbindung mit ` +
+        '(Virenscanner mit HTTPS-Pruefung, Firewall oder Proxy). Node kennt dessen ' +
+        'Wurzelzertifikat nicht, weil es den Windows-Zertifikatsspeicher nicht liest. ' +
+        'Abhilfe: NODE_EXTRA_CA_CERTS auf die .pem-Datei des Wurzelzertifikats setzen ' +
+        '(Pruefung bleibt aktiv) oder notfalls IMAP_TLS_REJECT_UNAUTHORIZED=false in .env.local.';
+    return error;
 }
 
 /**
@@ -86,6 +155,9 @@ export function getSmtpTransport(account: MailAccount): nodemailer.Transporter {
             user: account.smtpUser,
             pass: account.smtpPass,
         },
+        // Gleiche Begruendung wie beim IMAP-Client: wird die Verbindung auf dem
+        // Rechner mitgelesen, scheitert sonst auch der Versand.
+        tls: getMailTlsOptions(),
     });
 
     smtpTransports.set(account.id, transporter);

@@ -23,6 +23,7 @@
 import { ImapFlow } from 'imapflow';
 import type { MailAccount } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { getMailTlsOptions, enrichTlsError } from './client';
 
 // Nach dem Wecksignal kurz warten, bevor wir synchronisieren: Treffen mehrere
 // Mails gleichzeitig ein, meldet der Server jede einzeln — wir wollen aber
@@ -120,6 +121,9 @@ async function connect(watcher: Watcher): Promise<void> {
 		secure: account.imapPort === 993,
 		auth: { user: account.imapUser, pass: account.imapPass },
 		logger: false,
+		// Dieselben TLS-Einstellungen wie der geteilte Client — sonst scheitern
+		// ausgerechnet die Waechter auf Rechnern, wo die Verbindung mitgelesen wird.
+		tls: getMailTlsOptions(),
 		disableAutoEnable: true,
 		missingIdleCommand: 'NOOP',
 		// IDLE regelmaessig erneuern. Der Standard des Protokolls sind 29 Minuten;
@@ -152,7 +156,11 @@ async function connect(watcher: Watcher): Promise<void> {
 		watcher.client = client;
 		watcher.failures = 0;
 		console.log(`[mail-idle] ${watcher.email}: beobachtet Posteingang`);
-	} catch (error) {
+	} catch (rawError) {
+		// Nur beim ersten Versuch ausfuehrlich: bei drei Postfaechern und
+		// wachsendem Wiederholungsabstand wuerde der lange Zertifikatshinweis
+		// sonst das Protokoll zumuellen.
+		const error = watcher.failures === 0 ? enrichTlsError(rawError) : rawError;
 		console.warn(`[mail-idle] ${watcher.email}: Verbindung fehlgeschlagen — ${(error as Error).message}`);
 		try { await client.logout(); } catch { }
 		watcher.client = null;
