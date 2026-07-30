@@ -63,6 +63,82 @@ export default function QuickCustomerUpdateButton({ orderId, customerName, custo
   // Bilder lassen sich ueberall ins Fenster ziehen.
   const [dragOver, setDragOver] = React.useState(false);
 
+  // Serienkamera im Dialog. Der native Dateidialog kann das nicht: mit
+  // `capture` gibt es genau ein Foto pro Aufruf, also drei Schritte je Bild.
+  // Hier bleibt die Vorschau offen — ein Tipp pro Foto.
+  const [cameraOn, setCameraOn] = React.useState(false);
+  const [cameraError, setCameraError] = React.useState<string | null>(null);
+  const [cameraStarting, setCameraStarting] = React.useState(false);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  // getUserMedia gibt es nur in sicherem Kontext (https oder localhost).
+  const [cameraSupported, setCameraSupported] = React.useState(false);
+  React.useEffect(() => {
+    setCameraSupported(Boolean(navigator.mediaDevices?.getUserMedia));
+  }, []);
+
+  const stopCamera = React.useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraOn(false);
+  }, []);
+
+  const startCamera = async () => {
+    setCameraError(null);
+    setCameraStarting(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        // Rueckkamera bevorzugen, aber nicht erzwingen — Notebooks haben nur eine.
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOn(true);
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : '';
+      setCameraError(
+        name === 'NotAllowedError'
+          ? 'Kamerazugriff wurde abgelehnt.'
+          : name === 'NotFoundError'
+            ? 'Keine Kamera gefunden.'
+            : 'Kamera konnte nicht geöffnet werden.',
+      );
+    } finally {
+      setCameraStarting(false);
+    }
+  };
+
+  // Stream erst anhaengen, wenn das <video> im DOM ist.
+  React.useEffect(() => {
+    if (cameraOn && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraOn]);
+
+  // Kamera nie im Hintergrund weiterlaufen lassen.
+  React.useEffect(() => {
+    if (!open) stopCamera();
+  }, [open, stopCamera]);
+  React.useEffect(() => stopCamera, [stopCamera]);
+
+  const takePhoto = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      // Verkleinert wird spaeter beim Senden (compressImageFile).
+      addFiles([new File([blob], `kamera-${photos.length + 1}.jpg`, { type: 'image/jpeg' })]);
+    }, 'image/jpeg', 0.92);
+  };
+
   const selectedAccountLabel = React.useMemo(() => {
     const a = accounts.find((x) => x.id === accountId);
     return a ? `${a.name} – ${a.email}` : 'wird geladen…';
@@ -117,7 +193,8 @@ export default function QuickCustomerUpdateButton({ orderId, customerName, custo
     setOpen(false);
   };
 
-  const addFiles = (fileList: FileList | null) => {
+  // Nimmt Bilder aus Dateidialog, Drag&Drop und Serienkamera entgegen.
+  const addFiles = (fileList: FileList | File[] | null) => {
     if (!fileList || fileList.length === 0) return;
     const next: Photo[] = Array.from(fileList)
       .filter((f) => f.type.startsWith('image/'))
@@ -339,10 +416,64 @@ export default function QuickCustomerUpdateButton({ orderId, customerName, custo
                       }}
                     />
                   </label>
+
+                  {/* Serienkamera: einmal oeffnen, dann ein Tipp je Foto. */}
+                  {cameraSupported && !cameraOn && (
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      disabled={cameraStarting}
+                      className="flex h-16 w-16 flex-col items-center justify-center rounded border border-dashed border-slate-600 text-slate-400 hover:border-slate-400 hover:text-slate-200 disabled:opacity-60"
+                      title="Kamera öffnen und mehrere Fotos hintereinander aufnehmen"
+                    >
+                      <span className="text-xl">🎥</span>
+                      <span className="text-[10px]">{cameraStarting ? '…' : 'Serie'}</span>
+                    </button>
+                  )}
+
                   <span className="self-center text-[11px] text-slate-500">
                     oder Bilder ins Fenster ziehen
                   </span>
                 </div>
+
+                {cameraError && (
+                  <div className="mt-2 rounded border border-amber-700/50 bg-amber-900/20 px-2 py-1.5 text-xs text-amber-300">
+                    {cameraError}
+                  </div>
+                )}
+
+                {cameraOn && (
+                  <div className="mt-3 overflow-hidden rounded-lg border border-slate-700 bg-black">
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      className="max-h-64 w-full bg-black object-contain"
+                    />
+                    <div className="flex items-center justify-between gap-2 bg-slate-900 px-2 py-2">
+                      <span className="text-xs text-slate-400">
+                        {photos.length} Foto{photos.length === 1 ? '' : 's'} aufgenommen
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={takePhoto}
+                          className="rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-200"
+                          title="Foto aufnehmen – Kamera bleibt offen"
+                        >
+                          ● Auslösen
+                        </button>
+                        <button
+                          type="button"
+                          onClick={stopCamera}
+                          className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-800"
+                        >
+                          Fertig
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-4 flex items-center justify-end gap-2">
                   <button
