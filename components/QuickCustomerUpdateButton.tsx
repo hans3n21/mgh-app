@@ -216,13 +216,17 @@ export default function QuickCustomerUpdateButton({ orderId, customerName, custo
     if (photos.length === 0 || sending || !customerEmail) return;
     setSending(true);
     try {
-      const attachments: { filename: string; content: string; contentType: string }[] = [];
+      // Diese Fotos sind immer frisch (Kamera, Dateiauswahl, Drag & Drop) —
+      // nie aus der Galerie des Auftrags. Sie duerfen deshalb ausnahmslos dort
+      // abgelegt werden, ohne Dubletten zu erzeugen.
+      const attachments: { filename: string; content: string; contentType: string; addToGallery: boolean }[] = [];
       for (let i = 0; i < photos.length; i++) {
         const compressed = await compressImageFile(photos[i].file);
         attachments.push({
           filename: `foto-${i + 1}.jpg`,
           content: compressed.base64,
           contentType: compressed.contentType,
+          addToGallery: true,
         });
       }
 

@@ -23,6 +23,15 @@ interface ReplyOptions {
         filename: string;
         content: Buffer;
         contentType: string;
+        /**
+         * true = dieses Bild ist frisch aufgenommen/hochgeladen und gehoert in
+         * die Bildergalerie des Auftrags. Bewusst NICHT fuer Bilder setzen, die
+         * der Nutzer aus eben dieser Galerie ausgewaehlt hat — die kaemen sonst
+         * bei jedem Update erneut hinein, und weil sie beim Senden neu
+         * komprimiert werden, waeren die Dubletten hinterher nicht mehr
+         * zuverlaessig zu erkennen.
+         */
+        addToGallery?: boolean;
     }[];
 }
 
@@ -139,7 +148,7 @@ export async function replyToMail(options: ReplyOptions): Promise<Mail> {
     if (options.attachments) {
         for (const att of options.attachments) {
             const saved = await saveAttachment(att.content, att.filename, sentMail.id, att.contentType);
-            await prisma.attachment.create({
+            const created = await prisma.attachment.create({
                 data: {
                     mailId: sentMail.id,
                     filename: saved.filename,
@@ -149,6 +158,35 @@ export async function replyToMail(options: ReplyOptions): Promise<Mail> {
                     isPersisted: true,
                 },
             });
+
+            // 5a. Frisch aufgenommene Fotos zusaetzlich in die Bildergalerie des
+            // Auftrags. Bisher landete dort nur, was der Kunde UNS schickt —
+            // unsere eigenen Update-Fotos waren ausschliesslich im
+            // Kommunikationsverlauf zu finden.
+            //
+            // attach:false ist Absicht: eingehende Anhaenge werden mit true
+            // angelegt und wandern damit ins Kunden-PDF. Fuer Fotos, die wir
+            // gerade erst an den Kunden geschickt haben, waere das ueberraschend
+            // — sie sollen sichtbar sein, aber nicht ungefragt im Dokument
+            // landen. Wer sie dort haben will, hakt sie in der Galerie an.
+            const isImage = (saved.mimeType || '').startsWith('image/');
+            if (att.addToGallery && isImage && sentMail.orderId) {
+                const publicPath = `/api/attachments/${created.id}`;
+                const already = await prisma.orderImage.findFirst({
+                    where: { orderId: sentMail.orderId, path: publicPath },
+                });
+                if (!already) {
+                    await prisma.orderImage.create({
+                        data: {
+                            orderId: sentMail.orderId,
+                            path: publicPath,
+                            comment: `An Kunden gesendet: ${saved.filename}`,
+                            attach: false,
+                            position: 0,
+                        },
+                    });
+                }
+            }
         }
     }
 

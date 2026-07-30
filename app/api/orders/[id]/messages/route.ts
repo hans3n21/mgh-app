@@ -26,6 +26,10 @@ const attachmentSchema = z.object({
   filename: z.string().min(1),
   content: z.string().min(1), // base64
   contentType: z.string().optional(),
+  // Setzt die Oberflaeche nur fuer frisch aufgenommene/hochgeladene Fotos —
+  // nicht fuer Bilder, die aus der Galerie des Auftrags stammen (siehe
+  // ReplyOptions in lib/mail/actions).
+  addToGallery: z.boolean().optional(),
 });
 
 const createMessageSchema = z.object({
@@ -100,17 +104,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const html = messageData.body.replace(/\n/g, '<br>');
 
       const attachmentIds = parseAttachmentRefsFromBody(messageData.body);
-      const emailAttachments: { filename: string; content: Buffer; contentType: string }[] = [];
+      const emailAttachments: { filename: string; content: Buffer; contentType: string; addToGallery?: boolean }[] = [];
       for (const attId of attachmentIds) {
         const loaded = await loadAttachmentForEmail(attId);
         if (loaded) {
+          // Bereits vorhandene Anhaenge, die noch einmal mitgehen — die liegen
+          // schon irgendwo, also nicht erneut in die Galerie.
           emailAttachments.push({ filename: loaded.filename, content: loaded.content, contentType: loaded.contentType });
         }
       }
       if (rawAttachments?.length) {
         for (const a of rawAttachments) {
           try {
-            emailAttachments.push({ filename: a.filename, content: Buffer.from(a.content, 'base64'), contentType: a.contentType || 'application/octet-stream' });
+            emailAttachments.push({
+              filename: a.filename,
+              content: Buffer.from(a.content, 'base64'),
+              contentType: a.contentType || 'application/octet-stream',
+              addToGallery: a.addToGallery === true,
+            });
           } catch { /* base64 ungültig */ }
         }
       }

@@ -506,7 +506,10 @@ const MessageSystem = forwardRef<
     try {
       let messageBody = newMessage.trim();
       const bodyRefs: string[] = [];
-      const requestAttachments: { filename: string; content: string; contentType: string }[] = [];
+      // addToGallery nur bei frisch hochgeladenen Fotos: Bilder aus selectedImages
+      // stammen aus der Galerie des Auftrags und kaemen sonst bei jedem Update
+      // erneut hinein.
+      const requestAttachments: { filename: string; content: string; contentType: string; addToGallery?: boolean }[] = [];
 
       if (selectedImages.length > 0 && images) {
         let imgIndex = 0;
@@ -541,7 +544,7 @@ const MessageSystem = forwardRef<
           const filename = `foto-${i + 1}.jpg`;
           try {
             const compressed = await compressImageFile(uploadedPhotos[i].file);
-            requestAttachments.push({ filename, content: compressed.base64, contentType: compressed.contentType });
+            requestAttachments.push({ filename, content: compressed.base64, contentType: compressed.contentType, addToGallery: true });
             bodyRefs.push(`🖼️ ${filename}`);
           } catch (error) {
             console.error('Foto konnte nicht verarbeitet werden:', error);
