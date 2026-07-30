@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import OrderDetailTabsNew from '@/components/OrderDetailTabsNew';
-import { normalizeWorkflowStatus, WORKFLOW_STATUSES, WORKFLOW_STATUS_LABEL } from '@/lib/order-status';
+import { normalizeWorkflowStatus, WORKFLOW_STATUSES, WORKFLOW_STATUS_LABEL, WORKFLOW_STATUS_CLASS } from '@/lib/order-status';
 
 interface OrderImageLocal {
   id: string;
@@ -80,10 +80,9 @@ interface OrderDetailClientProps {
   initialTasks?: OrderTaskEntry[];
 }
 
-function statusToProgress(status: string): number {
-  const normalized = normalizeWorkflowStatus(status);
-  const index = WORKFLOW_STATUSES.indexOf(normalized);
-  return Math.round(((Math.max(index, 0) + 1) / WORKFLOW_STATUSES.length) * 100);
+/** Position des Status in der Workflow-Reihenfolge — Grundlage der Schrittanzeige. */
+function statusToIndex(status: string): number {
+  return Math.max(WORKFLOW_STATUSES.indexOf(normalizeWorkflowStatus(status)), 0);
 }
 
 export default function OrderDetailClient({ order: initialOrder, users, currentUserId, hasUnreadComm, initialTasks }: OrderDetailClientProps) {
@@ -258,50 +257,30 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
   };
 
   const normalizedStatus = normalizeWorkflowStatus(order.status);
-  const progress = statusToProgress(order.status);
+  const statusIndex = statusToIndex(order.status);
 
   return (
     <div className="w-full space-y-4">
-      <div className="rounded-xl border border-slate-800/80 bg-slate-950/70 p-3 shadow-inner shadow-black/10 sm:p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Workflow</div>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-sky-500/15 px-2.5 py-1 text-xs font-medium text-sky-200">
-                {WORKFLOW_STATUS_LABEL[normalizedStatus]}
-              </span>
-              <span
-                className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                  order.wcOrderId
-                    ? 'bg-emerald-500/15 text-emerald-200'
-                    : 'bg-slate-800 text-slate-300'
-                }`}
-              >
-                {order.wcOrderId ? `Shop #${order.wcOrderId}` : 'Nicht im Shop'}
-              </span>
-            </div>
-          </div>
-          <div className="w-24 shrink-0 pt-0.5">
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span>Stand</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="mt-1.5 h-1.5 rounded-full bg-slate-800">
-              <div
-                className="h-1.5 rounded-full bg-sky-500 transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-        </div>
+      {/*
+        Vorher standen hier drei Darstellungen DESSELBEN Werts uebereinander:
+        ein farbiger Chip "Eingang", ein Auswahlfeld mit "Eingang" und eine
+        Prozentzahl, die nichts anderes ist als Position durch Anzahl. Dazu die
+        Ueberschrift "Workflow", die nichts erklaert. Zusammen 171 px, auf dem
+        Handy fast ein Viertel des Bildschirms, bevor der erste Inhalt kam.
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <label className="min-w-0">
-            <span className="mb-1 block text-[11px] font-medium text-slate-500">Status</span>
+        Jetzt: der Chip IST das Auswahlfeld (samt Statusfarbe), daneben der
+        Mitarbeiter, darunter eine Schrittanzeige statt der Scheingenauigkeit
+        "17%". Eine Zeile statt vier.
+      */}
+      <div className="rounded-xl border border-slate-800/80 bg-slate-950/70 p-3 shadow-inner shadow-black/10 sm:p-4">
+        <div className="flex items-center gap-2">
+          <div className={`relative shrink-0 rounded-full border ${WORKFLOW_STATUS_CLASS[normalizedStatus]}`}>
             <select
               value={normalizedStatus}
               onChange={(e) => handleStatusChange(e.target.value)}
-              className="h-10 w-full rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 text-sm text-slate-100 outline-none transition focus:border-sky-500"
+              aria-label="Status"
+              title="Status ändern"
+              className="h-8 cursor-pointer appearance-none rounded-full bg-transparent py-0 pl-3 pr-7 text-xs font-medium text-inherit outline-none [&>option]:bg-slate-900 [&>option]:text-slate-100"
             >
               {WORKFLOW_STATUSES.map((statusKey) => (
                 <option key={statusKey} value={statusKey}>
@@ -309,14 +288,24 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
                 </option>
               ))}
             </select>
-          </label>
+            <svg className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
 
-          <label className="min-w-0">
-            <span className="mb-1 block text-[11px] font-medium text-slate-500">Mitarbeiter</span>
+          {/* Personensymbol statt Beschriftung "Mitarbeiter": das Wort kostet auf
+              375 px die Haelfte des Feldes, und ein Name daneben sagt ohnehin,
+              worum es geht. */}
+          <div className="relative min-w-0 flex-1 rounded-full border border-slate-700 bg-slate-900/60 sm:max-w-[13rem]">
+            <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
             <select
               value={order.assigneeId || ''}
               onChange={(e) => handleAssigneeChange(e.target.value)}
-              className="h-10 w-full rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 text-sm text-slate-100 outline-none transition focus:border-sky-500"
+              aria-label="Mitarbeiter"
+              title="Mitarbeiter zuweisen"
+              className="h-8 w-full cursor-pointer appearance-none truncate rounded-full bg-transparent py-0 pl-8 pr-7 text-xs text-slate-200 outline-none [&>option]:bg-slate-900 [&>option]:text-slate-100"
             >
               <option value="">Nicht zugewiesen</option>
               {users.map((user) => (
@@ -325,7 +314,38 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
                 </option>
               ))}
             </select>
-          </label>
+            <svg className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+
+          {/* Auf dem Handy nur zeigen, wenn es den Shop-Auftrag WIRKLICH gibt:
+              "Kein Shop" ist die Abwesenheit einer Information und hat dem
+              Mitarbeiterfeld so viel Breite genommen, dass von "Admin" nur
+              noch "A" uebrig blieb. Auf breiten Schirmen ist Platz genug. */}
+          {order.wcOrderId ? (
+            <span className="shrink-0 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
+              Shop #{order.wcOrderId}
+            </span>
+          ) : (
+            <span className="hidden shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-400 sm:inline-block">
+              Kein Shop
+            </span>
+          )}
+        </div>
+
+        {/* Sechs Segmente statt Prozentbalken — die Zahl war nur Position durch
+            Anzahl und gaukelte eine Genauigkeit vor, die es nicht gibt. */}
+        <div
+          className="mt-2.5 flex gap-1"
+          title={`Schritt ${statusIndex + 1} von ${WORKFLOW_STATUSES.length}: ${WORKFLOW_STATUS_LABEL[normalizedStatus]}`}
+        >
+          {WORKFLOW_STATUSES.map((statusKey, index) => (
+            <span
+              key={statusKey}
+              className={`h-1 flex-1 rounded-full transition-colors ${index <= statusIndex ? 'bg-sky-500' : 'bg-slate-800'}`}
+            />
+          ))}
         </div>
       </div>
 
