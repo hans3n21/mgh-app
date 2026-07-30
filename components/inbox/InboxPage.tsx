@@ -14,7 +14,12 @@ import InboxAccountSettingsPanel from './InboxAccountSettingsPanel';
 import type { MailAccountTab } from './AccountSidebar';
 import { isTrashFolderName } from '@/lib/mail/folders';
 
-const AUTO_SYNC_INTERVAL = 3 * 60 * 1000; // 3 Minuten
+// Frueher 3 Minuten — so lange konnte eine neue Mail unsichtbar bleiben. Seit
+// syncFolder unveraenderte Ordner per IMAP-STATUS erkennt und ueberspringt,
+// kostet ein Leerlauf-Durchgang statt ~1,6s nur noch ~70ms; entsprechend oefter
+// duerfen wir fragen. Bei "nichts Neues" laedt der Client die Liste gar nicht
+// erst neu (siehe doSync).
+const AUTO_SYNC_INTERVAL = 45 * 1000; // 45 Sekunden
 
 // Ein Schluessel, der die komplette Listen-Auswahl beschreibt (Postfach/Ordner/
 // Suche/Filter). Wird sowohl fuer den Cache als auch fuer den Stale-Scope-
@@ -556,6 +561,16 @@ export default function InboxPage() {
 				setRemoteSyncCurrentFolder(data?.currentFolder || null);
 				return;
 			}
+			// Hat der Server nichts gefunden, bleibt die Liste wie sie ist. Beim
+			// kurzen Takt ist das der Normalfall — ein Neuladen waere nicht nur
+			// unnoetige Last, es wuerde auch die Scrollposition und die gerade
+			// geoeffnete Mail unter dem Finger wegziehen.
+			const data = await res.json().catch(() => null);
+			if (data?.changed === false) {
+				await fetchSyncStatus();
+				setLastSyncTime(new Date());
+				return;
+			}
 			mailCacheRef.current.clear();
 			clearInboxSnapshots();
 			// Ueber die Ref: Der Sync kann Sekunden dauern; hat der Nutzer
@@ -597,6 +612,12 @@ export default function InboxPage() {
 				return;
 			}
 			if (res.ok) {
+				const data = await res.json().catch(() => null);
+				// Nichts Neues: Liste unangetastet lassen (siehe doSync).
+				if (data?.changed === false) {
+					setLastSyncTime(new Date());
+					return;
+				}
 				// WICHTIG: ueber die Ref, nicht die eingefangene Instanz. Dieser
 				// Punkt liegt Sekunden nach dem Klick — die eingefangene fetchMails
 				// traegt noch den Scope von VOR dem Wechsel und wuerde die neue

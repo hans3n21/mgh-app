@@ -141,7 +141,13 @@ export async function POST(req: NextRequest) {
 				{ status: 409 }
 			);
 		}
-		console.log('✅ API /mail/sync: Sync completed:', result);
+		const skipped = result.accounts.reduce(
+			(sum, a) => sum + a.folders.filter((f) => f.skipped).length,
+			0
+		);
+		console.log(
+			`✅ API /mail/sync: fertig — ${result.totalProcessed} neu, ${result.totalRemoved} entfernt, ${skipped} Ordner unveraendert (uebersprungen), ${result.errorCount} Fehler`
+		);
 		return NextResponse.json(
 			{
 				...result,
@@ -154,6 +160,11 @@ export async function POST(req: NextRequest) {
 				currentAccountEmail: null,
 				currentFolder: null,
 				totalProcessed: result.totalProcessed,
+				totalRemoved: result.totalRemoved,
+				// Der Client darf sich das Neuladen der Liste sparen, wenn nichts
+				// passiert ist — bei einem kurzen Abfragetakt ist das der Regelfall.
+				changed: result.changed,
+				skippedFolders: skipped,
 				errorCount: result.errorCount,
 			},
 			{ status: result.success ? 200 : 207 }

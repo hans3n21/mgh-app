@@ -50,7 +50,23 @@ export type FolderSyncResult = {
 	folder: string;
 	success: boolean;
 	processed: number;
+	/** Wie viele lokale Mails der Abgleich als serverseitig geloescht markiert hat. */
+	removed?: number;
+	/** true = STATUS zeigte denselben Stand wie beim letzten Lauf, nichts zu tun. */
+	skipped?: boolean;
 	error?: string;
+};
+
+/**
+ * Was wir uns pro Ordner merken. `lastUid` begrenzt die UID-Suche; die
+ * Momentaufnahme (uidNext/messages/uidValidity) laesst den naechsten Lauf
+ * erkennen, ob sich ueberhaupt etwas getan hat — siehe syncFolder.
+ */
+type FolderCursorState = {
+	lastUid: number;
+	uidValidity?: string;
+	uidNext?: number;
+	messages?: number;
 };
 
 export type AccountSyncResult = {
@@ -64,6 +80,9 @@ export type MailSyncResult = {
 	success: boolean;
 	accounts: AccountSyncResult[];
 	totalProcessed: number;
+	totalRemoved: number;
+	/** false = kein Ordner hat sich geaendert; der Aufrufer kann sich das Neuladen sparen. */
+	changed: boolean;
 	errorCount: number;
 };
 
@@ -99,14 +118,36 @@ export async function syncMails(options?: SyncOptions) {
 		(sum, account) => sum + account.folders.reduce((fSum, folder) => fSum + folder.processed, 0),
 		0
 	);
+	const totalRemoved = accounts.reduce(
+		(sum, account) => sum + account.folders.reduce((fSum, folder) => fSum + (folder.removed ?? 0), 0),
+		0
+	);
 	const errorCount = accounts.reduce(
 		(sum, account) => sum + account.folders.filter((f) => !f.success).length,
 		0
 	);
+	const changed = totalProcessed > 0 || totalRemoved > 0;
+
+	// Offene Posteingaenge sofort benachrichtigen, statt sie auf ihren eigenen
+	// Abfragetakt warten zu lassen: Wer die App offen hat, sieht eine neue Mail
+	// in dem Moment, in dem IRGENDEIN Lauf sie geholt hat (Hintergrund-Worker,
+	// anderer Tab, anderer Mitarbeiter). Der Kanal existierte schon, es hat ihn
+	// nur nie jemand bedient.
+	if (changed) {
+		try {
+			const { publish } = await import('@/lib/realtime');
+			publish({ type: 'message.created', data: { processed: totalProcessed, removed: totalRemoved } });
+		} catch {
+			// Live-Benachrichtigung darf den Sync nie stoeren.
+		}
+	}
+
 	return {
 		success: errorCount === 0,
 		accounts,
 		totalProcessed,
+		totalRemoved,
+		changed,
 		errorCount,
 	};
 }
@@ -268,26 +309,77 @@ export async function syncAccount(
 export async function syncFolder(account: MailAccount, folderName: string) {
 	const client = await getImapClient(account);
 
+	const cursorKey = `sync:${account.id}:${folderName}`;
+	const cursorRow = await prisma.systemSetting.findUnique({ where: { key: cursorKey } });
+	let stored: FolderCursorState | null = null;
+	if (cursorRow?.value) {
+		try { stored = JSON.parse(cursorRow.value) as FolderCursorState; } catch { }
+	}
+
+	// Billiger Vorabcheck, bevor wir den Ordner ueberhaupt oeffnen: STATUS kostet
+	// ~20ms, der volle Durchlauf (SELECT + zwei SEARCH + Abgleich mit der DB)
+	// ~200-600ms. Stimmen UIDVALIDITY, UIDNEXT und Nachrichtenzahl noch mit dem
+	// Stand nach dem letzten vollstaendigen Lauf ueberein, KANN sich nichts
+	// geaendert haben:
+	//   neue Mail        -> UIDNEXT steigt
+	//   geloescht/verschoben -> messages sinkt
+	//   Server-Neunummerierung -> UIDVALIDITY aendert sich
+	// Ein Zugang gleichzeitig mit einem Abgang laesst messages gleich, hebt aber
+	// UIDNEXT — auch das faellt auf. Nur wenn alle drei passen, sparen wir uns
+	// Oeffnen, Suchen und Reconcile komplett.
+	let status: { messages?: number; uidNext?: number; uidValidity?: bigint } | null = null;
+	try {
+		status = await client.status(folderName, { messages: true, uidNext: true, uidValidity: true });
+	} catch {
+		// Server ohne STATUS-Unterstuetzung oder Ordner gerade blockiert:
+		// einfach reguelaer weiterarbeiten.
+	}
+	const statusUidValidity = status?.uidValidity !== undefined ? String(status.uidValidity) : undefined;
+
+	if (
+		status?.uidNext !== undefined &&
+		status?.messages !== undefined &&
+		stored?.uidNext !== undefined &&
+		stored?.messages !== undefined &&
+		stored.uidNext === status.uidNext &&
+		stored.messages === status.messages &&
+		String(stored.uidValidity ?? '') === String(statusUidValidity ?? '')
+	) {
+		return { folder: folderName, success: true, processed: 0, removed: 0, skipped: true } satisfies FolderSyncResult;
+	}
+
 	// Open mailbox
 	const lock = await client.getMailboxLock(folderName);
 	try {
-		// Get last seen UID from DB (SystemSetting)
-		const cursorKey = `sync:${account.id}:${folderName}`;
-		const cursor = await prisma.systemSetting.findUnique({ where: { key: cursorKey } });
-
 		let lastUid = 0;
 		const currentUidValidity = client.mailbox ? (client.mailbox as any).uidValidity : undefined;
-		if (cursor?.value) {
-			try {
-				const parsed = JSON.parse(cursor.value);
-				// Wenn UIDVALIDITY sich geändert hat, sind alte UIDs ungültig → Cursor ignorieren
-				if (currentUidValidity && parsed.uidValidity && String(parsed.uidValidity) !== String(currentUidValidity)) {
-					lastUid = 0; // Erzwinge kompletten Neuabruf
-				} else {
-					lastUid = parsed.lastUid || 0;
-				}
-			} catch { }
+		if (stored) {
+			// Wenn UIDVALIDITY sich geändert hat, sind alte UIDs ungültig → Cursor ignorieren
+			if (currentUidValidity && stored.uidValidity && String(stored.uidValidity) !== String(currentUidValidity)) {
+				lastUid = 0; // Erzwinge kompletten Neuabruf
+			} else {
+				lastUid = stored.lastUid || 0;
+			}
 		}
+
+		// Die Momentaufnahme fuer den naechsten Lauf. Bewusst die Werte VOM ANFANG
+		// dieses Laufs: trifft waehrenddessen eine Mail ein, weicht der naechste
+		// STATUS ab und wir holen sie nach. Lieber ein Lauf zu viel als eine
+		// verpasste Mail.
+		const persistCursor = async (uid: number, withSnapshot: boolean) => {
+			const cursorValue: FolderCursorState = { lastUid: uid };
+			if (currentUidValidity) cursorValue.uidValidity = String(currentUidValidity);
+			if (withSnapshot && status?.uidNext !== undefined && status?.messages !== undefined) {
+				cursorValue.uidNext = status.uidNext;
+				cursorValue.messages = status.messages;
+				if (statusUidValidity) cursorValue.uidValidity = statusUidValidity;
+			}
+			await prisma.systemSetting.upsert({
+				where: { key: cursorKey },
+				update: { value: JSON.stringify(cursorValue) },
+				create: { key: cursorKey, value: JSON.stringify(cursorValue) },
+			});
+		};
 
 		// Fetch new messages
 		// Fetching from lastUid + 1 to *
@@ -296,8 +388,9 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 
 		if (!client.mailbox || client.mailbox.exists === 0) {
 			// Auch bei leerem Ordner Reconcile ausführen (markiert alle lokalen Mails als gelöscht)
-			await reconcileFolder(client, account.id, folderName);
-			return { folder: folderName, success: true, processed: 0 } satisfies FolderSyncResult;
+			const removed = await reconcileFolder(client, account.id, folderName);
+			await persistCursor(lastUid, removed !== null);
+			return { folder: folderName, success: true, processed: 0, removed: removed ?? 0 } satisfies FolderSyncResult;
 		}
 
 		// Prüfe ob es überhaupt UIDs über dem Cursor gibt, bevor wir FETCH aufrufen.
@@ -307,8 +400,9 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 		if (mailboxUidNext && nextUid >= mailboxUidNext) {
 			// Keine neuen Nachrichten – Reconcile trotzdem ausführen!
 			// Sonst würden verschobene Mails (z.B. INBOX → Papierkorb in Outlook) nie aus der App verschwinden.
-			await reconcileFolder(client, account.id, folderName);
-			return { folder: folderName, success: true, processed: 0 } satisfies FolderSyncResult;
+			const removed = await reconcileFolder(client, account.id, folderName);
+			await persistCursor(lastUid, removed !== null);
+			return { folder: folderName, success: true, processed: 0, removed: removed ?? 0 } satisfies FolderSyncResult;
 		}
 
 		// Nur tatsaechlich fehlende Mails laden: Wir holen die UID-Liste vom Server
@@ -323,16 +417,7 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 		// zuverlaessig vor dem Socket-Timeout durchlaufen.
 		const CHUNK_SIZE = 100;
 		let processed = 0;
-
-		const persistCursor = async (uid: number) => {
-			const cursorValue: Record<string, unknown> = { lastUid: uid };
-			if (currentUidValidity) cursorValue.uidValidity = String(currentUidValidity);
-			await prisma.systemSetting.upsert({
-				where: { key: cursorKey },
-				update: { value: JSON.stringify(cursorValue) },
-				create: { key: cursorKey, value: JSON.stringify(cursorValue) },
-			});
-		};
+		let ingestFailed = false;
 
 		const serverUidsRaw = await client.search({ uid: `${nextUid}:*` }, { uid: true });
 		// Manche Server beantworten "x:*" mit der letzten Mail, wenn x > hoechste UID — rausfiltern.
@@ -371,6 +456,7 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 						processed += 1;
 					} catch (err) {
 						console.error(`Failed to ingest message UID ${message.uid} in ${folderName}:`, err);
+						ingestFailed = true;
 					}
 				}
 			}
@@ -380,14 +466,19 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 			// Luecken, die die Suche dann nie wieder erfassen wuerde). Bricht der
 			// Lauf vorher ab, bleibt der Cursor stehen — bereits geladene Mails
 			// werden beim naechsten Lauf ueber knownUids uebersprungen.
-			await persistCursor(serverUids[serverUids.length - 1]);
+			lastUid = serverUids[serverUids.length - 1];
 		}
 
 		// Reconcile: mark locally stored mails as deleted if they no longer exist on the server.
 		// We fetch all UIDs currently in this folder from the server and compare against DB.
-		await reconcileFolder(client, account.id, folderName);
+		const removed = await reconcileFolder(client, account.id, folderName);
 
-		return { folder: folderName, success: true, processed } satisfies FolderSyncResult;
+		// Momentaufnahme nur bei rundum fehlerfreiem Lauf: Ist eine Nachricht
+		// nicht durchgekommen oder der Abgleich ausgefallen, soll der naechste
+		// Lauf den Ordner noch einmal richtig ansehen statt ihn zu ueberspringen.
+		await persistCursor(lastUid, !ingestFailed && removed !== null);
+
+		return { folder: folderName, success: true, processed, removed: removed ?? 0 } satisfies FolderSyncResult;
 
 	} finally {
 		lock.release();
@@ -708,12 +799,17 @@ async function ingestMessage(
  * Mails that exist locally (as this folder, not deleted) but are absent from the
  * server get marked as isDeleted so they disappear from the inbox view.
  * Existing order/customer links on those mails are intentionally preserved.
+ *
+ * Rueckgabe: Anzahl der als geloescht markierten Mails, oder null wenn der
+ * Abgleich nicht durchlief. Das null ist wichtig — der Aufrufer darf dann keine
+ * STATUS-Momentaufnahme speichern, sonst wuerde der Ordner ab sofort
+ * uebersprungen und der ausgefallene Abgleich nie nachgeholt.
  */
 async function reconcileFolder(
 	client: Awaited<ReturnType<typeof getImapClient>>,
 	accountId: string,
 	folderName: string
-) {
+): Promise<number | null> {
 	try {
 		// Fetch all UIDs present on the server for this folder.
 		// imapflow's search() returns `false` (not a throw) on a failed search —
@@ -722,7 +818,7 @@ async function reconcileFolder(
 		const raw = await client.search({ all: true }, { uid: true });
 		if (raw === false) {
 			console.warn(`[reconcile] Search failed for ${folderName}@${accountId}, skipping this cycle`);
-			return;
+			return null;
 		}
 		const serverUids: number[] = Array.isArray(raw) ? raw.map((u) => Number(u)) : [];
 		const serverUidSet = new Set(serverUids);
@@ -748,8 +844,10 @@ async function reconcileFolder(
 			});
 			console.log(`[reconcile] ${folderName}@${accountId}: marked ${missingIds.length} mails as deleted`);
 		}
+		return missingIds.length;
 	} catch (err) {
 		// Reconcile is best-effort; never abort a successful sync because of a reconcile error.
 		console.warn(`[reconcile] Failed for ${folderName}@${accountId}:`, err);
+		return null;
 	}
 }
