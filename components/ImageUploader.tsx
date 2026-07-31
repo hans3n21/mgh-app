@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import ImageCarouselModal, { type CarouselImage } from './ImageCarouselModal';
+import { compressImageFile } from '@/lib/image-compress';
 
 interface OrderImage {
   id: string;
@@ -156,44 +157,69 @@ export default function ImageUploader({ orderId, images, allowedScopes, onImages
     return { icon: '📎', label: 'Datei' };
   };
 
+  const readAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      // Vorher fehlend: bei einem Lesefehler blieb das Promise fuer immer offen
+      // und der Upload-Zaehler haengte.
+      reader.onerror = () => reject(new Error(`${file.name} konnte nicht gelesen werden`));
+      reader.readAsDataURL(file);
+    });
+
+  // Bilder vor dem Speichern verkleinern — dieselbe Funktion, die der Mailweg
+  // schon benutzt (MessageSystem, QuickCustomerUpdateButton). Hier fehlte sie:
+  // gemessen lagen dadurch 111,5 MB Base64 in der Datenbank, ein einzelnes
+  // Handyfoto bis zu 10,6 MB in einer Textspalte.
+  //
+  // Nur echte Bilder: PDFs, Office-Dokumente und Archive gehen unveraendert
+  // durch. Schlaegt die Komprimierung fehl (z.B. HEIC, das der Browser nicht
+  // dekodieren kann), wird das Original genommen — lieber gross gespeichert als
+  // gar nicht. Und wenn das Ergebnis groesser waere als das Original (kleine
+  // PNGs werden durch JPEG-Neukodierung mitunter groesser), bleibt das Original.
+  const prepareDataUrl = async (file: File): Promise<string> => {
+    const original = await readAsDataUrl(file);
+    if (!file.type.startsWith('image/')) return original;
+    try {
+      const { base64, contentType } = await compressImageFile(file);
+      const compressed = `data:${contentType};base64,${base64}`;
+      return compressed.length < original.length ? compressed : original;
+    } catch (error) {
+      console.warn(`Komprimierung von ${file.name} fehlgeschlagen, speichere Original:`, error);
+      return original;
+    }
+  };
+
   const processFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
 
     setUploading(true);
-    
+
     // Mehrere Dateien parallel verarbeiten
     const createdImages: OrderImage[] = [];
-    const uploadPromises = fileArray.map((file, index) => {
-      return new Promise<void>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          try {
-            const dataUrl = e.target?.result as string;
-            const response = await fetch(`/api/orders/${orderId}/images`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                path: dataUrl,
-                comment: `Hochgeladen: ${file.name}`,
-                position: images.length + index,
-                scope: selectedScope || undefined,
-                fieldKey: selectedFieldKey || undefined,
-              }),
-            });
-
-            if (response.ok) {
-              const newImage: OrderImage = await response.json();
-              createdImages.push(newImage);
-            }
-            resolve();
-          } catch (error) {
-            console.error(`Fehler beim Upload von ${file.name}:`, error);
-            reject(error);
-          }
-        };
-        reader.readAsDataURL(file);
+    const uploadPromises = fileArray.map(async (file, index) => {
+      const dataUrl = await prepareDataUrl(file);
+      const response = await fetch(`/api/orders/${orderId}/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: dataUrl,
+          comment: `Hochgeladen: ${file.name}`,
+          position: images.length + index,
+          scope: selectedScope || undefined,
+          fieldKey: selectedFieldKey || undefined,
+        }),
       });
+
+      // Vorher wurde ein abgelehnter Upload stillschweigend als Erfolg gezaehlt —
+      // die Meldung "X von Y konnten nicht hochgeladen werden" log dadurch.
+      if (!response.ok) {
+        throw new Error(`${file.name}: Server antwortete mit ${response.status}`);
+      }
+
+      const newImage: OrderImage = await response.json();
+      createdImages.push(newImage);
     });
 
     // Warte auf alle Uploads
@@ -403,7 +429,7 @@ export default function ImageUploader({ orderId, images, allowedScopes, onImages
 
       {/* Info */}
       <div className="text-xs text-slate-500">
-        💡 <strong>Demo-Hinweis:</strong> Datei-Uploads werden simuliert. Du kannst alle Dateiformate hochladen (Bilder, PDFs, Office-Dokumente, Archive, etc.). In der Produktion würden echte Dateien zu einem Cloud-Storage hochgeladen.
+        💡 <strong>Hinweis:</strong> Hochgeladene Dateien werden dauerhaft am Auftrag gespeichert. Alle Formate sind möglich (Bilder, PDFs, Office-Dokumente, Archive, etc.). Fotos werden dabei automatisch auf maximal 1920 Pixel verkleinert – andere Dateien bleiben unverändert.
       </div>
 
       {lightbox.open && (
