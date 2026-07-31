@@ -6,6 +6,7 @@ import { textToSafeHtml } from '@/lib/mail/linkify';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { buildDatasheetForOrder, DatasheetBuildError } from '@/lib/pdf/datasheet-for-order';
+import { loadAttachmentForEmail, persistAttachment } from '@/lib/mail/attachments';
 
 const AttachmentSchema = z.object({
   id: z.string().optional(),
@@ -68,15 +69,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           contentType: 'application/pdf',
         });
       } else if (a.id) {
-        const att = await prisma.attachment.findUnique({ where: { id: a.id } });
-        if (att?.path) {
-          const fs = await import('fs/promises');
-          try {
-            const buf = await fs.readFile(att.path);
-            atts.push({ filename: att.filename, content: buf, contentType: att.mimeType || 'application/octet-stream' });
-          } catch {
-            /* Datei nicht gefunden -- überspringen */
-          }
+        // Frueher stand hier fs.readFile(att.path) — aber att.path ist immer
+        // "local:uploads/..." oder eine https-URL, nie ein Dateisystempfad. Der
+        // Aufruf warf also jedes Mal, der catch verschluckte es, und die Antwort
+        // ging OHNE den Anhang raus, waehrend dem Nutzer "gesendet" gemeldet wurde.
+        // loadAttachmentForEmail behandelt beide Formen; persistAttachment davor
+        // holt Anhaenge nach, die noch nur auf dem IMAP-Server liegen (no-op,
+        // wenn schon persistiert).
+        await persistAttachment(a.id);
+        const loaded = await loadAttachmentForEmail(a.id);
+        if (loaded) {
+          atts.push(loaded);
+        } else {
+          console.warn(`[reply] Anhang ${a.id} konnte nicht geladen werden — Antwort geht ohne ihn raus`);
         }
       } else if (a.name && a.content) {
         atts.push({

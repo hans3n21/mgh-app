@@ -166,10 +166,20 @@ export async function guardedSyncMails(options?: SyncOptions) {
 
 // Prozessweiter Mutex, den sich API-Route und Hintergrund-Worker teilen —
 // sonst koennten beide gleichzeitig auf denselben IMAP-Verbindungen arbeiten.
-let activeSync: Promise<MailSyncResult> | null = null;
+//
+// WICHTIG: an globalThis haengen (wie lib/mail/client.ts und lib/prisma.ts).
+// Als blosse Modulvariable war der Mutex NICHT prozessweit: Next bundelt diese
+// Datei mehrfach (API-Route und Instrumentation landen in getrennten Bundles),
+// und jedes Bundle bekam seine eigene Variable. Ein IDLE-getriebener Lauf und
+// ein manueller Lauf haben sich dadurch gegenseitig ueberholt, obwohl der
+// Kommentar hier das Gegenteil versprach.
+const globalForSync = globalThis as unknown as {
+	__mailActiveSync?: { current: Promise<MailSyncResult> | null };
+};
+const syncState = globalForSync.__mailActiveSync ?? (globalForSync.__mailActiveSync = { current: null });
 
 export function isSyncActive() {
-	return activeSync !== null;
+	return syncState.current !== null;
 }
 
 /**
@@ -177,12 +187,12 @@ export function isSyncActive() {
  * bereits ein anderer Lauf aktiv ist (Aufrufer entscheidet: skip oder 409).
  */
 export async function runExclusiveSync(options?: SyncOptions): Promise<MailSyncResult | null> {
-	if (activeSync) return null;
-	activeSync = syncMails(options);
+	if (syncState.current) return null;
+	syncState.current = syncMails(options);
 	try {
-		return await activeSync;
+		return await syncState.current;
 	} finally {
-		activeSync = null;
+		syncState.current = null;
 	}
 }
 
@@ -568,7 +578,7 @@ async function ingestMessage(
 	const subjectOrderId = extractOrderIdFromSubject(subject);
 	if (subjectOrderId) {
 		const exists = await prisma.order.findUnique({ where: { id: subjectOrderId } });
-		if (exists) orderId = exists.id;
+		if (exists && !exists.deletedAt) orderId = exists.id;
 	}
 
 	// 3. Threading
@@ -585,6 +595,7 @@ async function ingestMessage(
 	if (!orderId && senderEmail && folderName === 'INBOX') {
 		const orderByCustomerEmail = await prisma.order.findFirst({
 			where: {
+				deletedAt: null,
 				customer: {
 					email: { equals: senderEmail, mode: 'insensitive' },
 				},

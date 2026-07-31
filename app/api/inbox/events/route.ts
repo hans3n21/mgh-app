@@ -13,10 +13,17 @@ export async function GET(_req: NextRequest) {
 		});
 	}
 
+	// Ausserhalb von start() gebunden, damit cancel() ihn ueberhaupt erreichen kann.
+	// Vorher war cancel() leer und der Abonnent blieb fuer die gesamte Lebensdauer
+	// des Prozesses im Set — bei einem Dauerprozess sammelt jeder Seiten-Neuladen,
+	// jeder neue Tab und jeder Netzabbruch einen toten Eintrag an, ueber den danach
+	// jedes publish() iteriert.
+	let sub: { write: (line: string) => void; close: () => void } | null = null;
+
 	return new Response(new ReadableStream({
 		start(controller) {
 			const encoder = new TextEncoder();
-			const sub = {
+			sub = {
 				write: (line: string) => controller.enqueue(encoder.encode(line)),
 				close: () => controller.close(),
 			};
@@ -24,7 +31,12 @@ export async function GET(_req: NextRequest) {
 			// initial comment to establish SSE
 			controller.enqueue(encoder.encode(': connected\n\n'));
 		},
-		cancel() {},
+		cancel() {
+			if (sub) {
+				unsubscribe(sub);
+				sub = null;
+			}
+		},
 		pull() {},
 	}), {
 		headers: {
