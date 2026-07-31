@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import FeedbackDashboard from '@/components/FeedbackDashboard';
 import DashboardClient from './DashboardClient';
+import { PAGE_PANEL } from '@/lib/ui-classes';
 
 
 
@@ -25,6 +26,7 @@ export default async function Dashboard() {
   // Für Staff: Nur eigene zugewiesene Aufträge, für Admin: alle Aufträge
   const orders = await prisma.order.findMany({
     where: {
+      deletedAt: null,
       ...(isAdmin ? {} : { assigneeId: currentUserId }),
       // Fertige (abgeschlossene) Auftraege gehoeren nicht in die Dashboard-Liste.
       status: { not: 'complete' },
@@ -33,7 +35,20 @@ export default async function Dashboard() {
       customer: true,
       assignee: true,
       messages: { select: { createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 },
-      mails: { select: { date: true }, orderBy: { date: 'desc' }, take: 1 },
+      // Siehe app/app/orders/page.tsx: eigene gesendete Mails duerfen den
+      // "Neue Nachricht"-Punkt nicht ausloesen.
+      mails: {
+        where: {
+          senderId: null,
+          NOT: [
+            { folder: { contains: 'sent', mode: 'insensitive' } },
+            { folder: { contains: 'gesendet', mode: 'insensitive' } },
+          ],
+        },
+        select: { date: true },
+        orderBy: { date: 'desc' },
+        take: 1,
+      },
     },
     orderBy: {
       createdAt: 'desc',
@@ -44,6 +59,7 @@ export default async function Dashboard() {
   // Offene Aufträge (ohne Assignee)
   const openOrders = await prisma.order.count({
     where: {
+      deletedAt: null,
       assigneeId: null,
       status: {
         not: 'complete',
@@ -54,10 +70,12 @@ export default async function Dashboard() {
   // Alle offenen Aufträge für Admin, eigene für Staff
   const totalOpenOrders = await prisma.order.count({
     where: isAdmin ? {
+      deletedAt: null,
       status: {
         not: 'complete',
       },
     } : {
+      deletedAt: null,
       assigneeId: currentUserId,
       status: {
         not: 'complete',
@@ -67,6 +85,7 @@ export default async function Dashboard() {
 
   const inProgressOrders = await prisma.order.count({
     where: {
+      deletedAt: null,
       status: 'in_progress',
     },
   });
@@ -137,7 +156,7 @@ export default async function Dashboard() {
 
       {/* Feedback Dashboard nur für normale Admins (nicht für admin_no_feedback) */}
       {showFeedback && (
-        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+        <section className={PAGE_PANEL}>
           <FeedbackDashboard />
         </section>
       )}

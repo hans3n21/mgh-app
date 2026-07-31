@@ -52,7 +52,9 @@ export default async function AppLayout({
     <SessionProvider session={session}>
       <div className="min-h-screen min-w-0 bg-slate-950 text-slate-100 overflow-x-hidden">
         <Navigation user={session.user} customers={customers} users={users} />
-        <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
+        {/* px-3 am Handy statt px-4: jeder Pixel hier kostet doppelt, weil die
+            Seiten-Kaesten und Inhaltskarten darin nochmal polstern. */}
+        <main className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           {children}
         </main>
         <GlobalMobileNav />

@@ -8,10 +8,11 @@ import AiSettings from '@/components/AiSettings';
 import TelephonySettings from '@/components/TelephonySettings';
 import DhlSettings from '@/components/DhlSettings';
 import DatevSettings from '@/components/DatevSettings';
+import { PAGE_PANEL } from '@/lib/ui-classes';
 
 export default function SettingsPage() {
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+    <section className={`${PAGE_PANEL} space-y-3`}>
       <h2 className="text-lg font-semibold">Einstellungen</h2>
       
       <UserManagement />

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import OpenOrdersModal from '@/components/OpenOrdersModal';
 import ImageCarouselModal from '@/components/ImageCarouselModal';
 import { WORKFLOW_STATUS_CLASS, WORKFLOW_STATUS_LABEL, normalizeWorkflowStatus } from '@/lib/order-status';
+import { PAGE_PANEL } from '@/lib/ui-classes';
 
 const TYPE_LABEL = {
   GUITAR: 'Gitarrenbau',
@@ -172,7 +173,7 @@ export default function DashboardClient({ orders, openOrdersCount, isAdmin, myTa
         </section>
       )}
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+      <section className={PAGE_PANEL}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h2 className="text-lg font-semibold">
             {isAdmin ? 'Alle Aufträge' : 'Meine Aufträge'}
