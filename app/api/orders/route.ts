@@ -7,7 +7,7 @@ import { auth } from '@/lib/auth';
 const createOrderSchema = z.object({
   title: z.string().min(1),
   type: z.enum(['GUITAR', 'BODY', 'NECK', 'REPAIR', 'PICKGUARD', 'PICKUPS', 'ENGRAVING', 'FINISH_ONLY']),
-  customerId: z.string(),
+  customerId: z.string().min(1),
   assigneeId: z.string().optional(),
 });
 
@@ -24,6 +24,7 @@ export async function GET() {
     }
 
     const orders = await prisma.order.findMany({
+      where: { deletedAt: null },
       include: {
         customer: true,
         assignee: true,
@@ -53,10 +54,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const validatedData = createOrderSchema.parse(body);
 
+    // Kunde muss existieren: sonst schlaegt erst der Fremdschluessel zu und der
+    // Aufrufer bekommt einen 500er, aus dem niemand die Ursache ablesen kann.
+    const customerExists = await prisma.customer.findUnique({
+      where: { id: validatedData.customerId },
+      select: { id: true },
+    });
+
+    if (!customerExists) {
+      return NextResponse.json(
+        { error: 'Kunde nicht gefunden' },
+        { status: 400 }
+      );
+    }
+
     const currentYear = new Date().getFullYear();
     let order = null;
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
+      // Bewusst OHNE deletedAt-Filter: Auftraege im Papierkorb belegen ihre Nummer
+      // weiterhin. Wuerde hier gefiltert, bekaeme der naechste neue Auftrag eine
+      // bereits vergebene ID und liefe in den Unique-Constraint.
       const lastOrder = await prisma.order.findFirst({
         where: { id: { startsWith: `ORD-${currentYear}-` } },
         orderBy: { id: 'desc' },

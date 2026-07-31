@@ -533,12 +533,15 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 				}
 			}
 
-			if (!customerId && customers.length > 0) {
-				customerId = customers[0].id; // Fallback
-			}
-
+			// Kein Fallback auf customers[0]: der stille Griff zum alphabetisch
+			// ersten Kunden hat Aufträge samt Datenblatt, Bildern und Mailverlauf
+			// an völlig fremde Kunden gehängt, ohne dass es jemand gemerkt hat.
 			if (!customerId) {
-				setToast('Fehler: Kein Kunde verfügbar');
+				setToast(
+					senderEmail
+						? `Kunde zu ${senderEmail} konnte nicht angelegt werden – Auftrag bitte manuell anlegen`
+						: 'Mail hat keine Absenderadresse – Auftrag bitte manuell anlegen'
+				);
 				return;
 			}
 

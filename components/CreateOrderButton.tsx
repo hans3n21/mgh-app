@@ -37,7 +37,9 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
   const [type, setType] = useState<keyof typeof TYPE_LABEL>('GUITAR');
   const [assigneeId, setAssigneeId] = useState(users[0]?.id || '');
   const [mode, setMode] = useState<'new' | 'existing'>('existing');
-  const [customerId, setCustomerId] = useState(customers[0]?.id || '');
+  // Bewusst leer: war hier customers[0] vorbelegt, landete ein Auftrag beim
+  // alphabetisch ersten Kunden, sobald jemand das Feld übersehen hat.
+  const [customerId, setCustomerId] = useState('');
   const [newCustomer, setNewCustomer] = useState({
     name: '',
     email: '',
@@ -49,6 +51,12 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
   });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Pflichtfelder: Titel immer, dazu je nach Modus ein gewaehlter Bestandskunde
+  // oder ein Name fuer den neuen Kunden.
+  const canSubmit =
+    title.trim().length > 0 &&
+    (mode === 'existing' ? customerId !== '' : newCustomer.name.trim().length > 0);
 
   async function submit() {
     if (loading) return;
@@ -66,6 +74,12 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
 
       if (!title.trim()) {
         alert('Bitte Titel eingeben');
+        setLoading(false);
+        return;
+      }
+
+      if (mode === 'existing' && !customerId) {
+        alert('Bitte Kunde auswählen');
         setLoading(false);
         return;
       }
@@ -145,37 +159,51 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
               </button>
             </div>
 
+            {/* Feste Beschriftungen ueber jedem Feld: mit blossen Platzhaltern war
+                nicht erkennbar, dass das zweite Auswahlfeld den Bearbeiter meint —
+                und beim Tippen verschwand die einzige Erklaerung des Titelfelds. */}
             <div className="mt-3 grid grid-cols-1 gap-3 text-sm">
-              <input
-                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
-                placeholder="Titel"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-slate-400">
+                  Titel des Auftrags <span className="text-red-400">*</span>
+                </span>
+                <input
+                  className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100 placeholder-slate-400"
+                  placeholder="z. B. Strat Hals Ahorn"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+              </label>
 
-              <select
-                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
-                value={type}
-                onChange={(e) => setType(e.target.value as keyof typeof TYPE_LABEL)}
-              >
-                {Object.entries(TYPE_LABEL).map(([k, v]) => (
-                  <option key={k} value={k} className="bg-slate-950 text-slate-100">
-                    {v}
-                  </option>
-                ))}
-              </select>
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-slate-400">Art der Arbeit</span>
+                <select
+                  className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
+                  value={type}
+                  onChange={(e) => setType(e.target.value as keyof typeof TYPE_LABEL)}
+                >
+                  {Object.entries(TYPE_LABEL).map(([k, v]) => (
+                    <option key={k} value={k} className="bg-slate-950 text-slate-100">
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-              <select
-                className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
-                value={assigneeId}
-                onChange={(e) => setAssigneeId(e.target.value)}
-              >
-                {users.map((e) => (
-                  <option key={e.id} value={e.id} className="bg-slate-950 text-slate-100">
-                    {e.name}
-                  </option>
-                ))}
-              </select>
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-slate-400">Zuständig</span>
+                <select
+                  className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
+                  value={assigneeId}
+                  onChange={(e) => setAssigneeId(e.target.value)}
+                >
+                  {users.map((e) => (
+                    <option key={e.id} value={e.id} className="bg-slate-950 text-slate-100">
+                      {e.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <div className="flex gap-3 text-sm">
                 <label className="inline-flex items-center gap-2 text-slate-200">
@@ -199,17 +227,25 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
               </div>
 
               {mode === 'existing' ? (
-                <select
-                  className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                >
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id} className="bg-slate-950 text-slate-100">
-                      {c.name}
+                <label className="grid gap-1">
+                  <span className="text-xs font-medium text-slate-400">
+                    Kunde <span className="text-red-400">*</span>
+                  </span>
+                  <select
+                    className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-slate-100"
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                  >
+                    <option value="" className="bg-slate-950 text-slate-400">
+                      — Kunde wählen —
                     </option>
-                  ))}
-                </select>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id} className="bg-slate-950 text-slate-100">
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <input
@@ -282,7 +318,8 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                 <button
                   className="rounded-lg bg-slate-700 hover:bg-slate-600 px-3 py-2 font-semibold disabled:opacity-50 text-slate-200"
                   onClick={submit}
-                  disabled={loading}
+                  disabled={loading || !canSubmit}
+                  title={canSubmit ? undefined : 'Titel und Kunde ausfüllen'}
                 >
                   {loading ? 'Erstelle...' : 'Anlegen'}
                 </button>
