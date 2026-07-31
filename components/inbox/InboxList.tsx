@@ -125,12 +125,23 @@ export default function InboxList({ messages, selectedId, onSelect, showAccountB
 										</span>
 										<div className="flex items-center gap-1.5 flex-shrink-0">
 											{showAccountBadge && m.accountLabel && (
-												<span
-													className={`text-[10px] px-1.5 py-0.5 rounded-full border ${getAccountBadgeTone(m.accountLabel)}`}
-													title={m.accountLabel}
-												>
-													{m.accountLabel}
-												</span>
+												<>
+													{/* Auf schmalen Schirmen frass der ausgeschriebene Postfachname
+													    ("Der-Trashcontainer") den Platz des Absenders, der dann auf
+													    fuenf Zeichen zusammenschrumpfte. Die Farbe kodiert das
+													    Postfach ohnehin — dort genuegt der Punkt. */}
+													<span
+														className={`hidden text-[10px] px-1.5 py-0.5 rounded-full border lg:inline ${getAccountBadgeTone(m.accountLabel)}`}
+														title={m.accountLabel}
+													>
+														{m.accountLabel}
+													</span>
+													<span
+														className={`h-2.5 w-2.5 rounded-full border lg:hidden ${getAccountBadgeTone(m.accountLabel)}`}
+														title={m.accountLabel}
+														aria-label={`Postfach: ${m.accountLabel}`}
+													/>
+												</>
 											)}
 											{(m.threadCount || 0) > 1 && (
 												<span className="bg-slate-700 text-slate-200 text-[10px] font-medium px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">

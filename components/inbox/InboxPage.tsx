@@ -257,6 +257,16 @@ export default function InboxPage() {
 	const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
 	const [listWidth, setListWidth] = useState<number>(DEFAULT_LIST_WIDTH);
 	const [isResizingList, setIsResizingList] = useState(false);
+	// Schmale Viewports zeigen Liste und Lesebereich nacheinander statt nebeneinander.
+	// Vorher war der Arbeitsbereich ein reines flex ohne Breakpoint: die Liste hat ihre
+	// 352px behalten, der Lesebereich lag ausserhalb des Bildschirms und war am Handy
+	// gar nicht erreichbar — angetippte Mails galten als gelesen, ohne lesbar zu sein.
+	// null = "noch nicht gemessen". Wichtig: mit dem Startwert false hat die
+	// Vorauswahl der ersten Mail schon im ersten Render zugeschlagen, bevor der
+	// matchMedia-Effekt lief — am Handy ging der Posteingang dadurch trotzdem
+	// direkt in einer Mail auf (und markierte sie nach 2s als gelesen), sobald
+	// die Liste aus dem Boot-Schnappschuss sofort gefuellt war.
+	const [isNarrow, setIsNarrow] = useState<boolean | null>(null);
 	const [settingsWidth, setSettingsWidth] = useState<number>(DEFAULT_SETTINGS_WIDTH);
 	const [isResizingSettings, setIsResizingSettings] = useState(false);
 	const [composeHandled, setComposeHandled] = useState(false);
@@ -274,6 +284,16 @@ export default function InboxPage() {
 	const detailRequestIdsRef = useRef(new Set<string>());
 	const accountLabelMapRef = useRef<Record<string, string>>({});
 	const composeTo = useMemo(() => (searchParams.get('to') || '').trim().toLowerCase(), [searchParams]);
+
+	// lg-Breakpoint, gleiche Grenze wie bei der Navigation (lib/nav-items.ts /
+	// GlobalMobileNav), damit nicht an zwei Stellen unterschiedlich umgeschaltet wird.
+	useEffect(() => {
+		const mq = window.matchMedia('(max-width: 1023px)');
+		const update = () => setIsNarrow(mq.matches);
+		update();
+		mq.addEventListener('change', update);
+		return () => mq.removeEventListener('change', update);
+	}, []);
 
 	const accountLabelMap = useMemo(() => {
 		return accounts.reduce<Record<string, string>>((acc, account) => {
@@ -793,14 +813,27 @@ export default function InboxPage() {
 	}, [messages]);
 
 	useEffect(() => {
+		// Solange die Bildschirmbreite nicht gemessen ist, nichts vorbelegen —
+		// sonst raet dieser Effekt "breiter Schirm" und oeffnet am Handy eine Mail.
+		if (isNarrow === null) return;
 		if (filtered.length === 0) {
 			if (selectedId) setSelectedId(null);
 			return;
 		}
-		if (!selectedId || !filtered.some((mail) => mail.id === selectedId)) {
+		// Auf breiten Schirmen die erste Mail vorbelegen, damit der Lesebereich neben
+		// der Liste nicht leer steht. Auf schmalen Schirmen NICHT: dort bedeutet eine
+		// Auswahl, dass die Mail ganzflaechig aufgeht und nach 2s als gelesen gilt —
+		// beim Oeffnen des Posteingangs waere so jedes Mal die oberste Mail still
+		// abgehakt worden. Ausserdem haette es den Zurueck-Knopf sofort ueberschrieben.
+		const stillVisible = selectedId ? filtered.some((mail) => mail.id === selectedId) : false;
+		if (selectedId && !stillVisible) {
+			setSelectedId(isNarrow ? null : filtered[0].id);
+			return;
+		}
+		if (!selectedId && !isNarrow) {
 			setSelectedId(filtered[0].id);
 		}
-	}, [filtered, selectedId]);
+	}, [filtered, selectedId, isNarrow]);
 
 	const selected = useMemo(() => filtered.find((m) => m.id === selectedId) || null, [filtered, selectedId]);
 
@@ -1072,7 +1105,9 @@ export default function InboxPage() {
 				</div>
 			)}
 			<div className="flex-1 flex overflow-hidden min-h-0">
-				{/* Ordner-Sidebar links */}
+				{/* Ordner-Sidebar links — auf schmalen Bildschirmen weicht sie, sobald eine
+				    Mail offen ist, damit der Lesebereich die volle Breite bekommt. */}
+				<div className={isNarrow && selectedId ? 'hidden' : 'contents'}>
 				<FolderSidebar
 					activeAccountId={focusedAccountIds[0] || activeAccountId}
 					activeFolder={folder}
@@ -1122,6 +1157,7 @@ export default function InboxPage() {
 					onRetryAccounts={loadAccounts}
 					unreadPerAccount={unreadPerAccount}
 				/>
+				</div>
 
 				{listOpen && (
 					settingsMounted ? (
@@ -1150,21 +1186,23 @@ export default function InboxPage() {
 						</div>
 					) : (
 						<div
-							className={`relative overflow-auto border-r border-slate-800 h-full flex-shrink-0 ${isResizingList ? '' : 'transition-[width] duration-150 ease-out'}`}
-							style={{ width: `${listWidth}px` }}
+							className={`relative overflow-auto border-r border-slate-800 h-full ${isNarrow ? 'flex-1' : 'flex-shrink-0'} ${isNarrow && selectedId ? 'hidden' : ''} ${isResizingList ? '' : 'transition-[width] duration-150 ease-out'}`}
+							style={isNarrow ? undefined : { width: `${listWidth}px` }}
 						>
-							<button
-								type="button"
-								onPointerDown={(e) => {
-									e.preventDefault();
-									setIsResizingList(true);
-								}}
-								className="absolute top-0 right-0 h-full w-2 translate-x-1/2 cursor-col-resize z-20 group"
-								aria-label="Breite der Nachrichtenliste anpassen"
-								title="Breite anpassen"
-							>
-								<span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-transparent group-hover:bg-sky-500/50 group-active:bg-sky-400/70 transition-colors" />
-							</button>
+							{!isNarrow && (
+								<button
+									type="button"
+									onPointerDown={(e) => {
+										e.preventDefault();
+										setIsResizingList(true);
+									}}
+									className="absolute top-0 right-0 h-full w-2 translate-x-1/2 cursor-col-resize z-20 group"
+									aria-label="Breite der Nachrichtenliste anpassen"
+									title="Breite anpassen"
+								>
+									<span className="absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 bg-transparent group-hover:bg-sky-500/50 group-active:bg-sky-400/70 transition-colors" />
+								</button>
+							)}
 							{loading ? (
 								<div role="status" aria-label="Laden" className="divide-y divide-slate-800">
 									{Array.from({ length: 8 }).map((_, i) => (
@@ -1203,49 +1241,66 @@ export default function InboxPage() {
 					)
 				)}
 
-				<div className="flex-1 h-full overflow-hidden">
-					{filtered.length === 0 ? (
-						<EmptyState
-							title={loading ? 'Posteingang wird geladen' : 'Nichts ausgewählt'}
-							subtitle={loading ? 'Nachrichten werden geladen.' : 'Wählen Sie links eine Mail aus.'}
-						/>
-					) : (
-						<InboxPreview
-							message={selected}
-							replyOpen={replyOpen}
-							onReplyToggle={() => setReplyOpen((v) => !v)}
-							accountId={selected?.accountId || activeAccountId}
-							onMessageMoved={handleMessageMoved}
-							onLeadLinked={(leadId) => {
-								if (!selected) return;
-								setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, leadId } : m)));
-							}}
-							onLeadCreated={(leadId) => {
-								if (!selected) return;
-								setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, leadId } : m)));
-							}}
-						/>
+				<div className={`flex-1 h-full min-w-0 overflow-hidden flex flex-col ${isNarrow && !selectedId ? 'hidden' : ''}`}>
+					{isNarrow && selectedId && (
+						<button
+							type="button"
+							onClick={() => setSelectedId(null)}
+							className="flex shrink-0 items-center gap-1 border-b border-slate-800 bg-slate-950 px-3 py-2 text-left text-sm text-sky-400 hover:text-sky-300"
+						>
+							<span aria-hidden="true">‹</span> Posteingang
+						</button>
 					)}
+					<div className="min-h-0 flex-1 overflow-hidden">
+						{filtered.length === 0 ? (
+							<EmptyState
+								title={loading ? 'Posteingang wird geladen' : 'Nichts ausgewählt'}
+								subtitle={loading ? 'Nachrichten werden geladen.' : 'Wählen Sie links eine Mail aus.'}
+							/>
+						) : (
+							<InboxPreview
+								message={selected}
+								replyOpen={replyOpen}
+								onReplyToggle={() => setReplyOpen((v) => !v)}
+								accountId={selected?.accountId || activeAccountId}
+								onMessageMoved={handleMessageMoved}
+								onLeadLinked={(leadId) => {
+									if (!selected) return;
+									setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, leadId } : m)));
+								}}
+								onLeadCreated={(leadId) => {
+									if (!selected) return;
+									setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, leadId } : m)));
+								}}
+							/>
+						)}
+					</div>
 				</div>
 
-				<button
-					type="button"
-					className="w-5 flex-shrink-0 flex items-center justify-center bg-slate-900 border-l border-slate-800 hover:bg-slate-800 transition-colors text-slate-500 hover:text-slate-300 text-[10px]"
-					onClick={() => setSidebarOpen((v) => !v)}
-					title={sidebarOpen ? 'Sidebar einklappen' : 'Sidebar ausklappen'}
-				>
-					{sidebarOpen ? '▶' : '◀'}
-				</button>
+				{/* Datenblatt-Sidebar samt Griff nur auf breiten Bildschirmen: auf 375px
+				    bliebe fuer den Lesebereich sonst nichts uebrig. */}
+				{!isNarrow && (
+					<>
+						<button
+							type="button"
+							className="w-5 flex-shrink-0 flex items-center justify-center bg-slate-900 border-l border-slate-800 hover:bg-slate-800 transition-colors text-slate-500 hover:text-slate-300 text-[10px]"
+							onClick={() => setSidebarOpen((v) => !v)}
+							title={sidebarOpen ? 'Sidebar einklappen' : 'Sidebar ausklappen'}
+						>
+							{sidebarOpen ? '▶' : '◀'}
+						</button>
 
-				<DatasheetSidebar
-					message={selected}
-					isOpen={sidebarOpen}
-					onToggle={() => setSidebarOpen((v) => !v)}
-					onOrderResolved={(orderId) => {
-						if (!selected) return;
-						setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, assignedTo: orderId } : m)));
-					}}
-				/>
+						<DatasheetSidebar
+							message={selected}
+							isOpen={sidebarOpen}
+							onToggle={() => setSidebarOpen((v) => !v)}
+							onOrderResolved={(orderId) => {
+								if (!selected) return;
+								setMessages((prev) => prev.map((m) => (m.id === selected.id ? { ...m, assignedTo: orderId } : m)));
+							}}
+						/>
+					</>
+				)}
 			</div>
 
 		</div>

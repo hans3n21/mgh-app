@@ -6,6 +6,7 @@ import { signOut } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import CreateOrderButton from './CreateOrderButton';
 import NotificationBell from './NotificationBell';
+import { NAV_ITEMS } from '@/lib/nav-items';
 
 interface NavigationProps {
   user: {
@@ -60,17 +61,12 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
     };
   }, []);
 
-  const navItems = [
-    { href: '/app', label: 'Dashboard' },
-    { href: '/app/posteingang', label: 'Posteingang', badge: unreadCount > 0 ? unreadCount : undefined },
-    { href: '/app/orders', label: 'Aufträge' },
-    { href: '/app/customers', label: 'Kunden' },
-    { href: '/app/label-generator', label: 'Labelgenerator' },
-    { href: '/app/prices', label: 'Preise' },
-    { href: '/app/wissen', label: 'Wissen' },
-    { href: '/app/procurement', label: 'Einkauf' },
-    { href: '/app/settings', label: 'Einstellungen' },
-  ];
+  // Reihenfolge und Beschriftungen kommen aus lib/nav-items.ts, damit obere und
+  // untere Leiste nicht wieder auseinanderlaufen. Das Badge haengt nur hier dran.
+  const navItems = NAV_ITEMS.map((item) => ({
+    ...item,
+    badge: item.href === '/app/posteingang' && unreadCount > 0 ? unreadCount : undefined,
+  }));
 
   return (
     <header className="sticky top-0 z-40 bg-slate-950/70 backdrop-blur border-b border-slate-800">
@@ -79,7 +75,10 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
           <span className="font-black">M</span>
         </Link>
         
-        <nav className="hidden sm:flex items-center gap-1 text-sm text-slate-300">
+        {/* Erst ab lg: darunter ist die neunteilige Leiste breiter als die Kopfzeile
+            und draengt "+ Auftrag" und "Abmelden" aus dem Bild. Unterhalb uebernimmt
+            GlobalMobileNav (ebenfalls lg), damit es keine Zone mit beiden gibt. */}
+        <nav className="hidden lg:flex items-center gap-1 text-sm text-slate-300">
           {navItems.map((item, index) => (
             <div key={item.href} className="flex items-center gap-1">
               {index > 0 && <span>·</span>}
@@ -104,7 +103,7 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
           <div className="flex items-center gap-2">
             <NotificationBell />
             <CreateOrderButton customers={customers} users={users} />
-            <span className="text-sm text-slate-400">{user.name}</span>
+            <span className="hidden text-sm text-slate-400 lg:inline">{user.name}</span>
             <button
               onClick={() => signOut()}
               className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"

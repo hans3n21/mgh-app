@@ -130,6 +130,35 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
     const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
     const [openStatusMenuFor, setOpenStatusMenuFor] = useState<string | null>(null);
     const statusMenuRef = useRef<HTMLDivElement | null>(null);
+    // Der Hinweis muss hier oben leben, nicht im Loeschknopf: nach dem Verschieben
+    // faellt die Auftragszeile aus der Liste und wuerde den Knopf samt Hinweis
+    // sofort mit ausbauen.
+    const [justMoved, setJustMoved] = useState<{ id: string; title: string } | null>(null);
+    const [undoing, setUndoing] = useState(false);
+
+    useEffect(() => {
+        if (!justMoved) return;
+        // 12s statt der ueblichen 4-5: der Hinweis traegt die einzige Rueckgaengig-
+        // Moeglichkeit, und wer gerade am Handy scrollt, braucht laenger zum Reagieren.
+        const timer = setTimeout(() => setJustMoved(null), 12000);
+        return () => clearTimeout(timer);
+    }, [justMoved]);
+
+    const undoMove = async () => {
+        if (!justMoved || undoing) return;
+        setUndoing(true);
+        try {
+            const res = await fetch(`/api/orders/${justMoved.id}/restore`, { method: 'POST' });
+            if (!res.ok) {
+                alert(`Zurückholen fehlgeschlagen: ${res.status}`);
+                return;
+            }
+            setJustMoved(null);
+            router.refresh();
+        } finally {
+            setUndoing(false);
+        }
+    };
 
     const updateOrderStatus = async (orderId: string, status: string) => {
         try {
@@ -211,17 +240,39 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
 
     return (
         <div className="mt-3">
-            <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center">
+            {justMoved && (
+                <div className="pointer-events-none fixed inset-x-0 bottom-28 z-[9998] flex justify-center px-4 lg:bottom-6">
+                    <div className="pointer-events-auto flex max-w-full items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 shadow-lg">
+                        <span className="min-w-0 truncate">
+                            <span className="font-medium">{justMoved.id}</span> in den Papierkorb verschoben
+                        </span>
+                        <button
+                            type="button"
+                            onClick={undoMove}
+                            disabled={undoing}
+                            className="shrink-0 font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-40"
+                        >
+                            {undoing ? 'Wird zurückgeholt…' : 'Rückgängig'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Eine Zeile statt vier gestapelter Bloecke: die Suche waechst mit,
+                die beiden Auswahlfelder schrumpfen auf ihren Inhalt. Auf schmalen
+                Schirmen ist das Ergebnis eine Zeile Suche plus eine Zeile Filter
+                statt vier bildschirmbreiter Kaesten. */}
+            <div className="mb-3 grid grid-cols-3 gap-2 sm:flex sm:items-center">
                 <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Suchen…"
-                    className="w-full md:w-72 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm"
+                    className="col-span-3 min-w-0 rounded-lg bg-slate-950 border border-slate-800 px-3 py-1.5 text-sm sm:flex-1"
                 />
                 <select
                     value={typeFilter}
                     onChange={(e) => setTypeFilter(e.target.value)}
-                    className="w-full md:w-56 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100"
+                    className="min-w-0 rounded-lg bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm text-slate-100"
                     title="Nach Auftragstyp filtern"
                     aria-label="Nach Auftragstyp filtern"
                 >
@@ -235,13 +286,13 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                 <select
                     value={sortMode}
                     onChange={(e) => setSortMode(e.target.value as 'default' | 'stale' | 'recent')}
-                    className="w-full md:w-56 rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100"
+                    className="min-w-0 rounded-lg bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm text-slate-100"
                     title="Sortierung"
                     aria-label="Sortierung"
                 >
-                    <option value="default">Sortierung: Standard</option>
-                    <option value="stale">Längste Liegezeit zuerst</option>
-                    <option value="recent">Neueste Aktivität zuerst</option>
+                    <option value="default">Standard</option>
+                    <option value="stale">Längste Liegezeit</option>
+                    <option value="recent">Neueste Aktivität</option>
                 </select>
                 <button
                     type="button"
@@ -252,7 +303,7 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                                 : [...prev, 'complete']
                         );
                     }}
-                    className={`rounded-lg border px-3 py-2 text-sm transition-colors md:ml-auto ${
+                    className={`min-w-0 rounded-lg border px-2 py-1.5 text-sm transition-colors sm:shrink-0 sm:px-3 ${
                         showCompleted
                             ? 'border-emerald-700/70 bg-emerald-900/30 text-emerald-200'
                             : 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800'
@@ -260,7 +311,7 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                     aria-pressed={showCompleted}
                     title={showCompleted ? 'Fertige ausblenden' : 'Fertige anzeigen'}
                 >
-                    {showCompleted ? 'Fertige ausblenden' : 'Fertige anzeigen'}
+                    Fertige
                 </button>
             </div>
 
@@ -314,15 +365,35 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                                 </div>
                             </div>
 
-                            <div className="z-10 flex flex-shrink-0 items-center gap-1.5">
-                                <QuickCustomerUpdateButton
-                                    orderId={order.id}
-                                    customerName={order.customer?.name}
-                                    customerEmail={order.customer?.email}
-                                    currentUserId={currentUserId}
-                                />
-                                <CompleteOrderButton orderId={order.id} status={order.status} />
-                                <DeleteOrderButton orderId={order.id} />
+                            {/* Am Handy gibt es kein Draufhalten, also auch keine Tooltips:
+                                ohne Text stehen hier drei nackte Symbole nebeneinander,
+                                von denen eines eine Mail an den Kunden schickt und eines
+                                den Auftrag abschliesst. */}
+                            <div className="z-10 flex flex-shrink-0 items-start gap-2">
+                                <span className="flex flex-col items-center gap-0.5">
+                                    <QuickCustomerUpdateButton
+                                        orderId={order.id}
+                                        customerName={order.customer?.name}
+                                        customerEmail={order.customer?.email}
+                                        currentUserId={currentUserId}
+                                    />
+                                    <span className="text-[10px] leading-none text-slate-500">Foto</span>
+                                </span>
+                                <span className="flex flex-col items-center gap-0.5">
+                                    <CompleteOrderButton orderId={order.id} status={order.status} />
+                                    <span className="text-[10px] leading-none text-slate-500">Fertig</span>
+                                </span>
+                                <span className="flex flex-col items-center gap-0.5">
+                                    <DeleteOrderButton
+                                        orderId={order.id}
+                                        orderTitle={order.title}
+                                        onDeleted={() => {
+                                            setJustMoved({ id: order.id, title: order.title });
+                                            router.refresh();
+                                        }}
+                                    />
+                                    <span className="text-[10px] leading-none text-slate-500">Papierkorb</span>
+                                </span>
                             </div>
                         </div>
                     </Link>
@@ -439,7 +510,14 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                                             currentUserId={currentUserId}
                                         />
                                         <CompleteOrderButton orderId={order.id} status={order.status} />
-                                        <DeleteOrderButton orderId={order.id} />
+                                        <DeleteOrderButton
+                                        orderId={order.id}
+                                        orderTitle={order.title}
+                                        onDeleted={() => {
+                                            setJustMoved({ id: order.id, title: order.title });
+                                            router.refresh();
+                                        }}
+                                    />
                                     </div>
                                 </td>
                             </tr>

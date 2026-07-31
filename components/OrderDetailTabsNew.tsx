@@ -1371,8 +1371,11 @@ export default function OrderDetailTabsNew({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Bilder</h3>
+              {/* "Scopes: neck, finish" waren rohe englische Schluessel in einer
+                  sonst deutschen Oberflaeche — CATEGORY_LABELS deckt dieselben
+                  Werte ab und wird daneben ohnehin schon benutzt. */}
               <div className="text-xs text-slate-400">
-                Scopes: {imageScopes.join(', ')}
+                Bereiche: {imageScopes.map((s) => CATEGORY_LABELS[s]).join(', ')}
               </div>
             </div>
 
@@ -1566,9 +1569,9 @@ export default function OrderDetailTabsNew({
                 </div>
               </div>
               <div>
-                <div className="text-xs text-slate-400 mb-1">Bild-Scopes</div>
+                <div className="text-xs text-slate-400 mb-1">Bereiche für Bilder</div>
                 <div className="bg-slate-950 border border-slate-800 rounded px-2 py-1.5">
-                  {imageScopes.join(', ')}
+                  {imageScopes.map((s) => CATEGORY_LABELS[s]).join(', ')}
                 </div>
               </div>
               <div>
@@ -1612,37 +1615,40 @@ export default function OrderDetailTabsNew({
         />
       )}
 
-      {/* Mobile Navigation unten */}
+      {/* Reiter des Auftrags, unten fuer den Daumen. Bewusst OHNE Emojis und ohne
+          die blaue Pillen-Optik der Hauptnavigation: mit beidem sah die Leiste
+          exakt aus wie GlobalMobileNav an derselben Stelle, und Nutzer haben
+          "Kommunikation" fuer den Posteingang gehalten. Jetzt ein flacher
+          Segmentschalter mit Unterstrich fuer den aktiven Reiter. */}
       <div
         className="fixed left-0 right-0 z-50 border-t border-slate-800 bg-slate-950/95 shadow-[0_-12px_30px_rgba(0,0,0,0.35)] backdrop-blur-md md:hidden"
         style={{
           bottom: '0px',
           margin: '0px',
-          padding: '10px 10px calc(12px + env(safe-area-inset-bottom)) 10px'
+          padding: '6px 10px calc(10px + env(safe-area-inset-bottom)) 10px'
         }}
       >
-        <div className="mx-auto grid max-w-lg grid-cols-4 gap-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`relative flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-2 transition-colors ${activeTab === tab.id
-                ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/30'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                }`}
-            >
-              <div className="text-lg">
-                {tab.id === 'spec' && '📋'}
-                {tab.id === 'images' && '🖼️'}
-                {tab.id === 'comm' && '💬'}
-                {tab.id === 'details' && '📊'}
-              </div>
-              <span className="max-w-full truncate text-[11px] font-medium leading-tight">{tab.label}</span>
-              {tab.id === 'comm' && hasUnreadComm && activeTab !== 'comm' && (
-                <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
-              )}
-            </button>
-          ))}
+        <div className="mx-auto max-w-lg">
+          <div className="mb-1 text-center text-[10px] uppercase tracking-wider text-slate-600">
+            Ansicht in diesem Auftrag
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative flex min-h-[38px] items-center justify-center border-b-2 px-1 py-1.5 transition-colors ${activeTab === tab.id
+                  ? 'border-sky-400 text-sky-200'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+              >
+                <span className="max-w-full truncate text-[11px] font-medium leading-tight">{tab.label}</span>
+                {tab.id === 'comm' && hasUnreadComm && activeTab !== 'comm' && (
+                  <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

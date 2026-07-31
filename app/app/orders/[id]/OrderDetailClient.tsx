@@ -260,7 +260,7 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
   const statusIndex = statusToIndex(order.status);
 
   return (
-    <div className="w-full space-y-4">
+    <div className="w-full space-y-3">
       {/*
         Vorher standen hier drei Darstellungen DESSELBEN Werts uebereinander:
         ein farbiger Chip "Eingang", ein Auswahlfeld mit "Eingang" und eine
@@ -272,7 +272,10 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         Mitarbeiter, darunter eine Schrittanzeige statt der Scheingenauigkeit
         "17%". Eine Zeile statt vier.
       */}
-      <div className="rounded-xl border border-slate-800/80 bg-slate-950/70 p-3 shadow-inner shadow-black/10 sm:p-4">
+      {/* Ohne eigene Kartenoptik: Rahmen, Hintergrund, Schatten und 12-16px
+          Polsterung liessen die Statuszeile wie ein eigenes Panel wirken, obwohl
+          sie inhaltlich zum Kopf gehoert — und sie steht auf jedem Reiter. */}
+      <div className="pt-1">
         <div className="flex items-center gap-2">
           <div className={`relative shrink-0 rounded-full border ${WORKFLOW_STATUS_CLASS[normalizedStatus]}`}>
             <select
@@ -337,7 +340,7 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         {/* Sechs Segmente statt Prozentbalken — die Zahl war nur Position durch
             Anzahl und gaukelte eine Genauigkeit vor, die es nicht gibt. */}
         <div
-          className="mt-2.5 flex gap-1"
+          className="mt-2 flex gap-1"
           title={`Schritt ${statusIndex + 1} von ${WORKFLOW_STATUSES.length}: ${WORKFLOW_STATUS_LABEL[normalizedStatus]}`}
         >
           {WORKFLOW_STATUSES.map((statusKey, index) => (

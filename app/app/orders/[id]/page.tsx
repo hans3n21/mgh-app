@@ -95,19 +95,45 @@ export default async function OrderDetailPage({ params }: PageProps) {
     );
   }
 
+  // Geloeschte Auftraege nicht normal anzeigen: sonst arbeitet jemand ueber einen
+  // alten Link weiter an einem Auftrag, den fuer alle anderen niemand mehr sieht.
+  if (order.deletedAt) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-2">
+          <div className="text-slate-100 font-semibold">
+            {order.title} liegt im Papierkorb
+          </div>
+          <div className="text-sm text-slate-400">
+            Gelöscht am {order.deletedAt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            {' '}um {order.deletedAt.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr.
+            Alle Daten sind erhalten und lassen sich zurückholen.
+          </div>
+          <div className="flex gap-3 pt-1 text-sm">
+            <Link href="/app/orders/trash" className="text-sky-400 hover:text-sky-300">Zum Papierkorb</Link>
+            <Link href="/app/orders" className="text-slate-400 hover:text-slate-300">Zurück zur Übersicht</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60 sm:rounded-2xl">
+    // Ohne eigenen Rahmen: der Reiter-Inhalt darunter bringt seinen eigenen
+    // Kasten mit — zwei Rahmen desselben Stils ineinander schlossen dasselbe
+    // zweimal ein und kosteten dabei je Seite 1px Rahmen plus 12-16px Polster.
+    <section>
       <OrderHeader
         orderId={order.id}
         orderTitle={order.title}
         orderType={order.type}
         typeLabel={TYPE_LABEL[order.type]}
-        nextStep={order.nextStep}
         customer={order.customer}
       />
 
-      <div className="p-3 sm:p-4">
-        <OrderDetailClient 
+      {/* Nur noch senkrecht polstern — waagerecht polstert der Reiter-Kasten. */}
+      <div className="py-3 sm:py-4">
+        <OrderDetailClient
           order={order} 
           users={users} 
           currentUserId={session?.user?.id || ''}

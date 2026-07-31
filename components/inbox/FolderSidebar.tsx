@@ -110,6 +110,16 @@ function verticalRailLabel(label: string): string {
   return clean.length > 14 ? `${clean.slice(0, 13)}…` : clean;
 }
 
+// Kuerzel fuer schmale Schirme: der senkrecht gedrehte Name ist dort praktisch
+// unlesbar — Nutzer haben ihn fuer Zierrat gehalten, statt zu erkennen, dass es
+// die Postfaecher sind. Zwei Buchstaben waagerecht liest man dagegen sofort.
+function railInitials(label: string): string {
+  const words = label.trim().split(/[\s\-_.]+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
 function railDotClass(accountId: string): string {
   const palette = [
     'bg-emerald-400',
@@ -271,11 +281,18 @@ export default function FolderSidebar({
             >
               <span className={`absolute top-2 left-1/2 -translate-x-1/2 h-1.5 w-1.5 rounded-full ${railDotClass(acc.id)} ${isActive ? 'shadow-[0_0_10px_currentColor]' : ''}`} />
               <span
-                className={`absolute inset-x-0 top-5 bottom-3 mx-auto flex items-center justify-center text-[10px] font-semibold tracking-[0.18em] leading-none uppercase ${isActive ? 'text-sky-100 [text-shadow:0_0_10px_rgba(56,189,248,0.35)]' : ''}`}
+                className={`absolute inset-x-0 top-5 bottom-3 mx-auto hidden items-center justify-center text-[10px] font-semibold tracking-[0.18em] leading-none uppercase lg:flex ${isActive ? 'text-sky-100 [text-shadow:0_0_10px_rgba(56,189,248,0.35)]' : ''}`}
                 style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
               >
                 {verticalRailLabel(label)}
               </span>
+              <span
+                aria-hidden="true"
+                className={`absolute inset-x-0 top-5 bottom-3 mx-auto flex items-center justify-center text-[11px] font-semibold leading-none lg:hidden ${isActive ? 'text-sky-100' : ''}`}
+              >
+                {railInitials(label)}
+              </span>
+              <span className="sr-only">{label}</span>
               {isActive && (
                 <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 text-[10px] leading-none text-sky-300/80">
                   {showFolders ? '◂' : '▸'}
