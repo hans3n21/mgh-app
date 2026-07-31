@@ -12,6 +12,7 @@ export async function GET() {
     // Hole alle Aufträge ohne Assignee (offene Aufträge)
     const openOrders = await prisma.order.findMany({
       where: {
+        deletedAt: null,
         assigneeId: null,
         status: {
           not: 'complete', // Abgeschlossene Aufträge ausschließen

@@ -16,7 +16,7 @@ export async function autoLinkOrderForMail(mailId: string): Promise<string | nul
 	const explicit = fromText && ORDER_REGEX.test(fromText) ? fromText.match(ORDER_REGEX)![0] : undefined;
 	if (explicit) {
 		const order = await prisma.order.findUnique({ where: { id: explicit } });
-		if (order) {
+		if (order && !order.deletedAt) {
 			await prisma.mail.update({ where: { id: mail.id }, data: { orderId: order.id } });
 			await linkMailArtifactsToOrder(mail.id, order.id);
 			return order.id;
@@ -31,7 +31,7 @@ export async function autoLinkOrderForMail(mailId: string): Promise<string | nul
 		});
 		if (customer) {
 			const openOrders = await prisma.order.findMany({
-				where: { customerId: customer.id, status: { not: 'complete' } },
+				where: { customerId: customer.id, deletedAt: null, status: { not: 'complete' } },
 				select: { id: true },
 			});
 			if (openOrders.length === 1) {

@@ -142,7 +142,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
 
@@ -155,9 +155,27 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Löschen; verknüpfte Entitäten folgen den onDelete-Regeln im Prisma-Schema
-    await prisma.order.delete({ where: { id } });
-    return NextResponse.json({ ok: true });
+    // Standardweg ist der Papierkorb: die Zeile bleibt stehen, nur deletedAt wird
+    // gesetzt. Endgültiges Löschen gibt es nur noch ausdrücklich über ?permanent=1
+    // aus dem Papierkorb heraus — denn dabei folgen die onDelete-Cascades im Schema
+    // und nehmen Bilder, Datenblatt, Positionen und Notizen mit.
+    const permanent = request.nextUrl.searchParams.get('permanent') === '1';
+
+    if (permanent) {
+      await prisma.order.delete({ where: { id } });
+      return NextResponse.json({ ok: true, permanent: true });
+    }
+
+    if (existing.deletedAt) {
+      return NextResponse.json({ ok: true, alreadyDeleted: true });
+    }
+
+    await prisma.order.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+
+    return NextResponse.json({ ok: true, permanent: false });
   } catch (error) {
     console.error('Error deleting order:', error);
     return NextResponse.json(

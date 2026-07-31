@@ -134,6 +134,12 @@ model Order {
   returnLabelTrackingNumber String?
   returnLabelCreatedAt      DateTime?
   returnLabelPdfPath        String?
+  // Papierkorb: gesetzt heisst geloescht. Die Zeile bleibt samt Bildern,
+  // Datenblatt und Nachrichten erhalten, bis sie endgueltig entfernt wird.
+  // Alle Listen und Zaehler filtern auf deletedAt: null.
+  deletedAt        DateTime?
+
+  @@index([deletedAt])
 }
 
 model OrderView {

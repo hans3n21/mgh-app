@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
     const { messageId, orderId } = schema.parse(body);
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      select: { customerId: true },
+      select: { customerId: true, deletedAt: true },
     });
-    if (!order) {
+    if (!order || order.deletedAt) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
 

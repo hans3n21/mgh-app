@@ -32,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   let candidates: Array<{ id: string; title: string; status: string; createdAt: Date }>;
   if (customerId) {
     candidates = await prisma.order.findMany({
-      where: { customerId, status: { not: 'complete' } },
+      where: { customerId, deletedAt: null, status: { not: 'complete' } },
       select: { id: true, title: true, status: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       take: 20,
