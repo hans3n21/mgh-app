@@ -465,9 +465,29 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                 </div>
             </div>
 
+            {/* Leerer Zustand benennt, WAS gerade filtert: die Filter überleben
+                Reload und Navigation, ein vergessener Suchbegriff lässt die
+                Liste sonst dauerhaft leer aussehen. */}
             {filteredOrders.length === 0 && (
-                <div className="mb-3 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-slate-400">
-                    Keine Aufträge für den aktuellen Filter.
+                <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-sm text-slate-400">
+                    <span>
+                        Keine Treffer in <span className="text-slate-300">{VIEW_META[view].label}</span>
+                        {search.trim() && <> für die Suche „<span className="text-slate-300">{search.trim()}</span>“</>}
+                        {typeFilter !== 'ALL' && <> im Typ <span className="text-slate-300">{TYPE_LABEL[typeFilter] ?? typeFilter}</span></>}
+                        .
+                    </span>
+                    {(search.trim() || typeFilter !== 'ALL') && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSearch('');
+                                setTypeFilter('ALL');
+                            }}
+                            className="rounded-full bg-sky-500/10 px-2.5 py-1 text-xs text-sky-300 transition-colors hover:bg-sky-500/20"
+                        >
+                            Filter zurücksetzen
+                        </button>
+                    )}
                 </div>
             )}
 
