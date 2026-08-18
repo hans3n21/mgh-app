@@ -19,10 +19,10 @@ echo 1. Hole Aenderungen von GitHub...
 call git fetch origin
 if errorlevel 1 goto :error
 
-call git checkout codex/safety-stabilization
+call git checkout main
 if errorlevel 1 goto :error
 
-call git pull --ff-only origin codex/safety-stabilization
+call git pull --ff-only origin main
 if errorlevel 1 (
     echo.
     echo FEHLER: git pull fehlgeschlagen. Vermutlich gibt es lokale
@@ -38,15 +38,26 @@ call npm install --ignore-scripts
 if errorlevel 1 goto :error
 echo.
 
+REM Der Datenbank-Client MUSS erfolgreich neu erzeugt werden. Frueher lief das
+REM Update hier bei einem Fehler mit einem blossen Hinweis weiter - mit fatalem
+REM Ausgang, sobald sich das Schema geaendert hatte: die App startete zwar,
+REM stuerzte aber beim ersten Lesen mit "Value '...' not found in enum" ab,
+REM weil der alte Client die neuen Werte nicht kennt. Am 18.08.2026 genau so
+REM passiert. Lieber hier abbrechen und die App schliessen lassen.
 echo 3. Aktualisiere Datenbank-Client...
 call npx prisma generate
 if errorlevel 1 (
     echo.
-    echo HINWEIS: Datenbank-Client konnte nicht aktualisiert werden ^(oft weil
-    echo ein laufender "npm run dev" die Datei noch gesperrt haelt^). Falls sich
-    echo das Datenbank-Schema nicht geaendert hat, ist das unproblematisch.
-    echo Sonst: Dev-Server schliessen und dieses Script erneut ausfuehren.
+    echo FEHLER: Datenbank-Client konnte nicht aktualisiert werden. Meist haelt
+    echo eine noch laufende App die Datei gesperrt.
     echo.
+    echo   1. ALLE Fenster von start-mgh-app.bat / start-mgh-app-production.bat
+    echo      schliessen ^(auch minimierte^).
+    echo   2. Dieses Update erneut ausfuehren.
+    echo.
+    echo Ohne diesen Schritt startet die App zwar, kann aber Auftraege nicht
+    echo mehr lesen.
+    goto :error
 )
 
 echo 4. Aktualisiere Datenbank-Schema...
