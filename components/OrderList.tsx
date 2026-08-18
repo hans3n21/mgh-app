@@ -495,8 +495,12 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                                     )}
                                 </div>
                                 <div className="font-mono text-xs text-slate-500">{order.id}</div>
+                                {/* Am Handy gibt es kein Hover — die Notiz steht
+                                    deshalb als Zeile da, nicht nur als Symbol. */}
                                 {order.nextStep && (
-                                    <div className="mt-0.5 text-xs text-sky-300/80">→ {order.nextStep}</div>
+                                    <div className="mt-0.5 truncate text-xs text-amber-300/90" title={order.nextStep}>
+                                        📝 {order.nextStep}
+                                    </div>
                                 )}
                             </div>
                             <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -580,11 +584,15 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                                         {order.hasUnread && (
                                             <span className="flex-shrink-0 w-2 h-2 rounded-full bg-sky-500 animate-pulse" title="Neue Nachricht" />
                                         )}
+                                        {/* Notiz als Symbol mit Hover-Text — kompakt,
+                                            der Inhalt steht im Tooltip. */}
+                                        {order.nextStep && (
+                                            <span className="flex-shrink-0 cursor-help text-xs" title={`Notiz: ${order.nextStep}`} aria-label={`Notiz: ${order.nextStep}`}>
+                                                📝
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="text-xs text-slate-500 font-mono">{order.id}</div>
-                                    {order.nextStep && (
-                                        <div className="text-xs text-sky-300/80 mt-0.5" title="Nächster Schritt">→ {order.nextStep}</div>
-                                    )}
                                 </td>
                                 <td className="py-2 pr-4">{order.customer?.name || 'Unbekannt'}</td>
                                 <td className="py-2 pr-4">{TYPE_LABEL[order.type] || order.type}</td>

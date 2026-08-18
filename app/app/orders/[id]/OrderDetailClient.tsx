@@ -22,6 +22,7 @@ interface Order {
   type: string;
   status: string;
   createdAt: Date;
+  nextStep?: string | null;
   assigneeId: string | null;
   customer: { id: string; name: string; email: string | null; phone: string | null } | null;
   assignee: { id: string; name: string } | null;
@@ -258,6 +259,30 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
   const handleShippingChange = (newShippingCents: number | null) =>
     patchOrderField({ shippingCents: newShippingCents }, 'Shipping');
 
+  // Auftragsnotiz ("zahlt im November"): beantwortet die Rueckfrage "was ist
+  // eigentlich mit dem Auftrag?", ohne dass jemand Mails durchforsten muss.
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  // Escape schliesst das Feld und loest dabei ein blur aus — ohne dieses Flag
+  // wuerde der verworfene Entwurf trotzdem gespeichert.
+  const noteCancelledRef = React.useRef(false);
+  const startEditNote = () => {
+    setNoteDraft(order.nextStep ?? '');
+    noteCancelledRef.current = false;
+    setEditingNote(true);
+  };
+  const cancelEditNote = () => {
+    noteCancelledRef.current = true;
+    setEditingNote(false);
+  };
+  const saveNote = async () => {
+    if (noteCancelledRef.current) return;
+    const trimmed = noteDraft.trim();
+    setEditingNote(false);
+    if (trimmed === (order.nextStep ?? '')) return;
+    await patchOrderField({ nextStep: trimmed || null }, 'Notiz');
+  };
+
   const syncToShop = async () => {
     setSyncing(true);
     try {
@@ -392,6 +417,47 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
             </span>
           )}
         </div>
+
+        {/* Auftragsnotiz: bewusst weit oben und leicht abgesetzt (amber), aber
+            kein Alarm — sie soll beim Öffnen sofort beantworten, was mit dem
+            Auftrag ist ("zahlt im November"), gerade bei Entwürfen und
+            wartenden Zahlungen. */}
+        {editingNote ? (
+          <div className="mt-2 flex items-center gap-2">
+            <span aria-hidden="true">📝</span>
+            <input
+              autoFocus
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              onBlur={() => void saveNote()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                if (e.key === 'Escape') cancelEditNote();
+              }}
+              maxLength={500}
+              placeholder="Notiz zum Auftrag — z. B. „zahlt im November“"
+              className="min-w-0 flex-1 rounded-lg border border-amber-500/40 bg-slate-950 px-3 py-1.5 text-sm text-amber-100 placeholder-slate-500 outline-none"
+            />
+          </div>
+        ) : order.nextStep ? (
+          <button
+            type="button"
+            onClick={startEditNote}
+            className="mt-2 flex w-full items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-left text-sm text-amber-200 transition-colors hover:bg-amber-500/15"
+            title="Notiz bearbeiten"
+          >
+            <span aria-hidden="true">📝</span>
+            <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{order.nextStep}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={startEditNote}
+            className="mt-2 text-xs text-slate-500 transition-colors hover:text-amber-300"
+          >
+            📝 Notiz hinzufügen
+          </button>
+        )}
 
         {/* Sechs Segmente statt Prozentbalken — die Zahl war nur Position durch
             Anzahl und gaukelte eine Genauigkeit vor, die es nicht gibt. */}

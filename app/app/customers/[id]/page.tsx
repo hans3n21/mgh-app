@@ -141,7 +141,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 													{order.title}
 												</Link>
 												<div className="font-mono text-xs text-slate-500">{order.id}</div>
-												{order.nextStep && <div className="text-xs text-sky-300/80">→ {order.nextStep}</div>}
+												{order.nextStep && <div className="truncate text-xs text-amber-300/90" title={order.nextStep}>📝 {order.nextStep}</div>}
 											</td>
 											<td className="py-2 pr-4">{TYPE_LABEL[order.type] ?? order.type}</td>
 											<td className="py-2 pr-4">

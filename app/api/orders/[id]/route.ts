@@ -14,7 +14,9 @@ const dateOnly = z
 
 const updateOrderSchema = z.object({
   status: z.enum(['draft', 'awaiting_payment', 'intake', 'quote', 'in_progress', 'waiting_parts', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
-  nextStep: z.string().max(200).nullable().optional(),
+  // Auftragsnotiz (frueher "Naechster Schritt", hatte nie ein Eingabefeld):
+  // Einzeiler wie "zahlt im November" — beantwortet "was ist mit dem Auftrag?"
+  nextStep: z.string().max(500).nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   title: z.string().optional(),
   customerId: z.string().min(1).optional(),
