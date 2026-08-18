@@ -37,6 +37,8 @@ import PhoneLink from '@/components/PhoneLink';
 import { AUTO_FIELDS } from '@/lib/autofill-data';
 import { useRef } from 'react';
 import OrderParts from '@/components/OrderParts';
+import CustomerSwitchModal from '@/components/CustomerSwitchModal';
+import { suggestShipping } from '@/lib/shipping/suggest';
 
 // Komponente für Bild-Anhänge in der Kommunikation
 function ImageAttachmentPanel({ images }: { images: OrderImage[] }) {
@@ -140,6 +142,7 @@ interface PriceItem {
   price?: number;
   min?: number;
   max?: number;
+  priceText?: string | null;
 }
 
 interface Message {
@@ -187,6 +190,9 @@ interface OrderDetailTabsNewProps {
   paymentStatus?: string | null;
   paymentMethod?: string | null;
   depositAmountCents?: number | null;
+  depositPaidAt?: Date | string | null;
+  paidAt?: Date | string | null;
+  shippingCents?: number | null;
   onStatusChange: (status: string) => void;
   onAssigneeChange: (assigneeId: string) => void;
   onImagesChange: (images: OrderImage[]) => void;
@@ -194,12 +200,15 @@ interface OrderDetailTabsNewProps {
   onPaymentStatusChange?: (paymentStatus: string) => void;
   onPaymentMethodChange?: (paymentMethod: 'paypal' | 'direktueberweisung' | null) => void;
   onDepositAmountChange?: (depositAmountCents: number | null) => void;
-  shopMode?: 'full' | 'deposit' | 'balance';
+  onDepositPaidAtChange?: (date: string | null) => void;
+  onPaidAtChange?: (date: string | null) => void;
+  onShippingChange?: (shippingCents: number | null) => void;
   shopAmount?: string;
-  onShopOptionsChange?: (mode: 'full' | 'deposit' | 'balance', amount: string) => void;
+  onShopAmountChange?: (amount: string) => void;
   amountLocked?: boolean;
   showSpecsTab?: boolean;
   hasUnreadComm?: boolean;
+  customerOtherOrdersCount?: number;
   initialTasks?: Array<{
     id: string;
     title: string;
@@ -218,23 +227,30 @@ export default function OrderDetailTabsNew({
   specs,
   images,
   messages,
+  priceItems,
   users,
   currentUserId,
   order,
   paymentStatus,
   paymentMethod,
   depositAmountCents,
+  depositPaidAt,
+  paidAt,
+  shippingCents,
   onImagesChange,
   onMessagesChange,
   onPaymentStatusChange,
   onPaymentMethodChange,
   onDepositAmountChange,
-  shopMode = 'full',
+  onDepositPaidAtChange,
+  onPaidAtChange,
+  onShippingChange,
   shopAmount = '',
-  onShopOptionsChange,
+  onShopAmountChange,
   amountLocked = false,
   showSpecsTab = true,
   hasUnreadComm = false,
+  customerOtherOrdersCount = 0,
   initialTasks,
 }: OrderDetailTabsNewProps) {
   const LINKED_SPEC_KEYS: Record<string, string> = {
@@ -248,16 +264,46 @@ export default function OrderDetailTabsNew({
     const categories = getCategoriesForOrderType(orderType);
     return new Set(categories);
   });
-  const [splitPayment, setSplitPayment] = useState<boolean>(false);
   const [extrasOpen, setExtrasOpen] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState<boolean>(amountLocked);
   const [depositInput, setDepositInput] = useState<string>('');
-  const isGuitar = orderType === 'GUITAR';
+  const [shippingInput, setShippingInput] = useState<string>('');
   const [datasheetVersion, setDatasheetVersion] = useState<number | undefined>(undefined);
   const [datasheetUpdatedAt, setDatasheetUpdatedAt] = useState<string | undefined>(undefined);
   useEffect(() => {
     setDepositInput(depositAmountCents != null ? (depositAmountCents / 100).toString() : '');
   }, [depositAmountCents]);
+  useEffect(() => {
+    setShippingInput(shippingCents != null ? (shippingCents / 100).toString() : '');
+  }, [shippingCents]);
+
+  // Versand-Vorschlag aus der Preisliste: Kundenland → Versandzone, Auftragstyp
+  // → Kategorie (Gitarre = Gitarrenversand, Rest = Klein-Paket), Freigrenze
+  // gegen den Endbetrag. Nur solange nichts eingetragen ist — eine Handeingabe
+  // wird nie überschrieben.
+  const shippingSuggestion = useMemo(() => {
+    if (shippingCents != null) return null;
+    const country = (order.customer as any)?.country as string | undefined;
+    const raw = (shopAmount || '').replace(',', '.').trim();
+    const parsed = Number.parseFloat(raw);
+    const finalAmountCents = Number.isFinite(parsed) ? Math.round(parsed * 100) : null;
+    return suggestShipping(priceItems, { country, orderType, finalAmountCents });
+  }, [shippingCents, order.customer, shopAmount, orderType, priceItems]);
+
+  // Datumshelfer für die Zahlungsdaten: <input type="date"> braucht YYYY-MM-DD
+  // in LOKALER Zeit (toISOString käme in UTC und kippt nachts den Tag).
+  const toDateInputValue = (value?: Date | string | null): string => {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const formatPaidDate = (value?: Date | string | null): string | null => {
+    if (!value) return null;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('de-DE');
+  };
 
   // Bearbeitungsmodus Datenblatt: standardmäßig aus, außer wenn noch keine Einträge
   const hasAnySpecEntries = useMemo(
@@ -353,6 +399,47 @@ export default function OrderDetailTabsNew({
     setEditingCustomer(false);
     // Seite aktualisieren, damit alle Konsumenten (z. B. Shop-Export) die neuen Daten sehen
     router.refresh();
+  };
+
+  // Kunde wechseln / abspalten: Bearbeiten aendert den GETEILTEN Datensatz.
+  // Haengt derselbe Kunde faelschlich an mehreren Auftraegen, ist der richtige
+  // Weg, diesen Auftrag umzuhaengen — an einen anderen Bestandskunden oder an
+  // einen neu angelegten Kunden mit den hier eingetippten Daten.
+  const [switchCustomerOpen, setSwitchCustomerOpen] = useState(false);
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
+
+  const saveAsNewCustomer = async () => {
+    if (creatingCustomer) return;
+    if (!customerDraft.name.trim()) { alert('Bitte Kundennamen eingeben'); return; }
+    setCreatingCustomer(true);
+    try {
+      // Leere Strings raus: `email: ''` fiele sonst durch z.string().email().
+      const fields = Object.fromEntries(
+        Object.entries(customerDraft).filter(([, v]) => typeof v === 'string' && v.trim() !== '')
+      );
+      const createRes = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // forceNew: auch bei gleicher E-Mail einen echten neuen Datensatz
+        // anlegen statt still den bestehenden Kunden zurückzugeben.
+        body: JSON.stringify({ ...fields, forceNew: true }),
+      });
+      if (!createRes.ok) { alert('Neuer Kunde konnte nicht angelegt werden'); return; }
+      const created = await createRes.json();
+
+      const patchRes = await fetch(`/api/orders/${orderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: created.id }),
+      });
+      if (!patchRes.ok) { alert('Auftrag konnte nicht umgehängt werden'); return; }
+
+      (order as any).customer = created;
+      setEditingCustomer(false);
+      router.refresh();
+    } finally {
+      setCreatingCustomer(false);
+    }
   };
 
   // Get preset configuration for this order type
@@ -695,6 +782,8 @@ export default function OrderDetailTabsNew({
                   paymentStatus={paymentStatus || undefined}
                   paymentMethod={paymentMethod || undefined}
                   depositAmount={depositAmountCents != null ? (depositAmountCents / 100).toFixed(2) : undefined}
+                  depositPaidAt={depositPaidAt}
+                  paidAt={paidAt}
                   attachImages={images?.filter(img => img.attach).map(img => ({ id: img.id, path: img.path, comment: img.comment, position: img.position })) || []}
                   buttonText="📄 PDF"
                   // Kein onPDFGenerated = direkter Download
@@ -1142,12 +1231,6 @@ export default function OrderDetailTabsNew({
                   >✏️</button>
                 </div>
                 <div className="flex items-center gap-3">
-                  {isGuitar && (
-                    <label className="flex items-center gap-2 text-slate-300 text-xs">
-                      <input type="checkbox" className="h-3.5 w-3.5" onChange={(e) => setSplitPayment(e.target.checked)} checked={splitPayment} />
-                      In Raten zahlen
-                    </label>
-                  )}
                   <button
                     className="text-xs text-emerald-400 hover:text-emerald-300"
                     title="Extrakosten hinzufügen"
@@ -1163,7 +1246,7 @@ export default function OrderDetailTabsNew({
                     <input
                       id="endbetrag-input"
                       value={shopAmount}
-                      onChange={(e) => onShopOptionsChange?.(shopMode, e.target.value)}
+                      onChange={(e) => onShopAmountChange?.(e.target.value)}
                       placeholder="z.B. 3000"
                       className={`w-32 rounded bg-slate-950 border border-slate-700 px-2 py-1`}
                     />
@@ -1183,11 +1266,67 @@ export default function OrderDetailTabsNew({
                           body: JSON.stringify({ finalAmountCents: amountCents })
                         });
                         if (!res.ok) { alert('Konnte Endbetrag nicht speichern'); return; }
-                        onShopOptionsChange?.(shopMode, String(parsed));
+                        onShopAmountChange?.(String(parsed));
                         setIsLocked(true);
                       }}
                     >OK</button>
                   </div>
+                  {/* Versand: kommt OBENDRAUF auf den Endbetrag und geht beim
+                      Shop-Sync als eigene Versandposition mit. Wie alle Beträge
+                      nur im Bearbeiten-Modus (Stift) offen — gesperrt zeigt die
+                      Abrechnungszeile darunter den Wert. */}
+                  {!isLocked && (
+                  <label
+                    className="flex items-center gap-1.5 text-sm text-slate-400"
+                    title="Versandkosten — kommen auf den Endbetrag obendrauf und gehen beim Shop-Sync als Versandposition mit"
+                  >
+                    Versand €
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={shippingInput}
+                      onChange={(e) => setShippingInput(e.target.value)}
+                      onBlur={() => {
+                        const raw = shippingInput.trim();
+                        if (!raw) {
+                          onShippingChange?.(null);
+                          return;
+                        }
+                        const parsed = Number.parseFloat(raw.replace(',', '.'));
+                        if (!Number.isFinite(parsed) || parsed < 0) {
+                          return;
+                        }
+                        const cents = Math.round(parsed * 100);
+                        onShippingChange?.(cents);
+                        setShippingInput((cents / 100).toString());
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return;
+                        (e.target as HTMLInputElement).blur();
+                      }}
+                      className="w-20 rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200"
+                      placeholder="0"
+                    />
+                  </label>
+                  )}
+                  {/* Der Vorschlags-Chip nur im Bearbeiten-Modus: bei laufenden
+                      Aufträgen ist die Rechnung längst raus, da soll nichts mehr
+                      zum Versand auffordern. */}
+                  {!isLocked && shippingSuggestion && (
+                    <button
+                      type="button"
+                      onClick={() => onShippingChange?.(shippingSuggestion.cents)}
+                      className="rounded-full bg-sky-500/10 px-2.5 py-1 text-xs text-sky-300 hover:bg-sky-500/20"
+                      title={`Aus der Preisliste: ${shippingSuggestion.source}${shippingSuggestion.freeReason ? ` — ${shippingSuggestion.freeReason}` : ''}`}
+                    >
+                      Vorschlag:{' '}
+                      {shippingSuggestion.cents === 0
+                        ? 'versandkostenfrei'
+                        : `${(shippingSuggestion.cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €`}{' '}
+                      ({shippingSuggestion.zoneLabel}) übernehmen
+                    </button>
+                  )}
                   {/* Zahlungsstatus Checkboxen */}
                   <div className="flex flex-wrap items-center gap-4 ml-0 sm:ml-4">
                     <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
@@ -1232,22 +1371,11 @@ export default function OrderDetailTabsNew({
                       <span>Bezahlt</span>
                     </label>
                     {paymentStatus === 'paid' && (
-                      <select
-                        value={paymentMethod || ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          onPaymentMethodChange?.(v === 'paypal' ? 'paypal' : v === 'direktueberweisung' ? 'direktueberweisung' : null);
-                        }}
-                        className="rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200"
-                        title="Zahlungsart"
-                      >
-                        <option value="">— Zahlungsart —</option>
-                        <option value="paypal">PayPal</option>
-                        <option value="direktueberweisung">Direktüberweisung</option>
-                      </select>
-                    )}
-                    {paymentStatus === 'deposit' && (
                       <>
+                        {/* Gewählte Zahlungsart wird zur Textzeile ("Bezahlt am …
+                            via …") — das Select zeigt sich nur, solange nichts
+                            gewählt ist oder der Stift offen ist. */}
+                        {(!isLocked || !paymentMethod) && (
                         <select
                           value={paymentMethod || ''}
                           onChange={(e) => {
@@ -1261,6 +1389,54 @@ export default function OrderDetailTabsNew({
                           <option value="paypal">PayPal</option>
                           <option value="direktueberweisung">Direktüberweisung</option>
                         </select>
+                        )}
+                        {/* Beide Zahlungen bleiben zuordenbar: gab es eine
+                            Anzahlung, bleibt ihr Datum auch bei "Bezahlt"
+                            korrigierbar (im Bearbeiten-Modus). */}
+                        {!isLocked && (depositAmountCents != null || depositPaidAt) && (
+                          <label className="flex items-center gap-1.5 text-sm text-slate-400">
+                            Anzahlung am
+                            <input
+                              type="date"
+                              value={toDateInputValue(depositPaidAt)}
+                              onChange={(e) => onDepositPaidAtChange?.(e.target.value || null)}
+                              className="rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200 [color-scheme:dark]"
+                              title="Anzahlung eingegangen am"
+                            />
+                          </label>
+                        )}
+                        {!isLocked && (
+                        <label className="flex items-center gap-1.5 text-sm text-slate-400">
+                          am
+                          <input
+                            type="date"
+                            value={toDateInputValue(paidAt)}
+                            onChange={(e) => onPaidAtChange?.(e.target.value || null)}
+                            className="rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200 [color-scheme:dark]"
+                            title="Bezahlt am — fürs Abrechnen mit der Banking-App"
+                          />
+                        </label>
+                        )}
+                      </>
+                    )}
+                    {paymentStatus === 'deposit' && (
+                      <>
+                        {(!isLocked || !paymentMethod) && (
+                        <select
+                          value={paymentMethod || ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            onPaymentMethodChange?.(v === 'paypal' ? 'paypal' : v === 'direktueberweisung' ? 'direktueberweisung' : null);
+                          }}
+                          className="rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200"
+                          title="Zahlungsart"
+                        >
+                          <option value="">— Zahlungsart —</option>
+                          <option value="paypal">PayPal</option>
+                          <option value="direktueberweisung">Direktüberweisung</option>
+                        </select>
+                        )}
+                        {!isLocked && (
                         <input
                           type="number"
                           min="0"
@@ -1291,49 +1467,77 @@ export default function OrderDetailTabsNew({
                           placeholder="Anzahlung €"
                           title="Anzahlungsbetrag in Euro"
                         />
+                        )}
+                        {!isLocked && (
+                        <label className="flex items-center gap-1.5 text-sm text-slate-400">
+                          am
+                          <input
+                            type="date"
+                            value={toDateInputValue(depositPaidAt)}
+                            onChange={(e) => onDepositPaidAtChange?.(e.target.value || null)}
+                            className="rounded bg-slate-950 border border-slate-700 px-2 py-1 text-sm text-slate-200 [color-scheme:dark]"
+                            title="Anzahlung eingegangen am — fürs Abrechnen mit der Banking-App"
+                          />
+                        </label>
+                        )}
                       </>
                     )}
                   </div>
                 </div>
+                {/* Nur noch EINE Rechnung über den vollen Endbetrag — die
+                    Raten-Knöpfe (Anzahlung/Restzahlung) sind bewusst weg. */}
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
-                  {!(isGuitar && splitPayment) && (
-                    <button
-                      onClick={() => {
-                        const value = isLocked ? shopAmount : (document.getElementById('endbetrag-input') as HTMLInputElement | null)?.value || '';
-                        const isEmpty = !value || !value.trim();
-                        if (isEmpty) { alert('Bitte Endbetrag eintragen.'); return; }
-                        if (!confirm('Möchten Sie den Auftrag jetzt an WooCommerce übertragen?')) return;
-                        document.dispatchEvent(new CustomEvent('sync-to-woo', { detail: { mode: 'full' } } as CustomEventInit));
-                      }}
-                      className="rounded bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium w-full sm:w-auto"
-                    >Auftrag in Shop</button>
-                  )}
-                  {isGuitar && splitPayment && (
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <button
-                        title="1. Zahlung (Anzahlung)"
-                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs flex-1 sm:flex-none"
-                        onClick={() => {
-                          const value = shopAmount;
-                          if (!value || !value.trim()) { alert('Bitte Endbetrag eintragen.'); return; }
-                          if (!confirm('Anzahlung jetzt in WooCommerce anlegen?')) return;
-                          document.dispatchEvent(new CustomEvent('sync-to-woo', { detail: { mode: 'deposit' } } as CustomEventInit));
-                        }}
-                      >Zahlung 1</button>
-                      <button
-                        title="2. Zahlung (Rest)"
-                        className="rounded bg-sky-600 hover:bg-sky-500 px-2 py-1 text-xs flex-1 sm:flex-none"
-                        onClick={() => {
-                          const value = shopAmount;
-                          if (!value || !value.trim()) { alert('Bitte Endbetrag eintragen.'); return; }
-                          if (!confirm('Restzahlung jetzt in WooCommerce anlegen?')) return;
-                          document.dispatchEvent(new CustomEvent('sync-to-woo', { detail: { mode: 'balance' } } as CustomEventInit));
-                        }}
-                      >Zahlung 2</button>
-                    </div>
-                  )}
+                  <button
+                    onClick={() => {
+                      const value = isLocked ? shopAmount : (document.getElementById('endbetrag-input') as HTMLInputElement | null)?.value || '';
+                      const isEmpty = !value || !value.trim();
+                      if (isEmpty) { alert('Bitte Endbetrag eintragen.'); return; }
+                      const shippingNote = (shippingCents ?? 0) > 0
+                        ? ` (inkl. ${((shippingCents as number) / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 })} € Versand als eigene Position)`
+                        : '';
+                      if (!confirm(`Möchten Sie den Auftrag jetzt an WooCommerce übertragen?${shippingNote}`)) return;
+                      document.dispatchEvent(new CustomEvent('sync-to-woo'));
+                    }}
+                    className="rounded bg-sky-600 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium w-full sm:w-auto"
+                  >Auftrag in Shop</button>
                 </div>
               </div>
+
+              {/* Abrechnungszeile unter dem Betrag: WANN wurde was gezahlt (für
+                  den Abgleich mit der Banking-App) und was kommt an Versand
+                  dazu. Im gesperrten Zustand ist sie die einzige Anzeige dieser
+                  Werte — ändern geht über den Stift. Fehlt ein Datum (Altfälle
+                  vor der Umstellung), steht nur der Betrag da. */}
+              {(((paymentStatus === 'deposit' || paymentStatus === 'paid') && (depositAmountCents != null || depositPaidAt)) ||
+                paymentStatus === 'paid' ||
+                (shippingCents ?? 0) > 0) && (
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-400">
+                  {(paymentStatus === 'deposit' || paymentStatus === 'paid') && (depositAmountCents != null || depositPaidAt) && (
+                    <span>
+                      Angezahlt
+                      {depositAmountCents != null
+                        ? ` ${(depositAmountCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`
+                        : ''}
+                      {formatPaidDate(depositPaidAt) ? ` am ${formatPaidDate(depositPaidAt)}` : ''}
+                      {paymentStatus === 'deposit' && paymentMethod
+                        ? ` via ${paymentMethod === 'paypal' ? 'PayPal' : 'Direktüberweisung'}`
+                        : ''}
+                    </span>
+                  )}
+                  {paymentStatus === 'paid' && (
+                    <span>
+                      Bezahlt
+                      {formatPaidDate(paidAt) ? ` am ${formatPaidDate(paidAt)}` : ''}
+                      {paymentMethod ? ` via ${paymentMethod === 'paypal' ? 'PayPal' : 'Direktüberweisung'}` : ''}
+                    </span>
+                  )}
+                  {(shippingCents ?? 0) > 0 && (
+                    <span title="Geht beim Shop-Sync als Versandposition mit">
+                      + Versand {((shippingCents as number) / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 })} €
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Extrakosten (ein-/ausklappbar) */}
               {extrasOpen && (
@@ -1430,15 +1634,35 @@ export default function OrderDetailTabsNew({
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-semibold">Kunde</div>
                   {order.customer && !editingCustomer && (
-                    <button
-                      className="text-xs text-slate-400 hover:text-sky-400 flex items-center gap-1"
-                      title="Kundendaten bearbeiten"
-                      onClick={startEditCustomer}
-                    >
-                      ✏️ Bearbeiten
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        className="text-xs text-slate-400 hover:text-sky-400 flex items-center gap-1"
+                        title="Auftrag an einen anderen Kunden hängen"
+                        onClick={() => setSwitchCustomerOpen(true)}
+                      >
+                        ⇄ Wechseln
+                      </button>
+                      <button
+                        className="text-xs text-slate-400 hover:text-sky-400 flex items-center gap-1"
+                        title="Kundendaten bearbeiten"
+                        onClick={startEditCustomer}
+                      >
+                        ✏️ Bearbeiten
+                      </button>
+                    </div>
                   )}
                 </div>
+                {switchCustomerOpen && order.customer && (
+                  <CustomerSwitchModal
+                    orderId={orderId}
+                    currentCustomerId={order.customer.id}
+                    onClose={() => setSwitchCustomerOpen(false)}
+                    onSwitched={() => {
+                      setSwitchCustomerOpen(false);
+                      router.refresh();
+                    }}
+                  />
+                )}
                 <div className="space-y-1">
                   {!editingCustomer && (
                     <div className="flex items-center gap-3">
@@ -1500,10 +1724,24 @@ export default function OrderDetailTabsNew({
                           <span className="text-xs text-slate-500">Keine Adresse hinterlegt</span>
                         </div>
                       )}
+                      {customerOtherOrdersCount > 0 && (
+                        <div className="mt-2 text-xs text-slate-500">
+                          Dieser Kunde hängt an {customerOtherOrdersCount} weiteren{' '}
+                          {customerOtherOrdersCount === 1 ? 'Auftrag' : 'Aufträgen'}.
+                        </div>
+                      )}
                     </div>
                   )}
                   {order.customer && editingCustomer && (
                     <div className="mt-2 space-y-2 text-sm">
+                      {customerOtherOrdersCount > 0 && (
+                        <div className="rounded-lg border border-amber-700/50 bg-amber-900/20 px-2.5 py-2 text-xs text-amber-200">
+                          Achtung: Änderungen gelten auch für {customerOtherOrdersCount}{' '}
+                          {customerOtherOrdersCount === 1 ? 'weiteren Auftrag' : 'weitere Aufträge'} dieses Kunden.
+                          Ist das eigentlich eine andere Person, nutze „Als neuen Kunden anlegen"
+                          oder hänge den Auftrag über „Wechseln" um.
+                        </div>
+                      )}
                       <input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Name" value={customerDraft.name} onChange={(e) => setCustomerDraft({ ...customerDraft, name: e.target.value })} />
                       <input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="E-Mail" value={customerDraft.email} onChange={(e) => setCustomerDraft({ ...customerDraft, email: e.target.value })} />
                       <input className="w-full rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Telefon" value={customerDraft.phone} onChange={(e) => setCustomerDraft({ ...customerDraft, phone: e.target.value })} />
@@ -1513,9 +1751,17 @@ export default function OrderDetailTabsNew({
                         <input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Ort" value={customerDraft.city} onChange={(e) => setCustomerDraft({ ...customerDraft, city: e.target.value })} />
                         <input className="rounded bg-slate-950 border border-slate-700 px-2 py-1" placeholder="Land" value={customerDraft.country} onChange={(e) => setCustomerDraft({ ...customerDraft, country: e.target.value })} />
                       </div>
-                      <div className="flex justify-end gap-2">
-                        <button className="rounded border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800" onClick={() => setEditingCustomer(false)}>Abbrechen</button>
-                        <button className="rounded border border-sky-600 bg-sky-600/20 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-600/30" onClick={saveCustomer}>Speichern</button>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button className="rounded border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800" onClick={() => setEditingCustomer(false)} disabled={creatingCustomer}>Abbrechen</button>
+                        <button
+                          className="rounded border border-emerald-700/70 bg-emerald-900/20 px-3 py-1.5 text-xs text-emerald-200 hover:bg-emerald-900/40 disabled:opacity-50"
+                          onClick={saveAsNewCustomer}
+                          disabled={creatingCustomer}
+                          title="Legt mit diesen Daten einen neuen Kunden an und hängt den Auftrag dorthin um — der bisherige Kunde bleibt unverändert"
+                        >
+                          {creatingCustomer ? 'Lege an…' : 'Als neuen Kunden anlegen'}
+                        </button>
+                        <button className="rounded border border-sky-600 bg-sky-600/20 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-600/30" onClick={saveCustomer} disabled={creatingCustomer}>Speichern</button>
                       </div>
                     </div>
                   )}

@@ -61,9 +61,13 @@
 | customerId | String | → Customer |
 | assigneeId | String? | → User |
 | wcOrderId | String? | WooCommerce-ID |
-| finalAmountCents | Int? | Gesamtpreis in Cent |
-| paymentStatus | String | @default("open") |
-| paymentMethod | String? | |
+| finalAmountCents | Int? | Gesamtpreis in Cent (ohne Versand) |
+| paymentStatus | String | @default("open"), open \| deposit \| paid |
+| paymentMethod | String? | paypal \| direktueberweisung |
+| depositAmountCents | Int? | Anzahlungsbetrag in Cent |
+| depositPaidAt | DateTime? | Anzahlung eingegangen am (Abrechnung) |
+| paidAt | DateTime? | Voll bezahlt am (Abrechnung) |
+| shippingCents | Int? | Versand, kommt obendrauf; Shop-Sync als Versandposition |
 | → | Customer, User?, OrderSpecKV[], OrderImage[], OrderItem[], Message[], OrderExtra[], Mail[], Datasheet[], OrderView[], OrderTask[], OrderFieldSuggestion[] |
 
 ### Auftrags-Details

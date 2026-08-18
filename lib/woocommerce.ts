@@ -1,10 +1,10 @@
 import { prisma } from './prisma';
 
-type WooSyncMode = 'full' | 'deposit' | 'balance';
+// Raten-Modi (Anzahlung/Restzahlung) wurden bewusst entfernt: Rechnungen gehen
+// nur noch über den vollen Endbetrag in den Shop. Der interne Zahlungsstand
+// (Angezahlt/Bezahlt) lebt unabhängig davon am Auftrag.
 interface CreateWooOptions {
-  mode?: WooSyncMode;
   amountCents?: number; // optional, falls angegeben wird dieser Betrag verwendet
-  depositAmountCents?: number; // optionaler Anzahlungsbetrag
   customLabel?: string; // optionaler Zusatz für Fee-Namen (z.B. Extrakosten-Grund)
 }
 
@@ -75,7 +75,6 @@ export async function createWooOrderForInternal(orderId: string, options: Create
   const label = typeLabel[order.type] || order.type;
   const model = primaryModelForType();
   const secondary = secondaryDetailForType();
-  const mode: WooSyncMode = options.mode || 'full';
 
   // Betrag ermitteln (Basis = Endbetrag in Cent)
   let baseCents: number | undefined = options.amountCents ?? undefined;
@@ -85,19 +84,9 @@ export async function createWooOrderForInternal(orderId: string, options: Create
     baseCents = Math.round(sumEuro * 100);
   }
 
-  // Anzahlung/Restzahlung: Anzahlung optional explizit, sonst 50%-Fallback
-  let totalCents = baseCents ?? 0; // gewünschter Brutto-Endbetrag des jeweiligen Schritts
-  if (mode === 'deposit' && options.depositAmountCents != null) {
-    totalCents = options.depositAmountCents;
-  } else if (mode === 'deposit' || mode === 'balance') {
-    totalCents = Math.round(totalCents * 0.5);
-  }
+  const totalCents = baseCents ?? 0; // Brutto-Endbetrag
 
-  let feeNameMode = 'Werkstattauftrag';
-  if (mode === 'deposit') feeNameMode = options.depositAmountCents != null ? 'Anzahlung' : 'Anzahlung 50%';
-  if (mode === 'balance') feeNameMode = 'Restzahlung';
-
-  const composedName = `${feeNameMode} · ${label}${model ? ' – ' + model : ''}${secondary ? ' · ' + secondary : ''}${options.customLabel ? ' · ' + options.customLabel : ''} · ${order.id}`;
+  const composedName = `Werkstattauftrag · ${label}${model ? ' – ' + model : ''}${secondary ? ' · ' + secondary : ''}${options.customLabel ? ' · ' + options.customLabel : ''} · ${order.id}`;
 
   const payload: any = {
     created_via: 'MGH-App',
@@ -178,6 +167,24 @@ export async function createWooOrderForInternal(orderId: string, options: Create
         } : {}),
       }];
     }
+  }
+
+  // Versand als eigene Versandposition. Am Auftrag gepflegt (Order.shippingCents),
+  // kommt OBENDRAUF auf den Endbetrag. Nicht bei Extra-Bestellungen (customLabel).
+  const shippingCents = order.shippingCents ?? 0;
+  if (shippingCents > 0 && !options.customLabel) {
+    let shippingNetCents = shippingCents;
+    let shippingTaxCents = 0;
+    if (forceGrossToNet) {
+      shippingNetCents = Math.round(shippingCents / (1 + vatRate));
+      shippingTaxCents = shippingCents - shippingNetCents;
+    }
+    bodyPayload.shipping_lines = [{
+      method_id: 'flat_rate',
+      method_title: 'Versand',
+      total: formatCents(shippingNetCents),
+      ...(forceGrossToNet ? { total_tax: formatCents(shippingTaxCents) } : {}),
+    }];
   }
 
   const res = await fetch(endpoint, {

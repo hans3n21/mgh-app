@@ -45,6 +45,8 @@ enum OrderStatus {
   awaiting_customer
   complete
   design_review
+  draft
+  awaiting_payment
 }
 
 enum Role {
@@ -123,6 +125,13 @@ model Order {
   paymentStatus    String        @default("open") // open | deposit | paid
   paymentMethod    String?       // paypal | direktueberweisung (wenn bezahlt)
   depositAmountCents Int?
+  // Zahlungsdaten fuer die Abrechnung (Abgleich Banking): werden beim Setzen
+  // von Angezahlt/Bezahlt automatisch auf heute gesetzt, nachtraeglich editierbar.
+  depositPaidAt    DateTime?
+  paidAt           DateTime?
+  // Versand kommt OBENDRAUF auf den Endbetrag (finalAmountCents bleibt ohne)
+  // und geht beim Shop-Sync als eigene Versandposition mit.
+  shippingCents    Int?
   extras           OrderExtra[]
   mails            Mail[]
   datasheets       Datasheet[]

@@ -3,10 +3,10 @@ import { prisma } from '@/lib/prisma';
 import { createWooOrderForInternal } from '@/lib/woocommerce';
 import { z } from 'zod';
 
+// Raten-Modi (deposit/balance) gibt es nicht mehr: Rechnungen gehen nur noch
+// über den vollen Endbetrag in den Shop.
 const BodySchema = z.object({
-  mode: z.enum(['full', 'deposit', 'balance']).optional(),
   amountCents: z.number().int().positive().optional(),
-  depositAmountCents: z.number().int().positive().optional(),
   customLabel: z.string().optional(),
 });
 
@@ -19,11 +19,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let body: any = {};
     try { body = await req.json(); } catch {}
     const parsed = BodySchema.safeParse(body);
-    const opts = parsed.success
+    const opts: { amountCents?: number; customLabel?: string } = parsed.success
       ? {
-          mode: parsed.data.mode,
           amountCents: parsed.data.amountCents,
-          depositAmountCents: parsed.data.depositAmountCents,
           customLabel: parsed.data.customLabel,
         }
       : {};
@@ -33,10 +31,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id },
       data: {
         wcOrderId: wooOrderId,
-        // setze paymentStatus heuristisch anhand mode
-        paymentStatus: opts.mode === 'deposit' ? 'deposit' : (opts.mode === 'balance' ? 'paid' : undefined),
-        finalAmountCents: opts.amountCents ?? undefined,
-        depositAmountCents: opts.mode === 'deposit' ? opts.depositAmountCents ?? undefined : undefined,
+        // Bei Extra-Bestellungen (customLabel) den Endbetrag NICHT anfassen:
+        // vorher überschrieb der Extra-Betrag hier den Auftrags-Endbetrag.
+        finalAmountCents: opts.customLabel ? undefined : opts.amountCents ?? undefined,
       },
       include: {
         customer: true,

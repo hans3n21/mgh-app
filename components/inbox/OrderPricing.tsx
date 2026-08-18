@@ -14,10 +14,8 @@ interface Props {
 
 export default function OrderPricing({ orderId, orderType, onPriceUpdate, message, draft, submitting, setSubmitting, setToast }: Props) {
   const [shopAmount, setShopAmount] = useState('');
-  const [splitPayment, setSplitPayment] = useState<boolean>(false);
   const [isLocked, setIsLocked] = useState(false);
   const [saving, setSaving] = useState(false);
-  const isGuitar = orderType === 'GUITAR';
   const hasAmount = shopAmount.trim().length > 0;
 
   // Lade gespeicherten Preis beim Auftragswechsel
@@ -127,7 +125,7 @@ export default function OrderPricing({ orderId, orderType, onPriceUpdate, messag
     setSaving(true);
     try {
       document.dispatchEvent(new CustomEvent('sync-to-woo', {
-        detail: { mode: 'full', orderId }
+        detail: { orderId }
       } as CustomEventInit));
 
       alert('Auftrag wird an WooCommerce übertragen...');
@@ -165,19 +163,6 @@ export default function OrderPricing({ orderId, orderType, onPriceUpdate, messag
               >
                 ✏️
               </button>
-              {isGuitar && (
-                <button
-                  onClick={() => setSplitPayment(!splitPayment)}
-                  className={`text-xs px-2 py-1 rounded border transition-colors ${
-                    splitPayment
-                      ? 'border-amber-600 bg-amber-600/20 text-amber-300'
-                      : 'border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                  title="Zahlung in zwei Rechnungen aufteilen"
-                >
-                  Split
-                </button>
-              )}
             </>
           ) : (
             <>
@@ -200,57 +185,18 @@ export default function OrderPricing({ orderId, orderType, onPriceUpdate, messag
         </div>
       </div>
 
+      {/* Nur noch eine Rechnung über den vollen Endbetrag — Raten-Buttons
+          (Anzahlung/Restzahlung) sind bewusst entfernt. */}
       <div className="space-y-2">
         <div className="flex gap-2">
-          {!isGuitar || !splitPayment ? (
-            <>
-              <button
-                onClick={syncToShop}
-                disabled={saving || !hasAmount}
-                title={hasAmount ? 'Auftrag in WooCommerce anlegen' : 'Shop-Übertragung erst nach Endbetrag möglich'}
-                className="w-full text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 hover:border-slate-500 text-slate-200 rounded disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-              >
-                {saving ? 'Übertrage...' : 'In Shop anlegen'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  if (!shopAmount || !shopAmount.trim()) {
-                    alert('Bitte Endbetrag eintragen.');
-                    return;
-                  }
-                  if (!confirm('Anzahlung jetzt in WooCommerce anlegen?')) return;
-                  document.dispatchEvent(new CustomEvent('sync-to-woo', {
-                    detail: { mode: 'deposit', orderId }
-                  } as CustomEventInit));
-                }}
-                disabled={saving || !hasAmount}
-                className="flex-1 text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 border border-slate-600 hover:border-slate-500 text-slate-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="1. Zahlung (Anzahlung)"
-              >
-                Zahlung 1
-              </button>
-              <button
-                onClick={() => {
-                  if (!shopAmount || !shopAmount.trim()) {
-                    alert('Bitte Endbetrag eintragen.');
-                    return;
-                  }
-                  if (!confirm('Restzahlung jetzt in WooCommerce anlegen?')) return;
-                  document.dispatchEvent(new CustomEvent('sync-to-woo', {
-                    detail: { mode: 'balance', orderId }
-                  } as CustomEventInit));
-                }}
-                disabled={saving || !hasAmount}
-                className="flex-1 text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 border border-slate-600 hover:border-slate-500 text-slate-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="2. Zahlung (Rest)"
-              >
-                Zahlung 2
-              </button>
-            </>
-          )}
+          <button
+            onClick={syncToShop}
+            disabled={saving || !hasAmount}
+            title={hasAmount ? 'Auftrag in WooCommerce anlegen' : 'Shop-Übertragung erst nach Endbetrag möglich'}
+            className="w-full text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 hover:border-slate-500 text-slate-200 rounded disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+          >
+            {saving ? 'Übertrage...' : 'In Shop anlegen'}
+          </button>
         </div>
       </div>
     </div>

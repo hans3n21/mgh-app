@@ -32,6 +32,8 @@ interface DatasheetPDFGeneratorProps {
   paymentStatus?: string; // Zahlungsstatus: 'open' | 'deposit' | 'paid'
   paymentMethod?: string; // Zahlungsart: 'paypal' | 'direktueberweisung'
   depositAmount?: string; // Anzahlungsbetrag in Euro
+  depositPaidAt?: string | Date | null; // Anzahlung eingegangen am (Abrechnung)
+  paidAt?: string | Date | null; // Voll bezahlt am (Abrechnung)
   attachImages?: AttachImage[]; // Als Anhang markierte Bilder für Seite 2
   onPDFGenerated?: (pdfBlob: Blob, filename: string) => void;
   buttonText?: string;
@@ -189,6 +191,8 @@ export default function DatasheetPDFGenerator({
   paymentStatus,
   paymentMethod,
   depositAmount,
+  depositPaidAt,
+  paidAt,
   attachImages = [],
   onPDFGenerated,
   buttonText = 'Datenblatt als PDF',
@@ -294,6 +298,28 @@ export default function DatasheetPDFGenerator({
         ['Kunde:', customerName, 'Gitarrenbauer:', assigneeName || '–'],
         ['Saitenzahl:', specs.find(s => s.key === 'string_count')?.value || '–', 'Preis:', finalAmount ? `${finalAmount} €` : '–']
       ];
+
+      // Zahlungsdaten als eigene Zeile: WANN gezahlt wurde, braucht der Chef
+      // für die Abrechnung (Abgleich Banking). Neben den Checkboxen rechts vom
+      // Preis ist dafür kein Platz. Achtung: die Checkbox-Logik unten hängt an
+      // rowIndex === 3 — diese Zeile muss NACH der Preis-Zeile eingefügt werden.
+      const toDateLabel = (value?: string | Date | null) => {
+        if (!value) return null;
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('de-DE');
+      };
+      const depositPaidAtLabel = toDateLabel(depositPaidAt);
+      const paidAtLabel = toDateLabel(paidAt);
+      if (depositPaidAtLabel || paidAtLabel) {
+        headerData.push([
+          'Angezahlt:',
+          depositPaidAtLabel
+            ? `${depositAmount ? `${depositAmount} € ` : ''}am ${depositPaidAtLabel}`
+            : '–',
+          'Bezahlt:',
+          paidAtLabel ? `am ${paidAtLabel}` : '–',
+        ]);
+      }
       
       // Spaltenbreiten für Header-Tabelle
       const col1Width = 25;

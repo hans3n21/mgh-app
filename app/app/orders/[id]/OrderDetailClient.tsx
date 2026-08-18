@@ -59,6 +59,9 @@ interface Order {
   paymentStatus?: string | null;
   paymentMethod?: string | null;
   depositAmountCents?: number | null;
+  depositPaidAt?: Date | string | null;
+  paidAt?: Date | string | null;
+  shippingCents?: number | null;
 }
 
 interface OrderTaskEntry {
@@ -78,6 +81,7 @@ interface OrderDetailClientProps {
   currentUserId: string;
   hasUnreadComm?: boolean;
   initialTasks?: OrderTaskEntry[];
+  customerOtherOrdersCount?: number;
 }
 
 /** Position des Status in der Workflow-Reihenfolge — Grundlage der Schrittanzeige. */
@@ -85,8 +89,15 @@ function statusToIndex(status: string): number {
   return Math.max(WORKFLOW_STATUSES.indexOf(normalizeWorkflowStatus(status)), 0);
 }
 
-export default function OrderDetailClient({ order: initialOrder, users, currentUserId, hasUnreadComm, initialTasks }: OrderDetailClientProps) {
+export default function OrderDetailClient({ order: initialOrder, users, currentUserId, hasUnreadComm, initialTasks, customerOtherOrdersCount }: OrderDetailClientProps) {
   const [order, setOrder] = useState(initialOrder);
+
+  // Nach Kundenwechsel/-abspaltung liefert router.refresh() frische Props —
+  // ohne diesen Abgleich zeigten Kunde-Karte und Wechsel-Modal weiter den
+  // alten Kunden, weil useState nur den Stand vom ersten Mount kennt.
+  React.useEffect(() => {
+    setOrder((prev) => ({ ...prev, customer: initialOrder.customer }));
+  }, [initialOrder.customer]);
   const [priceItems, setPriceItems] = useState<Array<{
     id: string;
     category: string;
@@ -95,10 +106,10 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     price?: number;
     min?: number;
     max?: number;
+    priceText?: string | null;
   }>>([]);
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
-  const [shopMode, setShopMode] = useState<'full' | 'deposit' | 'balance'>('full');
   const [shopAmount, setShopAmount] = useState<string>(
     initialOrder.finalAmountCents != null ? String(initialOrder.finalAmountCents / 100) : ''
   ); // € optional
@@ -115,14 +126,12 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
       .catch(console.error);
 
     // Event zum Triggern aus Tabs unten
-    const handler = (e: Event) => {
-      const custom = e as CustomEvent<{ mode?: 'full' | 'deposit' | 'balance' }>;
-      const forcedMode = custom.detail?.mode;
-      void syncToShop(forcedMode);
+    const handler = () => {
+      void syncToShop();
     };
     document.addEventListener('sync-to-woo', handler as EventListener);
     return () => document.removeEventListener('sync-to-woo', handler as EventListener);
-  }, [shopMode, shopAmount]);
+  }, [shopAmount]);
 
   const handleStatusChange = async (newStatus: string) => {
     try {
@@ -224,7 +233,32 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
     }
   };
 
-  const syncToShop = async (forcedMode?: 'full' | 'deposit' | 'balance') => {
+  // Zahlungsdaten (angezahlt am / bezahlt am): YYYY-MM-DD oder null zum Löschen
+  const patchOrderField = async (body: Record<string, unknown>, label: string) => {
+    try {
+      const response = await fetch(`/api/orders/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        const updatedOrder = await response.json();
+        setOrder(updatedOrder);
+        router.refresh();
+      }
+    } catch (error) {
+      console.error(`Fehler beim ${label}-Update:`, error);
+    }
+  };
+
+  const handleDepositPaidAtChange = (date: string | null) =>
+    patchOrderField({ depositPaidAt: date }, 'DepositPaidAt');
+  const handlePaidAtChange = (date: string | null) =>
+    patchOrderField({ paidAt: date }, 'PaidAt');
+  const handleShippingChange = (newShippingCents: number | null) =>
+    patchOrderField({ shippingCents: newShippingCents }, 'Shipping');
+
+  const syncToShop = async () => {
     setSyncing(true);
     try {
       // Betrag optional wandeln -> Cents
@@ -237,11 +271,10 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         }
       }
 
-      const depositAmountCents = order.depositAmountCents ?? undefined;
       const res = await fetch(`/api/orders/${order.id}/woocommerce`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: forcedMode ?? shopMode, amountCents, depositAmountCents }),
+        body: JSON.stringify({ amountCents }),
       });
       if (res.ok) {
         const updated = await res.json();
@@ -295,6 +328,29 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
             </svg>
           </div>
+
+          {/* Die beiden Übergänge, die im Alltag anstehen, als eigene Knöpfe —
+              das Status-Auswahlfeld deckt weiterhin jeden Sonderweg ab. */}
+          {normalizedStatus === 'draft' && (
+            <button
+              type="button"
+              onClick={() => handleStatusChange('awaiting_payment')}
+              className="h-8 shrink-0 rounded-full bg-sky-600 px-3 text-xs font-semibold text-white hover:bg-sky-500"
+              title="Auftrag freigeben — wartet danach auf die (An-)Zahlung"
+            >
+              Freigeben
+            </button>
+          )}
+          {normalizedStatus === 'awaiting_payment' && (
+            <button
+              type="button"
+              onClick={() => handleStatusChange('intake')}
+              className="h-8 shrink-0 rounded-full border border-cyan-700/70 bg-cyan-900/30 px-3 text-xs font-semibold text-cyan-200 hover:bg-cyan-900/50"
+              title="Ohne Zahlungseingang aktivieren (z. B. Werbe-Gitarre)"
+            >
+              Ohne Zahlung aktivieren
+            </button>
+          )}
 
           {/* Personensymbol statt Beschriftung "Mitarbeiter": das Wort kostet auf
               375 px die Haelfte des Feldes, und ein Name daneben sagt ohnehin,
@@ -380,6 +436,12 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         paymentStatus={order.paymentStatus}
         paymentMethod={order.paymentMethod}
         depositAmountCents={order.depositAmountCents}
+        depositPaidAt={order.depositPaidAt}
+        paidAt={order.paidAt}
+        shippingCents={order.shippingCents}
+        onDepositPaidAtChange={handleDepositPaidAtChange}
+        onPaidAtChange={handlePaidAtChange}
+        onShippingChange={handleShippingChange}
         onStatusChange={handleStatusChange}
         onAssigneeChange={handleAssigneeChange}
         onImagesChange={(images) => {
@@ -394,15 +456,14 @@ export default function OrderDetailClient({ order: initialOrder, users, currentU
         onPaymentStatusChange={handlePaymentStatusChange}
         onPaymentMethodChange={handlePaymentMethodChange}
         onDepositAmountChange={handleDepositAmountChange}
-        shopMode={shopMode}
         shopAmount={shopAmount}
         amountLocked={order.finalAmountCents != null}
-        onShopOptionsChange={(mode, amount) => {
-          setShopMode(mode);
+        onShopAmountChange={(amount) => {
           setShopAmount(amount);
         }}
         hasUnreadComm={hasUnreadComm}
         initialTasks={initialTasks}
+        customerOtherOrdersCount={customerOtherOrdersCount}
       />
     </div>
   );

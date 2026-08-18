@@ -49,6 +49,7 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
     city: '',
     country: 'DE',
   });
+  const [asDraft, setAsDraft] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -108,6 +109,7 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
         type,
         customerId: finalCustomerId,
         assigneeId,
+        ...(asDraft ? { status: 'draft' as const } : {}),
       };
       
       console.log('Creating order with data:', orderData);
@@ -239,9 +241,11 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                     <option value="" className="bg-slate-950 text-slate-400">
                       — Kunde wählen —
                     </option>
+                    {/* E-Mail mit anzeigen: bei zwei Kunden mit gleichem Vornamen
+                        war sonst nicht erkennbar, wen man gerade erwischt. */}
                     {customers.map((c) => (
                       <option key={c.id} value={c.id} className="bg-slate-950 text-slate-100">
-                        {c.name}
+                        {c.name}{c.email ? ` (${c.email})` : ''}
                       </option>
                     ))}
                   </select>
@@ -306,6 +310,16 @@ export default function CreateOrderButton({ customers, users }: CreateOrderButto
                   />
                 </div>
               )}
+
+              <label className="inline-flex items-center gap-2 text-sm text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={asDraft}
+                  onChange={(e) => setAsDraft(e.target.checked)}
+                  className="text-blue-500"
+                />
+                Als Entwurf anlegen (noch nicht freigegeben)
+              </label>
 
               <div className="flex justify-end gap-2 mt-2">
                 <button

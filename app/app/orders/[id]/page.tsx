@@ -5,17 +5,6 @@ import Link from 'next/link';
 import OrderDetailClient from './OrderDetailClient';
 import OrderHeader from './OrderHeader';
 
-const STATUS_LABEL: Record<string, string> = {
-  intake: 'Eingang',
-  quote: 'Angebot',
-  in_progress: 'In Arbeit',
-  finishing: 'Finish',
-  setup: 'Setup',
-  awaiting_customer: 'Warten auf Kunde',
-  complete: 'Fertig',
-  design_review: 'Designprüfung',
-};
-
 const TYPE_LABEL: Record<string, string> = {
   GUITAR: 'Gitarrenbau',
   BODY: 'Body',
@@ -95,6 +84,12 @@ export default async function OrderDetailPage({ params }: PageProps) {
     );
   }
 
+  // Wie viele weitere Auftraege haengen an diesem Kunden? Grundlage fuer die
+  // Warnung in der Kunde-Karte: Aenderungen am Kunden wirken auf alle davon.
+  const customerOtherOrdersCount = await prisma.order.count({
+    where: { customerId: order.customerId, deletedAt: null, NOT: { id: order.id } },
+  });
+
   // Geloeschte Auftraege nicht normal anzeigen: sonst arbeitet jemand ueber einen
   // alten Link weiter an einem Auftrag, den fuer alle anderen niemand mehr sieht.
   if (order.deletedAt) {
@@ -134,10 +129,11 @@ export default async function OrderDetailPage({ params }: PageProps) {
       {/* Nur noch senkrecht polstern — waagerecht polstert der Reiter-Kasten. */}
       <div className="py-3 sm:py-4">
         <OrderDetailClient
-          order={order} 
-          users={users} 
+          order={order}
+          users={users}
           currentUserId={session?.user?.id || ''}
           hasUnreadComm={hasUnreadComm}
+          customerOtherOrdersCount={customerOtherOrdersCount}
           initialTasks={tasks.map(t => ({
             ...t,
             createdAt: t.createdAt.toISOString(),

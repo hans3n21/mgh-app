@@ -28,8 +28,9 @@ export default async function Dashboard() {
     where: {
       deletedAt: null,
       ...(isAdmin ? {} : { assigneeId: currentUserId }),
-      // Fertige (abgeschlossene) Auftraege gehoeren nicht in die Dashboard-Liste.
-      status: { not: 'complete' },
+      // Fertige gehoeren nicht in die Dashboard-Liste, Entwuerfe auch nicht:
+      // die sind noch nicht freigegeben und zaehlen erst nach Freigabe als aktiv.
+      status: { notIn: ['complete', 'draft'] },
     },
     include: {
       customer: true,
@@ -56,13 +57,13 @@ export default async function Dashboard() {
     take: 5,
   });
 
-  // Offene Aufträge (ohne Assignee)
+  // Offene Aufträge (ohne Assignee) — Entwürfe zählen erst nach Freigabe mit
   const openOrders = await prisma.order.count({
     where: {
       deletedAt: null,
       assigneeId: null,
       status: {
-        not: 'complete',
+        notIn: ['complete', 'draft'],
       },
     },
   });
@@ -72,13 +73,13 @@ export default async function Dashboard() {
     where: isAdmin ? {
       deletedAt: null,
       status: {
-        not: 'complete',
+        notIn: ['complete', 'draft'],
       },
     } : {
       deletedAt: null,
       assigneeId: currentUserId,
       status: {
-        not: 'complete',
+        notIn: ['complete', 'draft'],
       },
     },
   });

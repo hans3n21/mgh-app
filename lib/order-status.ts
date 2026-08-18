@@ -1,4 +1,6 @@
 export const WORKFLOW_STATUSES = [
+  'draft',
+  'awaiting_payment',
   'intake',
   'in_progress',
   'waiting_parts',
@@ -9,6 +11,8 @@ export const WORKFLOW_STATUSES = [
 export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 
 export const WORKFLOW_STATUS_LABEL: Record<WorkflowStatus, string> = {
+  draft: 'Entwurf',
+  awaiting_payment: 'Wartet auf Zahlung',
   intake: 'Eingang',
   in_progress: 'In Arbeit',
   waiting_parts: 'Wartet auf Teile',
@@ -18,6 +22,8 @@ export const WORKFLOW_STATUS_LABEL: Record<WorkflowStatus, string> = {
 };
 
 export const WORKFLOW_STATUS_CLASS: Record<WorkflowStatus, string> = {
+  draft: 'bg-slate-900/40 text-slate-400 border-slate-600 border-dashed',
+  awaiting_payment: 'bg-cyan-900/30 text-cyan-300 border-cyan-700/50',
   intake: 'bg-slate-800 text-slate-300 border-slate-700',
   in_progress: 'bg-blue-900/30 text-blue-300 border-blue-700/50',
   waiting_parts: 'bg-amber-900/30 text-amber-300 border-amber-700/50',
@@ -27,6 +33,8 @@ export const WORKFLOW_STATUS_CLASS: Record<WorkflowStatus, string> = {
 };
 
 export function normalizeWorkflowStatus(status: string): WorkflowStatus {
+  if (status === 'draft') return 'draft';
+  if (status === 'awaiting_payment') return 'awaiting_payment';
   if (status === 'intake') return 'intake';
   if (status === 'in_progress') return 'in_progress';
   if (status === 'waiting_parts') return 'waiting_parts';

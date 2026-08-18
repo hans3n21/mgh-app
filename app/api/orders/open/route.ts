@@ -9,13 +9,15 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Hole alle Aufträge ohne Assignee (offene Aufträge)
+    // Hole alle Aufträge ohne Assignee (offene Aufträge). Entwürfe bleiben
+    // draußen: unzugewiesen ist bei ihnen kein Handlungsbedarf, solange sie
+    // nicht freigegeben sind.
     const openOrders = await prisma.order.findMany({
       where: {
         deletedAt: null,
         assigneeId: null,
         status: {
-          not: 'complete', // Abgeschlossene Aufträge ausschließen
+          notIn: ['complete', 'draft'],
         },
       },
       include: {

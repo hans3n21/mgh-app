@@ -111,6 +111,9 @@ async function createOrderFromMail(mail: { subject: string | null }, customerId:
 					title: mail.subject || 'Neuer Auftrag aus Mail',
 					type: orderType,
 					customerId,
+					// Aus Mails entstandene Aufträge sind noch nicht freigegeben:
+					// sie starten als Entwurf und werden erst nach Freigabe aktiv.
+					status: 'draft',
 				},
 			});
 		} catch (error) {

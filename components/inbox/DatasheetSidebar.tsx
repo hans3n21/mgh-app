@@ -106,6 +106,8 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 	const [orderTitleValue, setOrderTitleValue] = useState('');
 
 	const statusDotClass: Record<string, string> = {
+		draft: 'bg-slate-600',
+		awaiting_payment: 'bg-cyan-600',
 		intake: 'bg-slate-400',
 		in_progress: 'bg-sky-400',
 		setup: 'bg-cyan-400',

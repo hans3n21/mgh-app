@@ -9,6 +9,8 @@ const createOrderSchema = z.object({
   type: z.enum(['GUITAR', 'BODY', 'NECK', 'REPAIR', 'PICKGUARD', 'PICKUPS', 'ENGRAVING', 'FINISH_ONLY']),
   customerId: z.string().min(1),
   assigneeId: z.string().optional(),
+  // Nur "draft" ist von außen erlaubt — alles Weitere läuft über den Workflow.
+  status: z.literal('draft').optional(),
 });
 
 // Mapping von Frontend-Werten zu Prisma-Enum-Werten (nicht mehr nötig, da direkt Enum-Werte verwendet werden)

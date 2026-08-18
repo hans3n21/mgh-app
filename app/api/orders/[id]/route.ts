@@ -5,15 +5,26 @@ import { touchOrderActivity } from '@/lib/order-activity';
 import { notify } from '@/lib/notify';
 import { auth } from '@/lib/auth';
 
+// Zahlungsdaten kommen als reines Tagesdatum aus dem <input type="date">.
+// Gespeichert wird 12:00 Uhr, damit der Tag in keiner Zeitzone kippt.
+const dateOnly = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .transform((val) => new Date(`${val}T12:00:00`));
+
 const updateOrderSchema = z.object({
-  status: z.enum(['intake', 'quote', 'in_progress', 'waiting_parts', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
+  status: z.enum(['draft', 'awaiting_payment', 'intake', 'quote', 'in_progress', 'waiting_parts', 'finishing', 'setup', 'awaiting_customer', 'complete', 'design_review']).optional(),
   nextStep: z.string().max(200).nullable().optional(),
   assigneeId: z.string().nullable().optional(),
   title: z.string().optional(),
+  customerId: z.string().min(1).optional(),
   finalAmountCents: z.number().int().nonnegative().nullable().optional(),
   paymentStatus: z.enum(['open','deposit','paid']).optional(),
   paymentMethod: z.enum(['paypal', 'direktueberweisung']).nullable().optional(),
   depositAmountCents: z.number().int().nonnegative().nullable().optional(),
+  depositPaidAt: z.union([dateOnly, z.null()]).optional(),
+  paidAt: z.union([dateOnly, z.null()]).optional(),
+  shippingCents: z.number().int().nonnegative().nullable().optional(),
 });
 
 interface RouteParams { params: Promise<{ id: string }> }
@@ -77,6 +88,53 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const validatedData = updateOrderSchema.parse(body);
 
     const { id } = await params;
+
+    // Kunde muss existieren, sonst knallt erst der Fremdschlüssel als 500er
+    // (gleiches Muster wie beim Anlegen in app/api/orders/route.ts).
+    if (validatedData.customerId) {
+      const customerExists = await prisma.customer.findUnique({
+        where: { id: validatedData.customerId },
+        select: { id: true },
+      });
+      if (!customerExists) {
+        return NextResponse.json({ error: 'Kunde nicht gefunden' }, { status: 400 });
+      }
+    }
+
+    // Ändert sich der Zahlungsstand, zwei Automatiken auf Basis des Bestands:
+    // 1) "Angezahlt heißt: wir starten" — ein wartender Auftrag wird aktiv.
+    // 2) Zahlungsdatum: beim Setzen von Angezahlt/Bezahlt heute stempeln
+    //    (sofern kein Datum mitkommt und noch keins gespeichert ist); beim
+    //    Entfernen der Haken die Daten wieder löschen. deposit→paid lässt
+    //    depositPaidAt stehen — der Chef will beide Zahlungen zuordnen können.
+    if (validatedData.paymentStatus) {
+      const existing = await prisma.order.findUnique({
+        where: { id },
+        select: { status: true, depositPaidAt: true, paidAt: true },
+      });
+
+      if (
+        !validatedData.status &&
+        (validatedData.paymentStatus === 'deposit' || validatedData.paymentStatus === 'paid') &&
+        existing?.status === 'awaiting_payment'
+      ) {
+        validatedData.status = 'intake';
+      }
+
+      if (validatedData.paymentStatus === 'deposit') {
+        if (validatedData.depositPaidAt === undefined && !existing?.depositPaidAt) {
+          validatedData.depositPaidAt = new Date();
+        }
+      } else if (validatedData.paymentStatus === 'paid') {
+        if (validatedData.paidAt === undefined && !existing?.paidAt) {
+          validatedData.paidAt = new Date();
+        }
+      } else if (validatedData.paymentStatus === 'open') {
+        if (validatedData.depositPaidAt === undefined) validatedData.depositPaidAt = null;
+        if (validatedData.paidAt === undefined) validatedData.paidAt = null;
+      }
+    }
+
     const order = await prisma.order.update({
       where: { id },
       data: validatedData,

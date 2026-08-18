@@ -30,6 +30,8 @@ export async function autoLinkOrderForMail(mailId: string): Promise<string | nul
 			where: { OR: [{ email: fromEmail }, { additionalEmails: { has: fromEmail.toLowerCase() } }] },
 		});
 		if (customer) {
+			// Bewusst auch Entwürfe und wartende Aufträge: hat der Kunde genau
+			// einen nicht abgeschlossenen Auftrag, gehört die Mail dorthin.
 			const openOrders = await prisma.order.findMany({
 				where: { customerId: customer.id, deletedAt: null, status: { not: 'complete' } },
 				select: { id: true },

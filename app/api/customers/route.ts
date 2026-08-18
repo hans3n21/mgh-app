@@ -49,14 +49,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const validatedData = createCustomerSchema.parse(body);
+    // forceNew ist Steuerung, keine Kundendaten — vor dem Parse abtrennen.
+    // Es überspringt die E-Mail-Dedupe: beim Abspalten eines fälschlich
+    // geteilten Kunden ist ein zweiter Datensatz mit gleicher Mail gewollt.
+    const { forceNew, ...fields } = (body ?? {}) as Record<string, unknown>;
+    const validatedData = createCustomerSchema.parse(fields);
 
     // Dedupe per E-Mail: Doppelte Submits (z.B. Auftrags-Formular nach
     // Validierungsfehler erneut abgeschickt) legten denselben Kunden mehrfach
     // an. Existiert die E-Mail bereits, wird der bestehende Datensatz um neu
     // mitgelieferte Felder ergänzt und zurückgegeben statt dupliziert.
     const email = validatedData.email?.trim();
-    if (email) {
+    if (email && forceNew !== true) {
       const existing = await prisma.customer.findFirst({
         where: { email: { equals: email, mode: 'insensitive' } },
       });
