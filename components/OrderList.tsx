@@ -44,6 +44,8 @@ type OrderWithRelations = {
     paymentStatus?: string | null;
     createdAt: Date;
     lastActivityAt?: Date | string | null;
+    depositPaidAt?: Date | string | null;
+    paidAt?: Date | string | null;
     nextStep?: string | null;
     customer: {
         name: string;
@@ -91,21 +93,40 @@ function activityLabel(days: number): string {
     return `vor ${Math.floor(days / 30)} Mon`;
 }
 
-/** "Liegt seit": letzte Aktivität mit Ampelfarben (≤7 T neutral, ≤21 T gelb, danach rot). */
-function ActivityBadge({ lastActivityAt, status }: { lastActivityAt?: Date | string | null; status: string }) {
-    const days = daysSince(lastActivityAt);
+/**
+ * "Wartet seit": Zeit seit (An-)Zahlung — DIE Uhr, nach der der Chef einschätzt,
+ * ob ein Auftrag über der Zeit ist. Ohne Zahlungseingang ersatzweise seit
+ * Anlage (mit * markiert). Ampelgrenzen je Typ: eine Custom-Gitarre hat
+ * monatelange Bauzeit, ein Pickguard nicht.
+ */
+function waitLimits(type: string): { amber: number; red: number } {
+    return type === 'GUITAR' ? { amber: 56, red: 112 } : { amber: 14, red: 28 };
+}
+
+function WaitBadge({ order }: { order: OrderWithRelations }) {
+    const anchor = order.depositPaidAt ?? order.paidAt ?? null;
+    const days = daysSince(anchor ?? order.createdAt);
     if (days === null) return <span className="text-xs text-slate-600">—</span>;
-    // Fertige und Entwürfe nicht anmahnen — wartende Zahlungen dagegen schon
-    // (da ist Nachfassen beim Kunden ja gerade der Zweck der Ampel).
-    const done = ['complete', 'draft'].includes(normalizeWorkflowStatus(status));
-    const cls = done || days <= 7
+    // Fertige und Entwürfe nicht anmahnen — bei "Wartet auf Zahlung" läuft die
+    // Ersatz-Uhr seit Anlage bewusst mit (Zahlung nachfassen).
+    const resting = ['complete', 'draft'].includes(normalizeWorkflowStatus(order.status));
+    const limits = waitLimits(order.type);
+    const cls = resting || days < limits.amber
         ? 'text-slate-400'
-        : days <= 21
+        : days < limits.red
             ? 'text-amber-300'
             : 'text-rose-400 font-medium';
+    const anchorLabel = order.depositPaidAt
+        ? `Angezahlt am ${new Date(order.depositPaidAt).toLocaleDateString('de-DE')}`
+        : order.paidAt
+            ? `Bezahlt am ${new Date(order.paidAt).toLocaleDateString('de-DE')}`
+            : `* Noch kein Zahlungseingang — zählt seit Anlage am ${new Date(order.createdAt).toLocaleDateString('de-DE')}`;
+    const activity = order.lastActivityAt
+        ? ` · Letzte Aktivität: ${new Date(order.lastActivityAt).toLocaleDateString('de-DE')}`
+        : '';
     return (
-        <span className={`text-xs ${cls}`} title={`Letzte Aktivität: ${new Date(lastActivityAt!).toLocaleDateString('de-DE')}`}>
-            {activityLabel(days)}
+        <span className={`text-xs ${cls}`} title={`${anchorLabel}${activity}`}>
+            {activityLabel(days)}{anchor == null ? '*' : ''}
         </span>
     );
 }
@@ -307,7 +328,8 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
 
     const sortedOrders = useMemo(() => {
         if (sortMode === 'default') return filteredOrders;
-        const ts = (o: OrderWithRelations) => new Date(o.lastActivityAt ?? o.createdAt).getTime() || 0;
+        // Gleicher Anker wie das "Wartet seit"-Badge: Zahlungseingang, sonst Anlage.
+        const ts = (o: OrderWithRelations) => new Date(o.depositPaidAt ?? o.paidAt ?? o.createdAt).getTime() || 0;
         const copy = [...filteredOrders];
         copy.sort((a, b) => (sortMode === 'stale' ? ts(a) - ts(b) : ts(b) - ts(a)));
         return copy;
@@ -393,8 +415,8 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                         aria-label="Sortierung"
                     >
                         <option value="default">Standard</option>
-                        <option value="stale">Längste Liegezeit</option>
-                        <option value="recent">Neueste Aktivität</option>
+                        <option value="stale">Längste Wartezeit</option>
+                        <option value="recent">Kürzeste Wartezeit</option>
                     </select>
                 </div>
 
@@ -488,7 +510,7 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                             <div className="min-w-0">
                                 <div className="truncate text-sm text-slate-300">{order.customer?.name || 'Unbekannt'}</div>
                                 <div className="text-xs text-slate-500">
-                                    {TYPE_LABEL[order.type] || order.type} · <ActivityBadge lastActivityAt={order.lastActivityAt} status={order.status} />
+                                    {TYPE_LABEL[order.type] || order.type} · <WaitBadge order={order} />
                                 </div>
                             </div>
 
@@ -539,7 +561,7 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                             <th className="py-2 pr-4">Typ</th>
                             <th className="py-2 pr-4">Status</th>
                             <th className="py-2 pr-4">Zahlung</th>
-                            <th className="py-2 pr-4">Liegt seit</th>
+                            <th className="py-2 pr-4">Wartet seit</th>
                             <th className="py-2 pr-4">Zuständig</th>
                             <th className="py-2 pr-4"></th>
                         </tr>
@@ -627,7 +649,7 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                                     <PaymentBadge paymentStatus={order.paymentStatus} />
                                 </td>
                                 <td className="py-2 pr-4">
-                                    <ActivityBadge lastActivityAt={order.lastActivityAt} status={order.status} />
+                                    <WaitBadge order={order} />
                                 </td>
                                 <td className="py-2 pr-4">{order.assignee?.name || '—'}</td>
                                 <td className="py-2 pr-4 text-right" onClick={(e) => e.stopPropagation()}>
