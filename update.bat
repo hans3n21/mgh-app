@@ -1,7 +1,40 @@
 @echo off
 setlocal
-REM Wechsle in das Verzeichnis, in dem diese Batch-Datei liegt
-cd /d "%~dp0"
+
+REM ---------------------------------------------------------------------------
+REM Selbstkopie - MUSS als Erstes passieren.
+REM
+REM Windows liest eine laufende Batch-Datei Zeile fuer Zeile von der Platte
+REM nach, gemerkt wird dabei nur die Byte-Position. Aktualisiert sich die Datei
+REM mittendrin - und genau das tut dieses Skript beim "git pull", wenn es sich
+REM selbst mit ausliefert - liest cmd.exe an der alten Position in der neuen
+REM Datei weiter und landet mitten in irgendeiner Zeile. Am 18.08.2026 kamen so
+REM Meldungen wie 'Der Befehl "codex" ... konnte nicht gefunden werden' und ein
+REM Update, das mit erfundenen Fehlern abbrach, obwohl alles geklappt hatte.
+REM
+REM Loesung: Das Skript kopiert sich beim Start ins Temp-Verzeichnis und
+REM arbeitet von dort. Die Kopie bleibt unangetastet, egal was der Pull mit der
+REM Originaldatei macht. Der erste Parameter merkt sich, dass wir schon die
+REM Kopie sind, der zweite traegt das Projektverzeichnis herueber.
+REM ---------------------------------------------------------------------------
+if not "%~1"=="--aus-kopie" (
+    copy /y "%~f0" "%TEMP%\mgh-update-kopie.bat" >nul
+    if errorlevel 1 (
+        echo FEHLER: Konnte das Update-Skript nicht ins Temp-Verzeichnis kopieren.
+        pause
+        exit /b 1
+    )
+    call "%TEMP%\mgh-update-kopie.bat" --aus-kopie "%~dp0"
+    exit /b %errorlevel%
+)
+
+REM Ab hier laufen wir aus der Kopie; %~2 ist das Projektverzeichnis.
+cd /d "%~2"
+if errorlevel 1 (
+    echo FEHLER: Projektverzeichnis %~2 nicht gefunden.
+    pause
+    exit /b 1
+)
 
 echo ========================================
 echo MGH App - Update
@@ -18,6 +51,11 @@ echo.
 echo 1. Hole Aenderungen von GitHub...
 call git fetch origin
 if errorlevel 1 goto :error
+
+REM package-lock.json wird von "npm install" umgeschrieben und stand deshalb
+REM jedem Update im Weg. Die Datei ist erzeugt, keine Handarbeit - der naechste
+REM npm-Lauf schreibt sie ohnehin neu. Nur diese eine Datei, nichts sonst.
+call git checkout -- package-lock.json 2>nul
 
 call git checkout main
 if errorlevel 1 goto :error
