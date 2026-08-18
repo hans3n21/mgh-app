@@ -85,12 +85,13 @@ function daysSince(value: Date | string | null | undefined): number | null {
     return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
 }
 
-function activityLabel(days: number): string {
+// Ohne "vor": die Spalte heißt "Wartet seit", da wäre "vor 2 Mon" gedoppelt.
+function waitLabel(days: number): string {
     if (days === 0) return 'heute';
     if (days === 1) return 'gestern';
-    if (days < 14) return `vor ${days} T`;
-    if (days < 60) return `vor ${Math.floor(days / 7)} Wo`;
-    return `vor ${Math.floor(days / 30)} Mon`;
+    if (days < 14) return `${days} T`;
+    if (days < 60) return `${Math.floor(days / 7)} Wo`;
+    return `${Math.floor(days / 30)} Mon`;
 }
 
 /**
@@ -126,7 +127,7 @@ function WaitBadge({ order }: { order: OrderWithRelations }) {
         : '';
     return (
         <span className={`text-xs ${cls}`} title={`${anchorLabel}${activity}`}>
-            {activityLabel(days)}{anchor == null ? '*' : ''}
+            {waitLabel(days)}{anchor == null ? '*' : ''}
         </span>
     );
 }

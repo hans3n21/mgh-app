@@ -14,6 +14,7 @@ interface Props {
 
 export default function OrderPricing({ orderId, orderType, onPriceUpdate, message, draft, submitting, setSubmitting, setToast }: Props) {
   const [shopAmount, setShopAmount] = useState('');
+  const [shippingCents, setShippingCents] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(false);
   const [saving, setSaving] = useState(false);
   const hasAmount = shopAmount.trim().length > 0;
@@ -34,6 +35,7 @@ export default function OrderPricing({ orderId, orderType, onPriceUpdate, messag
 
         if (res.ok) {
           const order = await res.json();
+          setShippingCents(order.shippingCents ?? null);
           if (order.finalAmountCents) {
             const amount = (order.finalAmountCents / 100).toString();
             setShopAmount(amount);
@@ -118,7 +120,12 @@ export default function OrderPricing({ orderId, orderType, onPriceUpdate, messag
       return;
     }
 
-    if (!confirm('Möchten Sie den Auftrag jetzt an WooCommerce übertragen?')) {
+    // Gleicher Hinweis wie auf der Detailseite: der Versand vom Auftrag geht
+    // beim Sync automatisch als eigene Versandposition mit.
+    const shippingNote = (shippingCents ?? 0) > 0
+      ? ` (inkl. ${((shippingCents as number) / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 })} € Versand als eigene Position)`
+      : '';
+    if (!confirm(`Möchten Sie den Auftrag jetzt an WooCommerce übertragen?${shippingNote}`)) {
       return;
     }
 
