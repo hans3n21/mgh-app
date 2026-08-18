@@ -108,6 +108,32 @@ export async function getImapClient(account: MailAccount): Promise<ImapFlow> {
     return client;
 }
 
+/**
+ * Wirft die IMAP-Verbindung eines Kontos weg — Steckdose ziehen, nicht abmelden.
+ *
+ * Gedacht fuer den Fall, dass eine Operation in ein Zeitlimit gelaufen ist. Sie
+ * laeuft dann naemlich unsichtbar weiter und haelt die Postfachsperre aus
+ * getMailboxLock. Der naechste Lauf holt sich ueber getImapClient dieselbe
+ * zwischengespeicherte Verbindung, stellt sich hinter die haengende Sperre und
+ * wartet — bis sein eigenes Zeitlimit ablaeuft und einen weiteren Haenger
+ * hinterlaesst. Das Postfach kommt aus dieser Schleife nie wieder heraus.
+ *
+ * close() statt logout(): logout() ist selbst ein IMAP-Befehl und wuerde sich
+ * hinter derselben Sperre anstellen. close() zerstoert den Socket sofort, die
+ * haengenden Operationen brechen mit einem Fehler ab, und der naechste Lauf
+ * baut eine frische Verbindung auf.
+ */
+export function dropImapClient(accountId: string): void {
+    const client = imapClients.get(accountId);
+    // Erst aus dem Zwischenspeicher, dann schliessen: sonst koennte ein
+    // gleichzeitiger getImapClient die sterbende Verbindung noch herausgeben.
+    imapClients.delete(accountId);
+    if (!client) return;
+    try {
+        client.close();
+    } catch { }
+}
+
 /** Zertifikatsfehler, die auf einen Mitleser in der Verbindung hindeuten. */
 const TLS_CHAIN_ERRORS = new Set([
     'SELF_SIGNED_CERT_IN_CHAIN',

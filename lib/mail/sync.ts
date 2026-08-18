@@ -1,7 +1,7 @@
 import { simpleParser, type ParsedMail, type AddressObject } from 'mailparser';
 import type { FetchMessageObject } from 'imapflow';
 import { prisma } from '@/lib/prisma';
-import { getImapClient } from './client';
+import { getImapClient, dropImapClient } from './client';
 import { computeThreadId } from './threading';
 import { findCustomerForEmail } from './customer';
 import { parseMail } from './parseMail';
@@ -27,17 +27,32 @@ function getAccountSyncTimeoutMs(): number {
 	return 120_000; // Default: 2 Minuten pro Konto
 }
 
+/** Damit der Aufrufer ein Zeitlimit von einem echten Fehler unterscheiden kann. */
+export class SyncTimeoutError extends Error { }
+
 /**
- * Wartet auf `p`, bricht aber nach `ms` mit einem Timeout-Fehler ab (ms<=0 = kein Limit).
- * Die zugrunde liegende Operation laeuft ggf. detached weiter — das ist unkritisch,
- * weil IMAP-Mailbox-Locks den Zugriff serialisieren und alle DB-Writes idempotente
- * Upserts sind.
+ * Wartet auf `p`, bricht aber nach `ms` ab (ms<=0 = kein Limit).
+ *
+ * ACHTUNG: Das hier bricht nichts ab, es LEHNT NUR AB. Die zugrunde liegende
+ * Operation laeuft unsichtbar weiter.
+ *
+ * Hier stand frueher, das sei unkritisch, "weil IMAP-Mailbox-Locks den Zugriff
+ * serialisieren". Die Begruendung ist verkehrt herum: Die Sperren sind genau
+ * der Grund, warum es kritisch IST. Der weiterlaufende Lauf haelt die Sperre
+ * aus getMailboxLock, der naechste stellt sich dahinter und laeuft in dasselbe
+ * Zeitlimit — ein Postfach, das einmal haengt, haengt fuer immer. Beobachtet am
+ * 10.08.2026: zwei von drei Postfaechern liefen stundenlang alle 120s in den
+ * Timeout, waehrend das dritte stoerungsfrei blieb.
+ *
+ * Deshalb ist der Aufrufer verpflichtet, bei SyncTimeoutError die Verbindung
+ * des betroffenen Kontos wegzuwerfen (dropImapClient) — nur so stirbt die
+ * haengende Sperre mit dem Socket.
  */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 	if (ms <= 0) return p;
 	return new Promise<T>((resolve, reject) => {
 		const timer = setTimeout(() => {
-			reject(new Error(`Sync-Timeout nach ${ms}ms (${label})`));
+			reject(new SyncTimeoutError(`Sync-Timeout nach ${ms}ms (${label})`));
 		}, ms);
 		p.then(
 			(value) => { clearTimeout(timer); resolve(value); },
@@ -250,6 +265,13 @@ export async function syncAllAccounts(options?: SyncOptions) {
 			);
 			results.push(accountResult);
 		} catch (error) {
+			// Beim Zeitlimit die Verbindung wegwerfen. Der abgebrochene Lauf
+			// arbeitet sonst unsichtbar weiter und haelt die Postfachsperre, und
+			// jeder folgende Lauf stellt sich dahinter an — siehe withTimeout.
+			if (error instanceof SyncTimeoutError) {
+				console.warn(`[mail-sync] ${account.email}: Zeitlimit — verwerfe die IMAP-Verbindung, damit die haengende Postfachsperre mitstirbt`);
+				dropImapClient(account.id);
+			}
 			console.error(`Error syncing account ${account.email}:`, error);
 			errorCount += 1;
 			results.push({

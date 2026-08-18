@@ -107,3 +107,6 @@ test-bg.out
 
 # Stray temp files
 *.tmp.*
+
+# Audit-Artefakte (Screenshots, DOM-Dumps, Server-Logs einzelner Analyse-Laeufe)
+.codex-audit/
