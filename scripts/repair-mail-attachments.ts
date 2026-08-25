@@ -4,6 +4,7 @@ import path from 'path';
 import { prisma } from '@/lib/prisma';
 import { assignMailToOrder } from '@/lib/mail/actions';
 import { deleteAttachment } from '@/lib/mail/attachments';
+import { resolveFilesPath } from '@/lib/files-root';
 
 type Args = {
   dryRun: boolean;
@@ -79,8 +80,8 @@ async function cleanupPersistedUnlinkedAttachments(dryRun: boolean) {
       const p = att.path;
       if (p?.startsWith('local:')) {
         const rel = p.slice(6);
-        const full = path.join(process.cwd(), rel);
-        if (fs.existsSync(full)) {
+        const full = resolveFilesPath(rel);
+        if (full && fs.existsSync(full)) {
           fs.unlinkSync(full);
           localDeleted += 1;
         }

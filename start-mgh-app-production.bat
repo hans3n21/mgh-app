@@ -9,6 +9,13 @@ REM Setze Umgebungsvariablen
 set NODE_ENV=production
 set PORT=3000
 
+REM Gemeinsame Dateiwurzel fuer Uploads (Mail-Anhaenge, Auftragsbilder) auf
+REM dem NAS. Vorher speicherte jeder Rechner unter seinem eigenen Projekt-
+REM verzeichnis - die geteilte Datenbank kannte dann Pfade, deren Dateien nur
+REM auf dem Rechner lagen, der den Mail-Sync gefahren hatte; auf allen anderen
+REM blieben die Bilder tot (404). Kann in der .env uebersteuert werden.
+if not defined FILES_ROOT set "FILES_ROOT=\\MGH-NAS\Daten\MGH-App-Daten"
+
 REM Node den Windows-Zertifikatsspeicher lesen lassen. Ohne das scheitert auf
 REM Rechnern mit mitlesendem Virenscanner/Proxy jede IMAP-Verbindung mit
 REM SELF_SIGNED_CERT_IN_CHAIN: Node bringt eine eigene Zertifikatsliste mit und

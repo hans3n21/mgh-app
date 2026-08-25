@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import path from 'path';
 import fs from 'fs';
+import { resolveFilesPath } from '@/lib/files-root';
 import { prisma } from '@/lib/prisma';
 import { fetchAttachmentFromImap, saveAttachment } from '@/lib/mail/attachments';
 import { auth } from '@/lib/auth';
@@ -26,8 +26,29 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 		const safeName = att.filename.replace(/"/g, '');
 		const disposition = `${wantsDownload ? 'attachment' : 'inline'}; filename="${safeName}"`;
 
-		// ── Not yet persisted: fetch on-demand from IMAP ──────────────────────
-		if (!att.isPersisted || !att.path) {
+		// Persistierte local:-Pfade vorab aufloesen. Fehlt die Datei auf diesem
+		// Rechner (z.B. weil ein anderer Host sie vor der Umstellung auf die
+		// gemeinsame Dateiwurzel gespeichert hat), faellt die Auslieferung auf
+		// den IMAP-Nachladeweg zurueck, statt still 404 zu liefern. Der
+		// Nachladeweg speichert unter der aktuellen Wurzel neu und heilt den
+		// Verweis damit dauerhaft.
+		let localPath: string | null = null;
+		if (att.isPersisted && att.path?.startsWith('local:')) {
+			localPath = resolveFilesPath(att.path.slice(6));
+			if (!localPath) {
+				return NextResponse.json({ error: 'Invalid attachment path' }, { status: 400 });
+			}
+			if (!fs.existsSync(localPath)) {
+				console.warn('[attachments] persisted file missing on this host — refetching from IMAP', {
+					attachmentId: att.id,
+					path: att.path,
+				});
+				localPath = null;
+			}
+		}
+
+		// ── Not yet persisted (or file gone): fetch on-demand from IMAP ───────
+		if (!att.isPersisted || !att.path || (att.path.startsWith('local:') && !localPath)) {
 			const fetched = await fetchAttachmentFromImap(id);
 			if (!fetched) {
 				console.warn('[attachments] on-demand fetch returned no data', {
@@ -103,16 +124,9 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 		}
 
 		if (att.path.startsWith('local:')) {
-			const relPath = att.path.slice(6);
-			const cwd = process.cwd();
-			const localPath = path.resolve(cwd, relPath);
-			if (!localPath.startsWith(cwd + path.sep)) {
-				return NextResponse.json({ error: 'Invalid attachment path' }, { status: 400 });
-			}
-			if (!fs.existsSync(localPath)) {
-				return NextResponse.json({ error: 'Attachment file not found' }, { status: 404 });
-			}
-			const buf = fs.readFileSync(localPath);
+			// localPath ist oben aufgeloest und auf Existenz geprueft worden —
+			// sonst waeren wir im IMAP-Nachladezweig gelandet.
+			const buf = fs.readFileSync(localPath!);
 			return new NextResponse(buf, {
 				headers: { 'Content-Type': contentType, 'Content-Disposition': disposition, 'Content-Length': String(buf.length) },
 			});

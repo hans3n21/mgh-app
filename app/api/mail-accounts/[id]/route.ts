@@ -4,6 +4,7 @@ import path from 'path';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { deleteAttachment } from '@/lib/mail/attachments';
+import { resolveFilesPath } from '@/lib/files-root';
 import { z } from 'zod';
 
 const updateSchema = z.object({
@@ -198,8 +199,8 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     }
     for (const mail of mailsToDelete) {
       try {
-        const dir = path.resolve(process.cwd(), 'uploads', 'mail', mail.id);
-        if (dir.startsWith(process.cwd() + path.sep) && fs.existsSync(dir)) {
+        const dir = resolveFilesPath(path.join('uploads', 'mail', mail.id));
+        if (dir && fs.existsSync(dir)) {
           fs.rmSync(dir, { recursive: true, force: true });
         }
       } catch (cleanupError) {

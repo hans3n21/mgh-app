@@ -27,7 +27,8 @@
     "imap:check": "tsx scripts/imap-check.ts",
     "mail:sync": "tsx scripts/manual-sync.ts",
     "mail:sync-worker": "tsx scripts/sync-worker.ts",
-    "mail:relink": "tsx scripts/relink-order-mails.ts"
+    "mail:relink": "tsx scripts/relink-order-mails.ts",
+    "files:verify": "tsx scripts/verify-attachment-files.ts"
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",

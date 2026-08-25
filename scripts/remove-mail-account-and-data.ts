@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { prisma } from '@/lib/prisma';
 import { deleteAttachment } from '@/lib/mail/attachments';
+import { resolveFilesPath } from '@/lib/files-root';
 
 async function main() {
 	const email = process.argv[2]?.trim().toLowerCase();
@@ -48,9 +49,9 @@ async function main() {
 		for (const { path: attPath } of attachments) {
 			if (attPath.startsWith('local:')) {
 				const rel = attPath.slice(6);
-				const fullPath = path.join(process.cwd(), rel);
+				const fullPath = resolveFilesPath(rel);
 				try {
-					if (fs.existsSync(fullPath)) {
+					if (fullPath && fs.existsSync(fullPath)) {
 						fs.unlinkSync(fullPath);
 						localFiles++;
 					}
@@ -65,9 +66,9 @@ async function main() {
 		console.log(`Anhänge: ${attachments.length} (${localFiles} lokale Dateien, ${blobs} Blob-URLs)`);
 
 		for (const mailId of mailIds) {
-			const dir = path.join(process.cwd(), 'uploads', 'mail', mailId);
+			const dir = resolveFilesPath(path.join('uploads', 'mail', mailId));
 			try {
-				if (fs.existsSync(dir)) {
+				if (dir && fs.existsSync(dir)) {
 					fs.rmSync(dir, { recursive: true, force: true });
 				}
 			} catch (e) {

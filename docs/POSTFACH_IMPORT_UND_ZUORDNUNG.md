@@ -57,7 +57,7 @@ Pro **aktivem** `MailAccount` werden fest diese IMAP-Ordner abgearbeitet:
 ### 3.4 Inhalt & Anhänge
 
 - Body: `text`, `html` in `Mail` (große Textfelder).
-- Anhänge: `saveAttachment` in `lib/mail/attachments.ts` → **Vercel Blob** (wenn Token gesetzt) sonst **`uploads/mail/<mailId>/`** mit DB-Pfadpräfix `local:…`.
+- Anhänge: `saveAttachment` in `lib/mail/attachments.ts` → **Vercel Blob** (wenn Token gesetzt) sonst **`<FILES_ROOT>/uploads/mail/<mailId>/`** mit DB-Pfadpräfix `local:…`. `FILES_ROOT` zeigt bei uns auf `\\MGH-NAS\Daten\MGH-App-Daten` (gesetzt in den `start-mgh-app*.bat` bzw. der `.env`), damit alle Rechner denselben Bestand nutzen; ohne die Variable gilt das Projektverzeichnis (`lib/files-root.ts`).
 - Nach Speichern: **Entity-Extraktion** (`extractAndStore`) für PII/Chips.
 - Wenn `orderId` gesetzt ist: **`linkMailArtifactsToOrder`** (siehe Abschnitt 6).
 

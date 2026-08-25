@@ -6,6 +6,7 @@ import { simpleParser } from 'mailparser';
 import { prisma } from '@/lib/prisma';
 import { getImapClient } from './client';
 import { TRASH_FOLDER_CANDIDATES } from './folders';
+import { filesRoot, resolveFilesPath } from '@/lib/files-root';
 
 export interface AttachmentMetadata {
     filename: string;
@@ -163,14 +164,14 @@ export async function saveAttachment(
         /* fall through to local */
     }
 
-    const localDir = path.join(process.cwd(), 'uploads', 'mail', mailId);
+    const localDir = path.join(filesRoot(), 'uploads', 'mail', mailId);
     fs.mkdirSync(localDir, { recursive: true });
     const localPath = path.join(localDir, path.basename(relativePath));
     const buf = Buffer.from(await blob.arrayBuffer());
     fs.writeFileSync(localPath, buf);
     return {
         filename,
-        path: `local:${path.relative(process.cwd(), localPath).replace(/\\/g, '/')}`,
+        path: `local:${path.relative(filesRoot(), localPath).replace(/\\/g, '/')}`,
         size: buf.length,
         mimeType,
     };
@@ -335,8 +336,8 @@ export async function loadAttachmentForEmail(
     let buf: Buffer;
     if (att.path.startsWith('local:')) {
         const relPath = att.path.slice(6);
-        const localPath = path.join(process.cwd(), relPath);
-        if (!fs.existsSync(localPath)) return null;
+        const localPath = resolveFilesPath(relPath);
+        if (!localPath || !fs.existsSync(localPath)) return null;
         buf = fs.readFileSync(localPath);
     } else if (att.path.startsWith('http://') || att.path.startsWith('https://')) {
         const response = await fetch(att.path);
