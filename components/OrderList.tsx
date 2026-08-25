@@ -12,6 +12,15 @@ import {
     WORKFLOW_STATUS_CLASS,
     normalizeWorkflowStatus,
 } from '@/lib/order-status';
+import {
+    FIRST_DIR,
+    SORT_KEYS,
+    nextSort,
+    sortOrders,
+    type SortDir,
+    type SortKey,
+    type SortState,
+} from '@/lib/order-sort';
 
 // Lebenslagen der Übersicht: Entwürfe sind noch nicht freigegeben, "Zahlung
 // offen" wartet auf die (An-)Zahlung, die den Auftrag automatisch aktiviert.
@@ -163,11 +172,67 @@ function PaymentBadge({ paymentStatus }: { paymentStatus?: string | null }) {
     );
 }
 
+// Auswahl fuers Handy, wo die Tabellenkoepfe fehlen.
+const MOBILE_SORTS: { value: string; label: string }[] = [
+    { value: '', label: 'Standard' },
+    { value: 'wait:desc', label: 'Längste Wartezeit' },
+    { value: 'wait:asc', label: 'Kürzeste Wartezeit' },
+    { value: 'customer:asc', label: 'Kunde A–Z' },
+    { value: 'title:asc', label: 'Auftrag A–Z' },
+];
+
+function SortableHeader({
+    label,
+    sortKey,
+    sort,
+    onToggle,
+}: {
+    label: string;
+    sortKey: SortKey;
+    sort: SortState;
+    onToggle: (key: SortKey) => void;
+}) {
+    const active = sort?.key === sortKey;
+    const ascending = active && sort!.dir === 'asc';
+
+    return (
+        <th
+            className="py-2 pr-4 font-normal"
+            aria-sort={active ? (ascending ? 'ascending' : 'descending') : 'none'}
+        >
+            <button
+                type="button"
+                onClick={() => onToggle(sortKey)}
+                title={
+                    active
+                        ? `Nach ${label} sortiert — klicken zum ${sort!.dir === FIRST_DIR[sortKey] ? 'Umdrehen' : 'Aufheben'}`
+                        : `Nach ${label} sortieren`
+                }
+                className={`inline-flex items-center gap-1 rounded transition-colors focus-visible:outline focus-visible:outline-sky-500/60 ${
+                    active ? 'text-slate-100' : 'text-slate-400 hover:text-slate-200'
+                }`}
+            >
+                {label}
+                {/* Platzhalter-Pfeil haelt die Spaltenbreite stabil und zeigt
+                    beim Ueberfahren, dass die Spalte sortierbar ist. */}
+                <span
+                    aria-hidden
+                    className={`text-[9px] leading-none transition-opacity ${
+                        active ? 'opacity-100' : 'opacity-0 group-hover/head:opacity-40'
+                    }`}
+                >
+                    {active && !ascending ? '▼' : '▲'}
+                </span>
+            </button>
+        </th>
+    );
+}
+
 export default function OrderList({ orders, currentUserId }: { orders: OrderWithRelations[]; currentUserId?: string | null }) {
     const router = useRouter();
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('ALL');
-    const [sortMode, setSortMode] = useState<'default' | 'stale' | 'recent'>('default');
+    const [sort, setSort] = useState<SortState>(null);
     const [view, setView] = useState<ViewKey>('active');
     const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
     // Filter überleben Reload und Detailseite→zurück. sessionStorage statt URL,
@@ -192,8 +257,17 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                 ) {
                     setTypeFilter(saved.typeFilter);
                 }
-                if (typeof saved.sortMode === 'string' && ['default', 'stale', 'recent'].includes(saved.sortMode)) {
-                    setSortMode(saved.sortMode as 'default' | 'stale' | 'recent');
+                const savedSort = saved.sort as { key?: unknown; dir?: unknown } | null | undefined;
+                if (
+                    savedSort &&
+                    SORT_KEYS.includes(savedSort.key as SortKey) &&
+                    (savedSort.dir === 'asc' || savedSort.dir === 'desc')
+                ) {
+                    setSort({ key: savedSort.key as SortKey, dir: savedSort.dir });
+                } else if (saved.sortMode === 'stale' || saved.sortMode === 'recent') {
+                    // Alter Stand aus dem Auswahlfeld: "laengste/kuerzeste
+                    // Wartezeit" ist jetzt die Spalte "Wartet seit".
+                    setSort({ key: 'wait', dir: saved.sortMode === 'stale' ? 'desc' : 'asc' });
                 }
                 if (typeof saved.search === 'string') setSearch(saved.search);
             }
@@ -209,12 +283,12 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
         try {
             sessionStorage.setItem(
                 FILTER_STORAGE_KEY,
-                JSON.stringify({ view, typeFilter, sortMode, search })
+                JSON.stringify({ view, typeFilter, sort, search })
             );
         } catch {
             // siehe oben
         }
-    }, [view, typeFilter, sortMode, search]);
+    }, [view, typeFilter, sort, search]);
     const [openStatusMenuFor, setOpenStatusMenuFor] = useState<string | null>(null);
     const statusMenuRef = useRef<HTMLDivElement | null>(null);
     // Der Hinweis muss hier oben leben, nicht im Loeschknopf: nach dem Verschieben
@@ -327,14 +401,19 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
         });
     }, [orders, search, view, typeFilter]);
 
-    const sortedOrders = useMemo(() => {
-        if (sortMode === 'default') return filteredOrders;
-        // Gleicher Anker wie das "Wartet seit"-Badge: Zahlungseingang, sonst Anlage.
-        const ts = (o: OrderWithRelations) => new Date(o.depositPaidAt ?? o.paidAt ?? o.createdAt).getTime() || 0;
-        const copy = [...filteredOrders];
-        copy.sort((a, b) => (sortMode === 'stale' ? ts(a) - ts(b) : ts(b) - ts(a)));
-        return copy;
-    }, [filteredOrders, sortMode]);
+    const sortedOrders = useMemo(
+        () => sortOrders(filteredOrders, sort, { typeLabel: TYPE_LABEL }),
+        [filteredOrders, sort]
+    );
+
+    // Am Desktop sortierte Spalten koennen im Handy-Auswahlfeld fehlen (der
+    // Zustand ueberlebt ja den Geraetewechsel) — dann eine eigene Zeile dafuer.
+    const mobileSortValue = sort ? `${sort.key}:${sort.dir}` : '';
+    const mobileSortOptions = MOBILE_SORTS.some((option) => option.value === mobileSortValue)
+        ? MOBILE_SORTS
+        : [...MOBILE_SORTS, { value: mobileSortValue, label: 'Eigene Sortierung' }];
+
+    const toggleSort = (key: SortKey) => setSort((prev) => nextSort(prev, key));
 
     useEffect(() => {
         const onPointerDown = (event: MouseEvent) => {
@@ -408,16 +487,28 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
                         placeholder="Suchen…"
                         className="min-w-0 flex-1 rounded-lg bg-slate-950 border border-slate-800 px-3 py-1.5 text-sm"
                     />
+                    {/* Nur am Handy: dort gibt es keine Tabellenkoepfe, ueber die
+                        man sortieren koennte. Am Desktop machen das die Spalten. */}
                     <select
-                        value={sortMode}
-                        onChange={(e) => setSortMode(e.target.value as 'default' | 'stale' | 'recent')}
-                        className="shrink-0 rounded-lg bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm text-slate-100"
+                        value={mobileSortValue}
+                        onChange={(e) => {
+                            const raw = e.target.value;
+                            if (!raw) {
+                                setSort(null);
+                                return;
+                            }
+                            const [key, dir] = raw.split(':') as [SortKey, SortDir];
+                            setSort({ key, dir });
+                        }}
+                        className="shrink-0 rounded-lg bg-slate-950 border border-slate-800 px-2 py-1.5 text-sm text-slate-100 md:hidden"
                         title="Sortierung"
                         aria-label="Sortierung"
                     >
-                        <option value="default">Standard</option>
-                        <option value="stale">Längste Wartezeit</option>
-                        <option value="recent">Kürzeste Wartezeit</option>
+                        {mobileSortOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
                     </select>
                 </div>
 
@@ -580,14 +671,14 @@ export default function OrderList({ orders, currentUserId }: { orders: OrderWith
             <div className="hidden md:block overflow-x-auto">
                 <table className="min-w-full text-sm">
                     <thead>
-                        <tr className="text-left text-slate-400">
-                            <th className="py-2 pr-4">Auftrag</th>
-                            <th className="py-2 pr-4">Kunde</th>
-                            <th className="py-2 pr-4">Typ</th>
-                            <th className="py-2 pr-4">Status</th>
-                            <th className="py-2 pr-4">Zahlung</th>
-                            <th className="py-2 pr-4">Wartet seit</th>
-                            <th className="py-2 pr-4">Zuständig</th>
+                        <tr className="group/head text-left text-slate-400">
+                            <SortableHeader label="Auftrag" sortKey="title" sort={sort} onToggle={toggleSort} />
+                            <SortableHeader label="Kunde" sortKey="customer" sort={sort} onToggle={toggleSort} />
+                            <SortableHeader label="Typ" sortKey="type" sort={sort} onToggle={toggleSort} />
+                            <SortableHeader label="Status" sortKey="status" sort={sort} onToggle={toggleSort} />
+                            <SortableHeader label="Zahlung" sortKey="payment" sort={sort} onToggle={toggleSort} />
+                            <SortableHeader label="Wartet seit" sortKey="wait" sort={sort} onToggle={toggleSort} />
+                            <SortableHeader label="Zuständig" sortKey="assignee" sort={sort} onToggle={toggleSort} />
                             <th className="py-2 pr-4"></th>
                         </tr>
                     </thead>
