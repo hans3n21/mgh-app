@@ -22,9 +22,16 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 		// ?download=1 erzwingt den Speichern-Dialog. Das `download`-Attribut eines
 		// Links greift nicht, sobald hier auf eine andere Domain weitergeleitet wird.
 		const wantsDownload = new URL(_req.url).searchParams.get('download') === '1';
-		// Anfuehrungszeichen im Dateinamen wuerden den Header zerlegen.
-		const safeName = att.filename.replace(/"/g, '');
-		const disposition = `${wantsDownload ? 'attachment' : 'inline'}; filename="${safeName}"`;
+		// Anfuehrungszeichen im Dateinamen wuerden den Header zerlegen. Und:
+		// HTTP-Header vertragen nur Latin-1 — Dateinamen mit Umlauten (oder
+		// Mojibake aus alten Importen, z.B. "W├Âlbung.jpg") liessen den
+		// Header-Bau frueher mit einer ByteString-Exception abstuerzen, die
+		// Antwort war dann 500 statt des Bildes. Deshalb: ASCII-Fallback in
+		// filename= und der echte Name RFC-5987-kodiert in filename*=.
+		const cleanName = att.filename.replace(/"/g, '');
+		const asciiName = cleanName.replace(/[^\x20-\x7E]/g, '_');
+		const disposition =
+			`${wantsDownload ? 'attachment' : 'inline'}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(cleanName)}`;
 
 		// Persistierte local:-Pfade vorab aufloesen. Fehlt die Datei auf diesem
 		// Rechner (z.B. weil ein anderer Host sie vor der Umstellung auf die
