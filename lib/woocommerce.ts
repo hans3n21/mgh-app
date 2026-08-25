@@ -1,4 +1,6 @@
 import { prisma } from './prisma';
+import { isMultiline, labelForSpecKey } from './customer-datasheet';
+import { SPEC_PRESETS, type OrderType as PresetOrderType } from './order-presets';
 
 // Raten-Modi (Anzahlung/Restzahlung) wurden bewusst entfernt: Rechnungen gehen
 // nur noch über den vollen Endbetrag in den Shop. Der interne Zahlungsstand
@@ -7,6 +9,10 @@ interface CreateWooOptions {
   amountCents?: number; // optional, falls angegeben wird dieser Betrag verwendet
   customLabel?: string; // optionaler Zusatz für Fee-Namen (z.B. Extrakosten-Grund)
 }
+
+// Ab 500,00 EUR brutto nur noch Ueberweisung. Muss mit dem Schwellwert im
+// Shop-Snippet (woocommerce_available_payment_gateways) uebereinstimmen.
+export const BANK_TRANSFER_ONLY_FROM_CENTS = 50000;
 
 function sanitizeEnv(v?: string | null): string | undefined {
   if (typeof v !== 'string') return undefined;
@@ -72,9 +78,33 @@ export async function createWooOrderForInternal(orderId: string, options: Create
     return null;
   }
 
+  // Freitext-Felder wie "Notizen" (z.B. pg_notes: "1:1 Kopie") stecken sonst
+  // nirgends im Woo-Auftrag -- weder im Produktnamen noch in meta_data.
+  function noteFieldsForOrder(): string[] {
+    return order.specs
+      .filter(s => isMultiline(s.key) && s.value && s.value.trim())
+      .map(s => `${labelForSpecKey(s.key)}: ${s.value.trim()}`);
+  }
+
+  // Pflichtfelder je Auftragstyp (dieselbe Liste, die auch die
+  // Datenblatt-Validierung nutzt) sind die "wichtigsten Infos" -- bisher hatten
+  // nur Gitarre/Body/Hals/Pickguard ueberhaupt ein Kernfeld im Woo-Auftrag,
+  // Reparatur/Tonabnehmer/Gravur/Oberflaeche gar keins.
+  function requiredFieldSummary(): string[] {
+    const required = SPEC_PRESETS[order.type as PresetOrderType]?.required;
+    if (!required) return [];
+    const kv: Record<string, string> = Object.fromEntries(order.specs.map(s => [s.key, s.value]));
+    const keys = Object.values(required).flat();
+    return keys
+      .filter(k => kv[k] && kv[k].trim())
+      .map(k => `${labelForSpecKey(k)}: ${kv[k].trim()}`);
+  }
+
   const label = typeLabel[order.type] || order.type;
   const model = primaryModelForType();
   const secondary = secondaryDetailForType();
+  const orderNotes = noteFieldsForOrder();
+  const coreFields = requiredFieldSummary();
 
   // Betrag ermitteln (Basis = Endbetrag in Cent)
   let baseCents: number | undefined = options.amountCents ?? undefined;
@@ -86,15 +116,34 @@ export async function createWooOrderForInternal(orderId: string, options: Create
 
   const totalCents = baseCents ?? 0; // Brutto-Endbetrag
 
+  // Ab diesem Bruttobetrag (inkl. Versand) nur noch Ueberweisung -- die
+  // PayPal-Gebuehren fressen bei grossen Auftraegen zu viel weg.
+  // Das gesetzte payment_method wirkt auf der "Fuer Bestellung bezahlen"-Seite
+  // wie eine Vorgabe: der Kunde bekommt dann NUR diese Zahlart angeboten.
+  // Leer gelassen sieht er alle aktiven Zahlarten und waehlt selbst.
+  // Am 2026-08-25 mit den Testbestellungen 30401 (leer) / 30402 ('bacs')
+  // im Live-Shop geprueft -- Details in docs/shop-zahlarten-ab-500-euro.md.
+  const shippingCents = order.shippingCents ?? 0;
+  const shippingApplies = shippingCents > 0 && !options.customLabel;
+  const grossTotalCents = totalCents + (shippingApplies ? shippingCents : 0);
+  const bankTransferOnly = grossTotalCents >= BANK_TRANSFER_ONLY_FROM_CENTS;
+
   const composedName = `Werkstattauftrag · ${label}${model ? ' – ' + model : ''}${secondary ? ' · ' + secondary : ''}${options.customLabel ? ' · ' + options.customLabel : ''} · ${order.id}`;
 
   const payload: any = {
     created_via: 'MGH-App',
-    payment_method: 'bacs',
-    payment_method_title: 'Banküberweisung',
+    // Unter dem Schwellwert bewusst leer ("n. v." im Backend): der Kunde waehlt
+    // beim Bezahlen selbst, und ein vorbelegtes "Bankueberweisung" waere nur
+    // eine Falschanzeige, bis er zahlt.
+    payment_method: bankTransferOnly ? 'bacs' : '',
+    payment_method_title: bankTransferOnly ? 'Direkte Banküberweisung' : '',
     set_paid: false,
     status: 'pending',
-    customer_note: `Interne Auftrags-ID: ${order.id} (${order.title})` + (model ? `\nModell: ${model}` : ''),
+    customer_note: [
+      `Interne Auftrags-ID: ${order.id} (${order.title})`,
+      ...coreFields,
+      ...orderNotes,
+    ].filter(Boolean).join('\n'),
     billing: {
       first_name: firstName || order.customer?.name || 'Kunde',
       last_name: lastName || '',
@@ -171,8 +220,7 @@ export async function createWooOrderForInternal(orderId: string, options: Create
 
   // Versand als eigene Versandposition. Am Auftrag gepflegt (Order.shippingCents),
   // kommt OBENDRAUF auf den Endbetrag. Nicht bei Extra-Bestellungen (customLabel).
-  const shippingCents = order.shippingCents ?? 0;
-  if (shippingCents > 0 && !options.customLabel) {
+  if (shippingApplies) {
     let shippingNetCents = shippingCents;
     let shippingTaxCents = 0;
     if (forceGrossToNet) {

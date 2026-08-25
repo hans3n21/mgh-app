@@ -224,7 +224,7 @@ export function checkboxDetail(value?: string): string | undefined {
   return trimmed;
 }
 
-function isMultiline(key: string): boolean {
+export function isMultiline(key: string): boolean {
   return (
     key.endsWith('_notes') ||
     key.endsWith('_extras') ||
