@@ -1200,7 +1200,16 @@ const MessageSystem = forwardRef<
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (newMessage.trim()) sendMessage(); }
+              // Enter macht einen Absatz, abgeschickt wird ueber den Knopf.
+              // Vorher verschickte blankes Enter sofort: am Handy gibt es kein
+              // Shift, dort war ein Absatz also gar nicht moeglich; am Rechner
+              // ging halbfertige Post raus, sobald jemand die Zeile umbrechen
+              // wollte. Strg/Cmd+Enter bleibt als Kuerzel — so wie im
+              // Posteingang (ReplyComposer).
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                if (newMessage.trim()) sendMessage();
+              }
             }}
             className={`w-full rounded bg-slate-950 border px-3 py-2 text-sm resize-none transition-colors ${photoDragOver ? 'border-sky-500' : 'border-slate-700'}`}
             rows={3}
