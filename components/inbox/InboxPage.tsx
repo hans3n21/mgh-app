@@ -1067,8 +1067,75 @@ export default function InboxPage() {
 		};
 	}, []);
 
+	// "Posteingang" in der unteren Navigationsleiste wirkt am Handy als
+	// Zurueck-Knopf: GlobalMobileNav feuert dieses Event, wenn der Punkt bei
+	// bereits geoeffnetem Posteingang angetippt wird.
+	useEffect(() => {
+		const onBack = () => setSelectedId(null);
+		window.addEventListener('mgh:inbox-back', onBack);
+		return () => window.removeEventListener('mgh:inbox-back', onBack);
+	}, []);
+
+	// Konten- und Ordnerauswahl: eine Definition, zwei Layouts — Desktop als
+	// senkrechte Leiste links, Handy als Chip-Zeilen ueber der Liste.
+	const renderFolderSidebar = (layout: 'rail' | 'chips') => (
+		<FolderSidebar
+			layout={layout}
+			activeAccountId={focusedAccountIds[0] || activeAccountId}
+			activeFolder={folder}
+			onSelectFolder={(f) => {
+				setFolder(f);
+				setSelectedId(null);
+				void syncFolderInBackground(focusedAccountIds, f);
+			}}
+			accounts={accounts}
+			accountsLoading={accountsLoading}
+			accountsError={accountsError}
+			focusKey={focusKey}
+			foldersOpen={foldersOpen}
+			onSelectFocus={(key) => {
+				if (key === focusKey) {
+					// Erneuter Druck auf das AKTIVE Postfach = Ordner-Sidebar
+					// explizit auf-/zuklappen. ('all' hat keine Ordner → nichts tun.)
+					if (key !== 'all') setFoldersOpen((prev) => !prev);
+					return;
+				}
+				// Postfach WECHSELN: nur die Auswahl aendern, den Auf-/Zu-Zustand
+				// der Ordner-Sidebar aber unangetastet lassen (klebrig). Offen bleibt
+				// offen und zeigt dann die Ordner des neuen Postfachs; geschlossen
+				// bleibt geschlossen — sie faehrt nur durch expliziten Klick aus.
+				setFocusKey(key);
+				if (key !== 'all') setActiveAccountId(key);
+				setFolder('INBOX');
+				setSelectedId(null);
+				// focusedAccountIds spiegelt hier noch den ALTEN focusKey — die
+				// Konten fuer die neue Auswahl direkt aus `key` ableiten.
+				const idsForKey = key === 'all' ? accounts.map((a) => a.id) : [key];
+				void syncFolderInBackground(idsForKey, 'INBOX');
+			}}
+			onOpenSettings={(accountId) => {
+				if (settingsAccountId === accountId && settingsMounted && !isClosingSettings) {
+					closeSettingsPanel();
+					return;
+				}
+				if (settingsCloseTimerRef.current) {
+					window.clearTimeout(settingsCloseTimerRef.current);
+					settingsCloseTimerRef.current = null;
+				}
+				setIsClosingSettings(false);
+				setSettingsAccountId(accountId);
+				setListOpen(true);
+			}}
+			onRetryAccounts={loadAccounts}
+			unreadPerAccount={unreadPerAccount}
+		/>
+	);
+
 	return (
 		<div className="h-full bg-slate-900 text-slate-200 border border-slate-800 rounded-lg overflow-hidden flex flex-col" aria-busy={loading} aria-live="polite">
+			{/* Beim Lesen einer Mail am Handy: Suche + Filter ausblenden — sie
+			    gehoeren zur Liste und nahmen dem Mailtext den Platz. */}
+			{!(isNarrow && selectedId) && (
 			<InboxToolbar
 				q={q}
 				onChangeQ={(val) => { setQ(val); }}
@@ -1091,6 +1158,8 @@ export default function InboxPage() {
 				filterCounts={filterCounts}
 				focusLabel={focusLabel}
 			/>
+			)}
+			{isNarrow === true && !selectedId && renderFolderSidebar('chips')}
 			{listActionError && (
 				<div className="mx-3 mt-2 rounded border border-rose-800 bg-rose-950/40 px-3 py-1.5 text-[12px] text-rose-200 flex items-center justify-between gap-2">
 					<span className="min-w-0 break-words">{listActionError}</span>
@@ -1105,59 +1174,9 @@ export default function InboxPage() {
 				</div>
 			)}
 			<div className="flex-1 flex overflow-hidden min-h-0">
-				{/* Ordner-Sidebar links — auf schmalen Bildschirmen weicht sie, sobald eine
-				    Mail offen ist, damit der Lesebereich die volle Breite bekommt. */}
-				<div className={isNarrow && selectedId ? 'hidden' : 'contents'}>
-				<FolderSidebar
-					activeAccountId={focusedAccountIds[0] || activeAccountId}
-					activeFolder={folder}
-					onSelectFolder={(f) => {
-						setFolder(f);
-						setSelectedId(null);
-						void syncFolderInBackground(focusedAccountIds, f);
-					}}
-					accounts={accounts}
-					accountsLoading={accountsLoading}
-					accountsError={accountsError}
-					focusKey={focusKey}
-					foldersOpen={foldersOpen}
-					onSelectFocus={(key) => {
-						if (key === focusKey) {
-							// Erneuter Druck auf das AKTIVE Postfach = Ordner-Sidebar
-							// explizit auf-/zuklappen. ('all' hat keine Ordner → nichts tun.)
-							if (key !== 'all') setFoldersOpen((prev) => !prev);
-							return;
-						}
-						// Postfach WECHSELN: nur die Auswahl aendern, den Auf-/Zu-Zustand
-						// der Ordner-Sidebar aber unangetastet lassen (klebrig). Offen bleibt
-						// offen und zeigt dann die Ordner des neuen Postfachs; geschlossen
-						// bleibt geschlossen — sie faehrt nur durch expliziten Klick aus.
-						setFocusKey(key);
-						if (key !== 'all') setActiveAccountId(key);
-						setFolder('INBOX');
-						setSelectedId(null);
-						// focusedAccountIds spiegelt hier noch den ALTEN focusKey — die
-						// Konten fuer die neue Auswahl direkt aus `key` ableiten.
-						const idsForKey = key === 'all' ? accounts.map((a) => a.id) : [key];
-						void syncFolderInBackground(idsForKey, 'INBOX');
-					}}
-					onOpenSettings={(accountId) => {
-						if (settingsAccountId === accountId && settingsMounted && !isClosingSettings) {
-							closeSettingsPanel();
-							return;
-						}
-						if (settingsCloseTimerRef.current) {
-							window.clearTimeout(settingsCloseTimerRef.current);
-							settingsCloseTimerRef.current = null;
-						}
-						setIsClosingSettings(false);
-						setSettingsAccountId(accountId);
-						setListOpen(true);
-					}}
-					onRetryAccounts={loadAccounts}
-					unreadPerAccount={unreadPerAccount}
-				/>
-				</div>
+				{/* Konten-Leiste links — nur Desktop. Am Handy uebernehmen die
+				    Chip-Zeilen ueber der Liste (renderFolderSidebar('chips')). */}
+				{isNarrow !== true && renderFolderSidebar('rail')}
 
 				{listOpen && (
 					settingsMounted ? (
@@ -1242,15 +1261,8 @@ export default function InboxPage() {
 				)}
 
 				<div className={`flex-1 h-full min-w-0 overflow-hidden flex flex-col ${isNarrow && !selectedId ? 'hidden' : ''}`}>
-					{isNarrow && selectedId && (
-						<button
-							type="button"
-							onClick={() => setSelectedId(null)}
-							className="flex shrink-0 items-center gap-1 border-b border-slate-800 bg-slate-950 px-3 py-2 text-left text-sm text-sky-400 hover:text-sky-300"
-						>
-							<span aria-hidden="true">‹</span> Posteingang
-						</button>
-					)}
+					{/* Kein "‹ Posteingang" mehr: der Rueckweg ist der Posteingang-
+					    Punkt in der unteren Navigationsleiste (mgh:inbox-back). */}
 					<div className="min-h-0 flex-1 overflow-hidden">
 						{filtered.length === 0 ? (
 							<EmptyState

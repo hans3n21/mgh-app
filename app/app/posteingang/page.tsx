@@ -9,7 +9,9 @@ export default function Page() {
     // gekuerzt. Ohne das ragte der Arbeitsbereich 42px darunter — und seit der
     // Lesebereich am Handy ueberhaupt erreichbar ist, lagen dort ausgerechnet
     // "Senden" und "Verwerfen" des Antwortfelds unter der Leiste.
-    <div className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] w-screen h-[calc(100vh-215px)] lg:h-[calc(100vh-120px)] px-0 sm:px-6 lg:px-8 overflow-hidden">
+    // 165px statt 215px: nachgemessen blieben zwischen Panel und Leiste 53px
+    // Leerraum (812px-Viewport: Panel endete bei 666, Leiste begann bei 719).
+    <div className="relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] w-screen h-[calc(100vh-165px)] lg:h-[calc(100vh-120px)] px-0 sm:px-6 lg:px-8 overflow-hidden">
       <InboxPage />
     </div>
   );

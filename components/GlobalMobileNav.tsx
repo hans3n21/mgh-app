@@ -71,6 +71,15 @@ export default function GlobalMobileNav() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={(e) => {
+                  // Im Posteingang wirkt der eigene Punkt als Zurueck-Knopf:
+                  // eine offene Mail wird geschlossen statt die Seite neu zu
+                  // laden. Die "‹ Posteingang"-Zeile oben entfaellt dafuer.
+                  if (item.href === '/app/posteingang' && pathname === '/app/posteingang') {
+                    e.preventDefault();
+                    window.dispatchEvent(new Event('mgh:inbox-back'));
+                  }
+                }}
                 className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[80px] flex-shrink-0 ${isActive
                     ? 'bg-sky-600 text-white'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'

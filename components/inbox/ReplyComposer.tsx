@@ -51,6 +51,9 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 	const [selectedTpl, setSelectedTpl] = useState<Template | null>(null);
 	const [values, setValues] = useState<Record<string, string>>({});
 	const [subject, setSubject] = useState(defaultSubject);
+	// Am Handy sind An/Betreff bei einer Antwort zweitrangig (beides vorbefuellt)
+	// und starten eingeklappt als eine Zeile; "aendern" klappt die Felder aus.
+	const [headerOpen, setHeaderOpen] = useState(false);
 	const [body, setBody] = useState(defaultBody);
 	const [sending, setSending] = useState(false);
 	const [files, setFiles] = useState<File[]>([]);
@@ -262,8 +265,22 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 			onDragLeave={() => setDragOver(false)}
 			onDrop={handleDrop}
 		>
-			{/* An: + Betreff */}
-			<div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/70 text-sm flex-shrink-0 bg-slate-900/35 backdrop-blur-sm">
+			{/* An: + Betreff — am Handy zu einer Zeile eingeklappt */}
+			<div className={`${headerOpen ? 'hidden' : 'flex'} items-center gap-2 px-3 py-1.5 border-b border-slate-700/70 text-xs flex-shrink-0 bg-slate-900/35 backdrop-blur-sm lg:hidden`}>
+				<span className="min-w-0 flex-1 truncate text-slate-400">
+					<span className="text-slate-500">An: </span>
+					<span className="text-slate-300">{defaultTo || '–'}</span>
+					<span className="text-slate-600"> · {subject || 'Kein Betreff'}</span>
+				</span>
+				<button
+					type="button"
+					onClick={() => setHeaderOpen(true)}
+					className="shrink-0 text-sky-400 hover:text-sky-300"
+				>
+					ändern
+				</button>
+			</div>
+			<div className={`${headerOpen ? 'flex' : 'hidden'} items-center gap-2 px-3 py-2 border-b border-slate-700/70 text-sm flex-shrink-0 bg-slate-900/35 backdrop-blur-sm lg:flex`}>
 				<span className="text-slate-500 text-xs w-8">An:</span>
 				<span className="text-slate-300 truncate flex-1">{defaultTo || '–'}</span>
 				<select
@@ -275,7 +292,7 @@ export default function ReplyComposer({ open, onClose, mailId, defaultSubject = 
 					<option value="en">EN</option>
 				</select>
 			</div>
-			<div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-700/70 text-sm flex-shrink-0 bg-slate-900/30 backdrop-blur-sm">
+			<div className={`${headerOpen ? 'flex' : 'hidden'} items-center gap-2 px-3 py-1.5 border-b border-slate-700/70 text-sm flex-shrink-0 bg-slate-900/30 backdrop-blur-sm lg:flex`}>
 				<span className="text-slate-500 text-xs w-8">Betr:</span>
 				<input
 					value={subject}

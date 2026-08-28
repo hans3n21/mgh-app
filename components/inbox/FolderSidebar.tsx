@@ -11,6 +11,8 @@ interface ImapFolder {
 }
 
 interface Props {
+  /** 'rail' = senkrechte Leiste (Desktop), 'chips' = wischbare Zeilen (Handy) */
+  layout?: 'rail' | 'chips';
   activeAccountId: string | null;
   activeFolder: string;
   onSelectFolder: (folder: string) => void;
@@ -135,6 +137,7 @@ function railDotClass(accountId: string): string {
 }
 
 export default function FolderSidebar({
+  layout = 'rail',
   activeAccountId,
   activeFolder,
   onSelectFolder,
@@ -211,6 +214,118 @@ export default function FolderSidebar({
     || 'Postfach';
   const homeActive = focusKey === 'all';
   const showFolders = !homeActive && foldersOpen;
+
+  if (layout === 'chips') {
+    // Handy: Konten als wischbare Chips mit vollem Namen — die senkrechte
+    // Leiste zeigte dort nur Kuerzel (DT/MG/…), die niemand zuordnen konnte,
+    // und kostete die Liste ~50px Breite. Zweiter Tipp auf das aktive Konto
+    // klappt (wie in der Leiste) die Ordner auf, hier als zweite Chip-Zeile.
+    const CHIP = 'flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors';
+    const CHIP_ON = 'border-slate-600 bg-slate-700 text-white';
+    const CHIP_OFF = 'border-slate-800 text-slate-400 hover:bg-slate-800/60 hover:text-slate-200';
+    const chipFolders = [
+      ...pinnedExisting,
+      ...specialFolders.filter((f) => f.path !== 'INBOX' && !pinnedSet.has(f.path)),
+      ...regularFolders.filter((f) => !pinnedSet.has(f.path)),
+    ];
+    return (
+      <div className="flex-shrink-0 border-b border-slate-800 bg-slate-950">
+        <div className="scrollbar-hide flex items-center gap-1.5 overflow-x-auto px-2 py-1.5">
+          {mainAccount && (
+            <button
+              type="button"
+              onClick={() => onSelectFocus('all')}
+              className={`${CHIP} ${homeActive ? CHIP_ON : CHIP_OFF}`}
+            >
+              <span aria-hidden>⌂</span> Alle
+            </button>
+          )}
+          {accounts.length === 0 && accountsLoading && (
+            <span className="px-1 text-[11px] text-slate-500 animate-pulse">Postfächer…</span>
+          )}
+          {accounts.length === 0 && !accountsLoading && accountsError && (
+            <button type="button" onClick={onRetryAccounts} className={`${CHIP} border-amber-700/40 text-amber-300`}>
+              ! Erneut laden
+            </button>
+          )}
+          {accounts.map((acc) => {
+            const label = acc.profile?.displayName || acc.name || acc.email;
+            const unread = unreadPerAccount[acc.id] ?? 0;
+            const isActive = focusKey === acc.id;
+            return (
+              <button
+                key={acc.id}
+                type="button"
+                onClick={() => onSelectFocus(acc.id)}
+                title={`${label}${acc.email ? ` (${acc.email})` : ''}`}
+                className={`${CHIP} ${isActive ? CHIP_ON : CHIP_OFF}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${railDotClass(acc.id)}`} />
+                <span className="max-w-[9rem] truncate">{label}</span>
+                {unread > 0 && (
+                  <span className="rounded-full bg-red-500/90 px-1.5 text-[9px] font-semibold leading-4 text-white">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
+                {isActive && <span aria-hidden className="text-[9px] text-sky-300/80">{showFolders ? '▴' : '▾'}</span>}
+              </button>
+            );
+          })}
+          {onOpenSettings && (
+            <button
+              type="button"
+              data-inbox-settings-trigger="true"
+              disabled={!settingsTargetAccountId}
+              onClick={() => {
+                if (!settingsTargetAccountId) return;
+                onOpenSettings(settingsTargetAccountId);
+              }}
+              title={`Einstellungen für ${settingsTargetLabel}`}
+              className={`${CHIP} ${CHIP_OFF} disabled:opacity-40`}
+            >
+              ⚙
+            </button>
+          )}
+        </div>
+        {showFolders && activeAccountId && (
+          <div className="scrollbar-hide flex items-center gap-1.5 overflow-x-auto px-2 pb-1.5">
+            {loading ? (
+              <span className="px-1 text-[11px] text-slate-600">Ordner…</span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onSelectFolder('INBOX')}
+                  className={`${CHIP} ${activeFolder === 'INBOX' || activeFolder === '' ? 'border-violet-500/40 bg-violet-600/20 text-violet-200' : CHIP_OFF}`}
+                >
+                  📥 Posteingang
+                </button>
+                {chipFolders.map((f) => {
+                  const meta = getFolderMeta(f, specialMeta);
+                  return (
+                    <button
+                      key={f.path}
+                      type="button"
+                      onClick={() => onSelectFolder(f.path)}
+                      title={f.path}
+                      className={`${CHIP} ${activeFolder === f.path ? 'border-violet-500/40 bg-violet-600/20 text-violet-200' : CHIP_OFF}`}
+                    >
+                      {meta.icon} <span className="max-w-[8rem] truncate">{meta.label}</span>
+                    </button>
+                  );
+                })}
+                {foldersError && (
+                  <button type="button" onClick={() => loadFolders(activeAccountId)} className={`${CHIP} border-amber-700/40 text-amber-300`}>
+                    ! Ordner erneut laden
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
