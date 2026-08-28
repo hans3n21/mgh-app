@@ -612,6 +612,12 @@
           <span class="field-hint">Label anklicken und dann Klein/Groß wählen. Groß druckt 7mm hoch mit Calibri 12pt / 8pt.</span>
         </fieldset>
 
+        <label>
+          Modellsuche
+          <input id="modelSearch" type="search" placeholder="Kürzel tippen, z.B. jbhb" autocomplete="off" spellcheck="false">
+          <span class="field-hint" id="modelSearchHint">„MGH“, Bindestriche und Leerzeichen dürfen weggelassen werden.</span>
+        </label>
+
         <div class="field-with-add">
           <label>
             Modell
@@ -804,6 +810,20 @@
     const form = document.querySelector("#labelForm");
     const labelsElement = document.querySelector("#labels");
     const modelInput = document.querySelector("#model");
+    const modelSearchInput = document.querySelector("#modelSearch");
+    const modelSearchHint = document.querySelector("#modelSearchHint");
+    const MODEL_SEARCH_DEFAULT_HINT = modelSearchHint.textContent;
+    // Kuerzelsuche: "jbhb" findet "MGH - JBHB". Verglichen wird ohne
+    // Leerzeichen/Bindestriche/Grossschreibung, "mgh" am Anfang zaehlt nicht.
+    let modelSearchQuery = "";
+    function normalizeSearchKey(value) {
+      return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    }
+    function modelMatchesSearch(name) {
+      if (!modelSearchQuery) return true;
+      const key = normalizeSearchKey(name);
+      return key.includes(modelSearchQuery) || key.replace(/^mgh/, "").includes(modelSearchQuery);
+    }
     const labelModelNameInput = document.querySelector("#labelModelName");
     const labelSizeModeButtons = [...document.querySelectorAll("[data-label-size-mode]")];
     const positionButtons = [...document.querySelectorAll("[data-position]")];
@@ -1328,9 +1348,15 @@
 
     function renderOptionField(key) {
       const field = optionFields[key];
+      const previousValue = field.value;
       field.innerHTML = "";
 
-      options[key].forEach((value) => {
+      // Modell-Liste ggf. auf die Suchtreffer einschraenken; ohne Treffer
+      // bleibt die volle Liste stehen (der Hinweis sagt dann "keine Treffer").
+      const matches = key === "models" ? options[key].filter(modelMatchesSearch) : options[key];
+      const values = matches.length ? matches : options[key];
+
+      values.forEach((value) => {
         const item = document.createElement("option");
         item.value = value;
 
@@ -1339,9 +1365,10 @@
         field.append(item);
       });
 
-      const currentValue = field.value;
-      if (currentValue && !options[key].some((item) => item === currentValue)) {
-        field.value = options[key][0] || "";
+      if (previousValue && values.some((item) => item === previousValue)) {
+        field.value = previousValue;
+      } else {
+        field.value = values[0] || "";
       }
     }
 
@@ -1897,6 +1924,25 @@
       windingEditMode = false;
       syncLabelModelName(true);
       renderWindingData();
+    });
+
+    modelSearchInput.addEventListener("input", () => {
+      modelSearchQuery = normalizeSearchKey(modelSearchInput.value);
+      const before = modelInput.value;
+      renderOptionField("models");
+      const matches = options.models.filter(modelMatchesSearch);
+      if (!modelSearchQuery) {
+        modelSearchHint.textContent = MODEL_SEARCH_DEFAULT_HINT;
+      } else if (matches.length === 0) {
+        modelSearchHint.textContent = "Keine Treffer — Liste zeigt alle Modelle.";
+      } else {
+        modelSearchHint.textContent = matches.length === 1
+          ? "1 Treffer — Modell übernommen."
+          : `${matches.length} Treffer — Liste zeigt nur passende Modelle.`;
+      }
+      if (modelInput.value !== before) {
+        modelInput.dispatchEvent(new Event("change"));
+      }
     });
 
     editWindingButton.addEventListener("click", () => {
