@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   getPresetForOrderType,
   getCategoriesForOrderType,
@@ -259,6 +260,8 @@ export default function OrderDetailTabsNew({
   };
 
   const [activeTab, setActiveTab] = useState('spec');
+  // Werkzeuge (Kunden-PDF, Import, PDF, Aktualisieren) am Handy ein-/ausklappen
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<CategoryKey>>(() => {
     // Standardmäßig alle Kategorien anzeigen
     const categories = getCategoriesForOrderType(orderType);
@@ -729,24 +732,40 @@ export default function OrderDetailTabsNew({
                 dadurch stand der Sperrknopf allein in seiner Zeile. */}
             <div className="flex flex-wrap items-center gap-1.5">
               <h3 className="hidden sm:block font-semibold">Datenblatt - {TYPE_LABEL[orderType] || orderType}</h3>
+                {/* Bearbeiten ist jetzt ein Stift statt des grossen Leucht-
+                    knopfs: bernstein = gesperrt (tippen zum Entsperren),
+                    gruen = Bearbeitung aktiv. Am Handy sitzt derselbe Stift
+                    unten links neben "Alle" in der Part-Zeile. */}
                 <button
                   type="button"
                   onClick={() => setEditingDatasheet(v => !v)}
-                  className={`flex shrink-0 items-center gap-2 px-2.5 py-1.5 text-sm rounded-lg transition-all ${
+                  className={`hidden shrink-0 items-center justify-center rounded-lg border p-1.5 transition-colors md:inline-flex ${
                     editingDatasheet
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                      : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_14px_rgba(251,191,36,0.55)] animate-pulse'
+                      ? 'border-emerald-500/60 bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30'
+                      : 'border-amber-400/40 text-amber-300 hover:bg-amber-500/10'
                   }`}
-                  title={editingDatasheet ? 'Bearbeitung aktiv (entsperrt)' : 'Bearbeitung gesperrt'}
+                  title={editingDatasheet ? 'Bearbeitung aktiv — klicken zum Sperren' : 'Datenblatt bearbeiten (entsperren)'}
+                  aria-pressed={editingDatasheet}
+                  aria-label="Datenblatt bearbeiten"
                 >
-                  <span aria-hidden>{editingDatasheet ? '🔓' : '🔒'}</span>
-                  <span className="hidden sm:inline">{editingDatasheet ? 'Bearbeitung aktiv' : 'Bearbeitung gesperrt'}</span>
-                  <span className="sm:hidden">{editingDatasheet ? 'Entsperrt' : 'Gesperrt'}</span>
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
                 </button>
 
-                {/* Ab hier die Werkzeuge — auf grossen Schirmen rechtsbuendig,
-                    auf kleinen fliessen sie direkt hinter dem Sperrknopf weiter. */}
-                <span className="hidden sm:ml-auto sm:block" aria-hidden />
+                {/* Werkzeuge: am Handy hinter "⋯" — Kunden-PDF, Import und
+                    PDF braucht man unterwegs selten, und die Zeile brach sonst
+                    auf zwei Zeilen um. Ab md wie gehabt inline, rechtsbuendig. */}
+                <button
+                  type="button"
+                  onClick={() => setToolsOpen(v => !v)}
+                  className={`${TOOLBAR_BUTTON} md:hidden`}
+                  title="Weitere Werkzeuge (PDF, Import, Aktualisieren)"
+                  aria-expanded={toolsOpen}
+                >
+                  <span aria-hidden>⋯</span>
+                </button>
+                <div className={`${toolsOpen ? 'flex' : 'hidden'} w-full flex-wrap items-center gap-1.5 md:ml-auto md:flex md:w-auto`}>
 
                 {/* Kunden-Datenblatt: ausfüllbares PDF + Import */}
                 <CustomerDatasheetActions orderId={orderId} />
@@ -791,13 +810,14 @@ export default function OrderDetailTabsNew({
                   datasheetUpdatedAt={datasheetUpdatedAt}
                   stringCount={specValues['string_count'] || '–'}
                 />
+                </div>
             </div>
 
-            {/* Category Chips - nur anzeigen wenn mehr als eine Kategorie.
-                scrollbar-hide (so heisst die Klasse in globals.css): der sichtbare
-                Balken unter den Kategorien wirkte wie ein Fehler. Wischen geht weiter. */}
+            {/* Category Chips - nur Desktop und nur bei mehr als einer Kategorie.
+                Am Handy sitzt die Part-Auswahl stattdessen unten in der festen
+                Leiste ueber den Reitern (Daumenzone, immer erreichbar). */}
             {categories.length > 1 && (
-              <div className="scrollbar-hide -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+              <div className="hidden gap-2 md:flex md:flex-wrap">
                 <button
                   onClick={() => setActiveCategories(new Set(categories))}
                   className={`min-h-10 shrink-0 rounded-full px-3 py-1.5 text-sm ${activeCategories.size === categories.length ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -1875,10 +1895,64 @@ export default function OrderDetailTabsNew({
         }}
       >
         <div className="mx-auto max-w-lg">
-          <div className="mb-1 text-center text-[10px] uppercase tracking-wider text-slate-600">
-            Ansicht in diesem Auftrag
-          </div>
-          <div className="grid grid-cols-4 gap-1">
+          {/* Part-Auswahl (Body/Hals/…): nur im Datenblatt-Reiter. Flache
+              Rechtecke statt der runden Pillen von oben — die Optik soll zur
+              Reiterleiste darunter passen, nicht zur Hauptnavigation. */}
+          {activeTab === 'spec' && categories.length > 1 && (
+            <div className="mb-1 flex flex-wrap items-center justify-center gap-1 border-b border-slate-800/70 pb-1.5">
+              <button
+                type="button"
+                onClick={() => setEditingDatasheet(v => !v)}
+                className={`mr-1.5 flex items-center rounded-md border px-2.5 py-1 transition-colors ${
+                  editingDatasheet
+                    ? 'border-emerald-500/60 bg-emerald-600/25 text-emerald-300'
+                    : 'border-amber-400/40 text-amber-300'
+                }`}
+                title={editingDatasheet ? 'Bearbeitung aktiv — tippen zum Sperren' : 'Datenblatt bearbeiten (entsperren)'}
+                aria-pressed={editingDatasheet}
+                aria-label="Datenblatt bearbeiten"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveCategories(new Set(categories))}
+                className={`rounded-md px-3 py-1 text-[11px] font-medium transition-colors ${activeCategories.size === categories.length
+                  ? 'bg-slate-700 text-white'
+                  : 'text-slate-400 hover:text-slate-200'
+                  }`}
+              >
+                Alle
+              </button>
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setActiveCategories(new Set([category]))}
+                  className={`rounded-md px-3 py-1 text-[11px] font-medium transition-colors ${activeCategories.has(category) && activeCategories.size === 1
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                >
+                  {CATEGORY_LABELS[category]}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-[auto_1fr_1fr_1fr_1fr] gap-1">
+            {/* Rueckweg zur Auftragsliste, immer erreichbar in der Daumenzone —
+                der Kopfknopf oben scrollt weg (und ist am Handy ausgeblendet).
+                Bewusst in der Reiter-Zeile, nicht in der Part-Zeile: die gibt es
+                nur im Datenblatt-Reiter. */}
+            <Link
+              href="/app/orders"
+              aria-label="Zurück zur Auftragsübersicht"
+              className="flex min-h-[38px] items-center rounded-lg border border-slate-700 px-3 text-sm text-slate-300 hover:bg-slate-800"
+            >
+              <span aria-hidden>‹</span>
+            </Link>
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -1898,8 +1972,8 @@ export default function OrderDetailTabsNew({
         </div>
       </div>
 
-      {/* Padding unten für mobile Navigation */}
-      <div className="h-24 md:hidden"></div>
+      {/* Padding unten für mobile Navigation — hoeher, wenn die Part-Zeile dazukommt */}
+      <div className={`${activeTab === 'spec' && categories.length > 1 ? 'h-32' : 'h-24'} md:hidden`}></div>
     </div>
   );
 }

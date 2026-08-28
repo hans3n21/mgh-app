@@ -84,16 +84,17 @@ export default function OrderHeader({
       {/* Kein flex-wrap hier: sonst rutscht das Typ-Etikett bei langen Titeln in
           eine eigene Zeile, statt dass der Titel kuerzt. */}
       <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-1">
-        {/* Mit Chevron: als reine Brotkrume "Aufträge" wurde der Knopf nicht als
-            Rueckweg gelesen — am Handy ist er der einzige. Gleiches Muster wie das
-            "‹ Posteingang" im Mail-Lesebereich. */}
+        {/* Nur Desktop: am Handy sitzt der Rueckweg unten links in der festen
+            Reiter-Leiste (Daumenzone, scrollt nicht weg) — hier oben nahm er dem
+            Titel die Breite. Mit Chevron: als reine Brotkrume "Aufträge" wurde
+            der Knopf nicht als Rueckweg gelesen. */}
         <Link
           href="/app/orders"
-          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
+          className="hidden shrink-0 items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800 md:inline-flex"
         >
           <span aria-hidden="true">‹</span> Aufträge
         </Link>
-        <span className="text-sm text-slate-500">/</span>
+        <span className="hidden text-sm text-slate-500 md:inline">/</span>
         {isEditing ? (
           <div className="flex items-center gap-2">
             <input
