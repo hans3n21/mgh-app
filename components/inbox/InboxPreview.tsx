@@ -330,6 +330,12 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 
 	const safeHtml = useMemo(() => {
 		if (!message?.html) return '';
+		// Manche Absender (v.a. Kontaktformulare) deklarieren ihren Inhalt als
+		// HTML, schicken aber rohen Text ohne ein einziges Tag. Als HTML
+		// gerendert kollabieren dann alle Zeilenumbrueche zu Leerzeichen und
+		// die Mail wird ein Textklumpen. Ohne erkennbares Tag: leer zurueck-
+		// geben, dann greift unten der Text-Zweig mit whitespace-pre-wrap.
+		if (!/<[a-z][^>]*>/i.test(message.html)) return '';
 		try { return sanitizeBasic(message.html, message.attachments); } catch { return ''; }
 	}, [message?.html, message?.attachments]);
 
@@ -938,7 +944,16 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 							onApplyField={handleEntityApply}
 						/>
 					) : aiView === 'original' ? (
-						<div className="text-sm leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5" dangerouslySetInnerHTML={{ __html: safeHtml || `<pre class="whitespace-pre-wrap">${message.snippet}</pre>` }} />
+						safeHtml ? (
+							<div className="text-sm leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5" dangerouslySetInnerHTML={{ __html: safeHtml }} />
+						) : (
+							/* Reintext (oder Tag-loses "HTML"): Umbrueche erhalten. Vorher
+							   landete hier der snippet unescaped in __html — jetzt als
+							   React-Text, Links werden trotzdem klickbar. */
+							<pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-200">
+								{renderTextWithLinks(previewText || message.snippet || '')}
+							</pre>
+						)
 					) : null}
 				</div>
 			)}
