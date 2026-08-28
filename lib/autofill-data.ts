@@ -16,7 +16,7 @@ export const AUTO_FIELDS = new Set<string>([
   'inlays','frets','nut','side_dots','tuners','neck_binding','spokewheel',
   'finish_neck','headstock_finish','headstock_logo','neck_foot','customer_provides_body',
   // Finish / Allgemein
-  'finish_body','finish_body_top','finish_body_back','electronics','hardware_color','strap_pins','strings','tuning',
+  'finish_body','finish_body_top','finish_body_back','electronics','pickups_style','hardware_color','strap_pins','strings','tuning',
   // Oberflächenbehandlung
   'objekt','oberflaeche_typ','farbe','aged','speziallack',
   // Tonabnehmer
@@ -80,6 +80,8 @@ export const AUTOFILL_OPTIONS: Record<string,string[]> = {
   finish_body_top: ['Oil/Wax','High Gloss','Satin','Matt','Burst (Farbe in Notizen)','Deckend lackiert','Beize + Klarlack','Relic/Aged','Grobschliff (Kunde lackiert selbst)','Natural','Custom Graphic'],
   finish_body_back: ['Oil/Wax','High Gloss','Satin','Matt','Burst (Farbe in Notizen)','Deckend lackiert','Beize + Klarlack','Relic/Aged','Grobschliff (Kunde lackiert selbst)','Natural','Custom Graphic'],
   electronics: ['1x Vol','1x Vol, 1x Toggle','1x Vol, 1x Tone, 3-Way','1x Vol, 1x Tone, 5-Way','2x Vol, 2x Tone, 3-Way (Les Paul)','Push/Pull Coil Split','Zusätzlicher Killswitch','Custom Wiring'],
+  // Optik der verbauten Tonabnehmer (das Modell selbst steht im Feld "Pickups")
+  pickups_style: ['Open Coil Schwarz','Open Coil Weiß','Open Coil Creme','Open Coil Zebra','Cover Nickel','Cover Chrom','Cover Gold','Cover Schwarz','Aged/Relic','Custom (siehe Notizen)'],
   hardware_color: ['Black','Chrome','Gold','Nickel','Cosmo Black','Black Nickel','Aged Nickel','Satin Chrome'],
   strap_pins: ['Standard','Schaller Security Locks','Dunlop Straploks','Dunlop Flush Mount','Schwarz','Custom'],
   strings: ['.009-.042','.010-.046','.010-.052','.011-.049','.012-.054','Custom Gauge'],
