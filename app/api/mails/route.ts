@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { parseMail } from '@/lib/mail/parseMail';
 import { auth } from '@/lib/auth';
 import { TRASH_FOLDER_CANDIDATES } from '@/lib/mail/folders';
+import { SEARCH_STATEMENT_TIMEOUT_MS, SearchInterruptedError, withSearchGuard } from '@/lib/mail/searchGuard';
 
 export async function GET(req: NextRequest) {
 	try {
@@ -60,13 +62,20 @@ export async function GET(req: NextRequest) {
 		where.accountId = { in: accountIds };
 	}
 		if (q) {
-			where.OR = [
+			const searchFields: any[] = [
 				{ subject:   { contains: q, mode: 'insensitive' } },
 				{ fromEmail: { contains: q, mode: 'insensitive' } },
 				{ fromName:  { contains: q, mode: 'insensitive' } },
 				{ toEmail:   { contains: q, mode: 'insensitive' } },
-				{ text:      { contains: q, mode: 'insensitive' } },
 			];
+			// Volltext erst ab 3 Zeichen: kuerzere Begriffe treffen fast jede Mail
+			// und zwingen die DB durch saemtliche Mailtexte (Tabelle: mehrere GB).
+			// Auch der Trigram-Index (Migration 20260828150000) greift erst ab
+			// drei Zeichen richtig. Die Meta-Felder oben sind klein und schnell.
+			if (q.length >= 3) {
+				searchFields.push({ text: { contains: q, mode: 'insensitive' } });
+			}
+			where.OR = searchFields;
 		}
 		if (filter === 'assigned') {
 			where.orderId = { not: null };
@@ -79,8 +88,8 @@ export async function GET(req: NextRequest) {
 		}
 
 		const take = paginate ? limit + 1 : 200;
-		const rawMails: any[] = summary
-			? await prisma.mail.findMany({
+		const runList = (client: Prisma.TransactionClient | typeof prisma): Promise<any[]> => summary
+			? client.mail.findMany({
 				where,
 				orderBy: { date: 'desc' },
 				select: {
@@ -107,13 +116,17 @@ export async function GET(req: NextRequest) {
 				skip: paginate ? skip : undefined,
 				take,
 			})
-			: await prisma.mail.findMany({
+			: client.mail.findMany({
 				where,
 				orderBy: { date: 'desc' },
 				include: { attachments: true, order: { select: { id: true, title: true } } },
 				skip: paginate ? skip : undefined,
 				take,
 			});
+		// Nur die Suche braucht das Sicherheitsnetz (Zeitlimit + Abbruch-
+		// Weitergabe an Postgres, siehe lib/mail/searchGuard.ts). Die normale
+		// Ordnerliste laeuft ueber den zusammengesetzten Index und ist schnell.
+		const rawMails: any[] = q ? await withSearchGuard(req, runList) : await runList(prisma);
 		const hasMore = paginate && rawMails.length > limit;
 		const mails = paginate ? rawMails.slice(0, limit) : rawMails;
 
@@ -192,6 +205,18 @@ export async function GET(req: NextRequest) {
 		}
 		return NextResponse.json(enrichedMails);
 	} catch (error) {
+		if (error instanceof SearchInterruptedError) {
+			if (error.reason === 'aborted') {
+				// Der Browser hoert nicht mehr zu (Weitertippen, Ordnerwechsel).
+				// Kein Fehler, nichts loggen.
+				return new NextResponse(null, { status: 499 });
+			}
+			console.warn(`[mails] Suche nach ${SEARCH_STATEMENT_TIMEOUT_MS / 1000}s abgebrochen (statement_timeout)`);
+			return NextResponse.json({
+				error: 'search_timeout',
+				message: `Die Suche hat laenger als ${Math.round(SEARCH_STATEMENT_TIMEOUT_MS / 1000)} Sekunden gedauert und wurde abgebrochen. Bitte den Suchbegriff eingrenzen.`,
+			}, { status: 504 });
+		}
 		console.error('Failed to fetch mails:', error instanceof Error ? error.message : String(error));
 		return NextResponse.json({ error: 'Failed to fetch mails' }, { status: 500 });
 	}

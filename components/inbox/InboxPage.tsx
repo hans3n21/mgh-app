@@ -249,6 +249,9 @@ export default function InboxPage() {
 	const [syncing, setSyncing] = useState(false);
 	const [bgSyncing, setBgSyncing] = useState(false);
 	const [listActionError, setListActionError] = useState<string | null>(null);
+	// Suche vom Server abgebrochen (504, Zeitlimit) — statt "Kein Treffer" den
+	// Grund zeigen, sonst wirkt eine zu langsame Suche wie ein leeres Ergebnis.
+	const [listError, setListError] = useState<string | null>(null);
 	const [remoteSyncRunning, setRemoteSyncRunning] = useState(false);
 	const [remoteFullSyncRunning, setRemoteFullSyncRunning] = useState(false);
 	const [remoteSyncTotalAccounts, setRemoteSyncTotalAccounts] = useState(0);
@@ -400,6 +403,7 @@ export default function InboxPage() {
 			lastAppliedKeyRef.current = cacheKey;
 		}
 		if (!append) setLoadingMore(false);
+		if (!append) setListError(null);
 		if (append) setLoadingMore(true);
 		try {
 			const trimmedQ = debouncedQ.trim();
@@ -468,6 +472,18 @@ export default function InboxPage() {
 						if (oldestKey) mailCacheRef.current.delete(oldestKey);
 					}
 				}
+			} else if (res.status === 504 && !append) {
+				// Die Suche ist serverseitig ins Zeitlimit gelaufen (/api/mails).
+				// Alte Treffer waeren irrefuehrend, also Liste leeren und Grund zeigen.
+				let message = 'Die Suche hat zu lange gedauert. Bitte den Suchbegriff eingrenzen.';
+				try {
+					const data = await res.json();
+					if (typeof data?.message === 'string' && data.message) message = data.message;
+				} catch { /* kein JSON im Fehlerfall */ }
+				if (!canApply()) return;
+				setMessages([]);
+				setHasMore(false);
+				setListError(message);
 			}
 		} catch (error: any) {
 			if (error?.name !== 'AbortError') {
@@ -1228,6 +1244,8 @@ export default function InboxPage() {
 										<RowSkeleton key={i} />
 									))}
 								</div>
+							) : listError ? (
+								<EmptyState title="Suche abgebrochen" subtitle={listError} />
 							) : filtered.length === 0 ? (
 								<EmptyState title="Kein Treffer" subtitle="Passen Sie Suche oder Filter an." />
 							) : (
