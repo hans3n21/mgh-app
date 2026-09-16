@@ -9,6 +9,7 @@ import linkMailArtifactsToOrder from './linkArtifacts';
 import { extractAndStore } from './extraction';
 import { stripQuotedContent } from './stripQuotedContent';
 import { isSentFolderName } from './folders';
+import { planReconcile } from './reconcilePlan';
 import type { MailAccount } from '@prisma/client';
 
 const BATCH_SIZE = 10;
@@ -385,13 +386,19 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 	try {
 		let lastUid = 0;
 		const currentUidValidity = client.mailbox ? (client.mailbox as any).uidValidity : undefined;
+		// Hat sich die UIDVALIDITY geaendert, hat der Server den Ordner neu
+		// durchnummeriert: KEINE gespeicherte UID passt mehr zu einer Server-UID.
+		// Dann muss alles neu geladen werden (der Upsert per Message-ID heilt die
+		// UIDs), und ein UID-Abgleich (reconcile) waere in diesem Lauf sinnlos —
+		// er wuerde fast alle Mails als geloescht markieren.
+		const uidValidityChanged = Boolean(
+			stored && currentUidValidity && stored.uidValidity && String(stored.uidValidity) !== String(currentUidValidity)
+		);
 		if (stored) {
-			// Wenn UIDVALIDITY sich geändert hat, sind alte UIDs ungültig → Cursor ignorieren
-			if (currentUidValidity && stored.uidValidity && String(stored.uidValidity) !== String(currentUidValidity)) {
-				lastUid = 0; // Erzwinge kompletten Neuabruf
-			} else {
-				lastUid = stored.lastUid || 0;
-			}
+			lastUid = uidValidityChanged ? 0 : (stored.lastUid || 0);
+		}
+		if (uidValidityChanged) {
+			console.warn(`[sync] ${folderName}@${account.email}: UIDVALIDITY hat gewechselt (${stored?.uidValidity} -> ${currentUidValidity}), Ordner wird komplett neu geladen`);
 		}
 
 		// Die Momentaufnahme fuer den naechsten Lauf. Bewusst die Werte VOM ANFANG
@@ -420,7 +427,7 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 
 		if (!client.mailbox || client.mailbox.exists === 0) {
 			// Auch bei leerem Ordner Reconcile ausführen (markiert alle lokalen Mails als gelöscht)
-			const removed = await reconcileFolder(client, account.id, folderName);
+			const removed = await reconcileFolder(client, account.id, folderName, { uidsComparable: !uidValidityChanged });
 			await persistCursor(lastUid, removed !== null);
 			return { folder: folderName, success: true, processed: 0, removed: removed ?? 0 } satisfies FolderSyncResult;
 		}
@@ -432,7 +439,7 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 		if (mailboxUidNext && nextUid >= mailboxUidNext) {
 			// Keine neuen Nachrichten – Reconcile trotzdem ausführen!
 			// Sonst würden verschobene Mails (z.B. INBOX → Papierkorb in Outlook) nie aus der App verschwinden.
-			const removed = await reconcileFolder(client, account.id, folderName);
+			const removed = await reconcileFolder(client, account.id, folderName, { uidsComparable: !uidValidityChanged });
 			await persistCursor(lastUid, removed !== null);
 			return { folder: folderName, success: true, processed: 0, removed: removed ?? 0 } satisfies FolderSyncResult;
 		}
@@ -458,10 +465,18 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 			.sort((a, b) => a - b);
 
 		if (serverUids.length > 0) {
-			const known = await prisma.mail.findMany({
-				where: { accountId: account.id, folder: folderName, uid: { gt: lastUid } },
-				select: { uid: true },
-			});
+			// Als "bekannt" zaehlen nur sichtbare Zeilen. Eine als geloescht
+			// markierte Zeile mit passender UID heisst: die Mail ist (wieder) auf
+			// dem Server — sie wird neu geladen, der Upsert nimmt die Markierung
+			// zurueck. Vorher zaehlten markierte Zeilen als vorhanden, und eine
+			// einmal falsch markierte Mail kam nie wieder (16.09.2026: ~7.000 Mails).
+			// Nach einem UIDVALIDITY-Wechsel ist keine gespeicherte UID mehr gueltig.
+			const known = uidValidityChanged
+				? []
+				: await prisma.mail.findMany({
+					where: { accountId: account.id, folder: folderName, uid: { gt: lastUid }, isDeleted: false },
+					select: { uid: true },
+				});
 			const knownUids = new Set(known.map((m) => m.uid));
 			// Absteigend: die neuesten Mails zuerst laden. Bricht die Verbindung ab,
 			// sind die relevantesten Mails schon da; bereits geladene UIDs werden
@@ -503,7 +518,7 @@ export async function syncFolder(account: MailAccount, folderName: string) {
 
 		// Reconcile: mark locally stored mails as deleted if they no longer exist on the server.
 		// We fetch all UIDs currently in this folder from the server and compare against DB.
-		const removed = await reconcileFolder(client, account.id, folderName);
+		const removed = await reconcileFolder(client, account.id, folderName, { uidsComparable: !uidValidityChanged });
 
 		// Momentaufnahme nur bei rundum fehlerfreiem Lauf: Ist eine Nachricht
 		// nicht durchgekommen oder der Abgleich ausgefallen, soll der naechste
@@ -829,9 +844,14 @@ async function ingestMessage(
 
 /**
  * Reconcile: compare the server's current UIDs in the folder with our local DB.
- * Mails that exist locally (as this folder, not deleted) but are absent from the
- * server get marked as isDeleted so they disappear from the inbox view.
+ * In beide Richtungen:
+ *   lokal sichtbar, auf dem Server weg        -> isDeleted = true
+ *   lokal als geloescht markiert, UID noch da -> isDeleted = false (Ruecknahme)
  * Existing order/customer links on those mails are intentionally preserved.
+ *
+ * Bevor irgendetwas markiert wird, prueft planReconcile die UID-Liste auf
+ * Plausibilitaet (lib/mail/reconcilePlan.ts) — eine unvollstaendige Antwort
+ * des Servers hat frueher tausende Mails auf einmal ausgeblendet.
  *
  * Rueckgabe: Anzahl der als geloescht markierten Mails, oder null wenn der
  * Abgleich nicht durchlief. Das null ist wichtig — der Aufrufer darf dann keine
@@ -841,8 +861,13 @@ async function ingestMessage(
 async function reconcileFolder(
 	client: Awaited<ReturnType<typeof getImapClient>>,
 	accountId: string,
-	folderName: string
+	folderName: string,
+	options: { uidsComparable: boolean },
 ): Promise<number | null> {
+	if (!options.uidsComparable) {
+		console.warn(`[reconcile] ${folderName}@${accountId}: UIDVALIDITY hat gewechselt, Abgleich in diesem Lauf uebersprungen`);
+		return null;
+	}
 	try {
 		// Fetch all UIDs present on the server for this folder.
 		// imapflow's search() returns `false` (not a throw) on a failed search —
@@ -854,30 +879,39 @@ async function reconcileFolder(
 			return null;
 		}
 		const serverUids: number[] = Array.isArray(raw) ? raw.map((u) => Number(u)) : [];
-		const serverUidSet = new Set(serverUids);
 
-		// Find all non-deleted local mails for this account + folder.
+		// Alle lokalen Zeilen dieses Ordners, auch die markierten — die brauchen
+		// wir fuer die Ruecknahme.
 		const localMails = await prisma.mail.findMany({
-			where: {
-				accountId,
-				folder: folderName,
-				isDeleted: false,
-			},
-			select: { id: true, uid: true },
+			where: { accountId, folder: folderName },
+			select: { id: true, uid: true, isDeleted: true },
 		});
 
-		const missingIds = localMails
-			.filter((m) => m.uid > 0 && !serverUidSet.has(m.uid))
-			.map((m) => m.id);
+		const plan = planReconcile({
+			localMails,
+			serverUids,
+			serverExists: client.mailbox ? client.mailbox.exists : null,
+		});
+		if (!plan.ok) {
+			console.warn(`[reconcile] ${folderName}@${accountId}: Abgleich ausgesetzt — ${plan.reason}`);
+			return null;
+		}
 
-		if (missingIds.length > 0) {
+		if (plan.restoreIds.length > 0) {
 			await prisma.mail.updateMany({
-				where: { id: { in: missingIds } },
+				where: { id: { in: plan.restoreIds } },
+				data: { isDeleted: false },
+			});
+			console.log(`[reconcile] ${folderName}@${accountId}: ${plan.restoreIds.length} Mails wieder sichtbar (UID auf dem Server vorhanden)`);
+		}
+		if (plan.missingIds.length > 0) {
+			await prisma.mail.updateMany({
+				where: { id: { in: plan.missingIds } },
 				data: { isDeleted: true },
 			});
-			console.log(`[reconcile] ${folderName}@${accountId}: marked ${missingIds.length} mails as deleted`);
+			console.log(`[reconcile] ${folderName}@${accountId}: marked ${plan.missingIds.length} mails as deleted`);
 		}
-		return missingIds.length;
+		return plan.missingIds.length;
 	} catch (err) {
 		// Reconcile is best-effort; never abort a successful sync because of a reconcile error.
 		console.warn(`[reconcile] Failed for ${folderName}@${accountId}:`, err);
