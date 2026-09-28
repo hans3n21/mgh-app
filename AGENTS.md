@@ -28,6 +28,7 @@
 - Antwort-Vorlagen (ReplyTemplate)
 - Ungelesen-Indikator auf Dashboard, Auftragsübersicht und Kommunikation-Tab
 - Suche: Betreff/Absender/Empfänger als Teilstring (Trigram-Indizes), Mailtext über Wortindex nach Wortanfängen (`lib/mail/search.ts`)
+- Papierkorb-Probelauf: `npm run mail:trash-report` zählt, was sich ausdünnen ließe (löscht nichts)
 
 ### PII-Anonymisierung (DSGVO)
 - **Erkennung**: Regex (E-Mail, Telefon, IBAN, Adresse, PLZ, Kundennr.), DB-Abgleich (Kunden), Kontext-Patterns (Anrede, Grußformel) — international (DE/EN/FR/ES/IT/NL/SE)
@@ -96,6 +97,7 @@
 | `npm run imap:check` | IMAP-Verbindung testen |
 | `npm run mail:sync` | Mail-Synchronisation (einmalig) |
 | `npm run mail:sync-worker` | Mail-Sync-Worker (dauerhaft) |
+| `npm run mail:trash-report` | Papierkorb-Probelauf (nur Lesen) |
 
 ## Arbeitsregeln
 - **Vor PR**: `npm run lint && npm run build` muss erfolgreich sein
