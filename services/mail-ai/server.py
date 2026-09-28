@@ -9,7 +9,9 @@ import hmac
 import json
 import os
 import re
+import sys
 import threading
+import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -18,6 +20,18 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+# gliner2 schreibt beim Laden ein Emoji in die Konsole. In einer Windows-Konsole
+# mit alter Codepage (cp850/cp1252) brach der Modellstart daran mit
+# UnicodeEncodeError ab. Ausgaben duerfen den Dienst nie stoppen.
+for stream in (sys.stdout, sys.stderr):
+    try:
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+# Hinweise der Bibliotheken (veraltete Metadaten, Attention-Fallback) sind
+# harmlos, sehen im Startfenster aber wie Fehler aus.
+warnings.filterwarnings("ignore", module=r"(gliner2|torch|transformers)(\.|$)")
 
 MAX_TEXT = 60_000
 MAX_BODY = 262_144

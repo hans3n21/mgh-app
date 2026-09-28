@@ -16,7 +16,7 @@
     {
       "name": "dev-nosync",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/d", "/c", "set MAIL_SYNC_WORKER_INTERVAL_MS=0&& node node_modules\\next\\dist\\bin\\next dev --port 3100 --hostname 127.0.0.1"],
+      "runtimeArgs": ["/d", "/c", "set MAIL_SYNC_WORKER_INTERVAL_MS=0&& node node_modules\\next\\dist\\bin\\next dev --turbopack --port 3100 --hostname 127.0.0.1"],
       "port": 3100,
       "autoPort": false
     },

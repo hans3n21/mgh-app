@@ -64,6 +64,9 @@ $env:MAIL_AI_THREADS = [string]$Threads
 $env:MAIL_AI_FIELDS = if ($NoFields) { '0' } else { '1' }
 $env:HF_HUB_OFFLINE = '1'
 $env:TRANSFORMERS_OFFLINE = '1'
+# Sonst nutzt Python die alte Konsolen-Codepage und scheitert an Unicode-Ausgaben.
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
 Write-Host "Zugriffsschluessel fuer die MGH-Einstellungen: $tokenPath"
 Write-Host "Dienst: http://127.0.0.1:$Port  (Strg+C beendet)"
 Invoke-Native { & $python server.py } 'Mail-Analysedienst wurde mit einem Fehler beendet.'
