@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { FIELD_LABELS, CATEGORY_LABELS, getCategoriesForOrderType, getFieldsForCategory } from '@/lib/order-presets';
+import { FIELD_LABELS, CATEGORY_LABELS, getCategoriesForOrderType, getFieldsForCategory, CHECKBOX_FIELDS, CHECKBOX_DETAIL_FIELDS, DETAIL_FIELD_BY_CHECKBOX } from '@/lib/order-presets';
 import { TOOLBAR_BUTTON } from '@/lib/ui-classes';
 
 interface OrderSpec {
@@ -426,7 +426,23 @@ export default function DatasheetPDFGenerator({
       const hasTop =
         specs.some((spec) => spec.key === 'body_has_top' && isTruthySpecValue(spec.value)) ||
         specs.some((spec) => spec.key === 'body_top' && Boolean((spec.value || '').trim()));
-      const validSpecs = specs
+      // Checkbox + Detailangabe (Abschirmung, Fraesungen, Custom Finish, Pickguard)
+      // stehen als eine Zeile im Datenblatt: das Detail ersetzt das blosse "Ja",
+      // die separate Detailzeile entfaellt.
+      const specByKey = new Map(specs.map((spec) => [spec.key, spec]));
+      const mergedSpecs = specs
+        .filter((spec) => {
+          const controller = CHECKBOX_DETAIL_FIELDS[spec.key];
+          // Detailzeile nur schlucken, wenn die zugehoerige Checkbox gesetzt ist.
+          return !controller || !isTruthySpecValue(specByKey.get(controller)?.value);
+        })
+        .map((spec) => {
+          if (!CHECKBOX_FIELDS.has(spec.key) || !isTruthySpecValue(spec.value)) return spec;
+          const detail = (specByKey.get(DETAIL_FIELD_BY_CHECKBOX[spec.key] || '')?.value || '').trim();
+          return detail ? { ...spec, value: detail } : spec;
+        });
+
+      const validSpecs = mergedSpecs
         .filter(spec => spec.value && spec.value.trim())
         .filter(spec => spec.key !== 'string_count') // Wird bereits im Header angezeigt
         // Mit Top gilt das aufgeteilte Finish (Top/Korpus), das Gesamt-Finish entfällt.
@@ -442,8 +458,7 @@ export default function DatasheetPDFGenerator({
             spec.key === 'battery_compartment' ||
             spec.key === 'pickup_mount_direct' ||
             spec.key === 'pickup_mount_frame' ||
-            spec.key === 'customer_provides_body' ||
-            spec.key === 'customer_provides_neck'
+            CHECKBOX_FIELDS.has(spec.key)
           ) {
             return spec.value !== 'Nein' && spec.value !== 'nein' && spec.value !== 'no';
           }
@@ -519,7 +534,11 @@ export default function DatasheetPDFGenerator({
 
         // Finish-Felder in PDF immer unter "Finish" bündeln.
         if (category !== 'finish') {
-          categorySpecs = categorySpecs.filter(spec => !finishKeys.has(spec.key));
+          categorySpecs = categorySpecs
+            .filter(spec => !finishKeys.has(spec.key))
+            // Reihenfolge aus dem Preset -- sonst landen spaeter gepflegte Felder
+            // (z. B. die Fraesungen beim Pickguard) hinter den Notizen.
+            .sort((a, b) => fieldsInCategory.indexOf(a.key) - fieldsInCategory.indexOf(b.key));
         } else {
           const specMap = new Map(categorySpecs.map((spec) => [spec.key, spec]));
           const bodyFinishFromBody = validSpecs.find((spec) => spec.key === 'body_surface_treatment');

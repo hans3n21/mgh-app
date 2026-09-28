@@ -7,6 +7,9 @@ import {
   SPEC_PRESETS,
   FIELD_LABELS,
   CATEGORY_LABELS,
+  CHECKBOX_FIELDS,
+  CHECKBOX_DETAIL_FIELDS,
+  isMultilineField,
   type CategoryKey,
 } from './order-presets';
 import { AUTOFILL_OPTIONS } from './autofill-data';
@@ -66,9 +69,9 @@ export const FIELD_CONDITIONS: Record<string, FieldCondition> = {
   finish_body: { controller: 'body_has_top', hideWhen: JA },
   body_surface_treatment: { controller: 'body_has_top', hideWhen: JA },
 
-  // Ja/Nein-Feld mit Detailangabe dahinter
-  pickguard_material: { controller: 'pickguard_checkbox', showWhen: JA },
-  battery_compartment_details: { controller: 'battery_compartment_checkbox', showWhen: JA },
+  // Ja/Nein-Feld mit Detailangabe dahinter: kommt komplett aus
+  // CHECKBOX_DETAIL_FIELDS (siehe unten), damit PDF und Formular nicht
+  // auseinanderlaufen.
 
   // Logo-Notizen nur, wenn ueberhaupt ein Logo drauf soll
   headstock_logo_notes: { controller: 'headstock_logo', hideWhen: ['Kein Logo'] },
@@ -78,6 +81,13 @@ export const FIELD_CONDITIONS: Record<string, FieldCondition> = {
   farbe: { controller: 'oberflaeche_typ', hideWhen: [...GRAVUR, 'Öl/Wachs'] },
   aged: { controller: 'oberflaeche_typ', hideWhen: GRAVUR },
   speziallack: { controller: 'oberflaeche_typ', hideWhen: [...GRAVUR, 'Öl/Wachs'] },
+
+  ...Object.fromEntries(
+    Object.entries(CHECKBOX_DETAIL_FIELDS).map(([detail, controller]) => [
+      detail,
+      { controller, showWhen: JA } as FieldCondition,
+    ]),
+  ),
 };
 
 /** Bildbeispiele je Spec-Key. */
@@ -114,10 +124,7 @@ const EXTRA_LABELS: Record<string, string> = {
 };
 
 // Felder ohne Autofill-Vorgaben, die trotzdem reine Ja/Nein-Felder sind.
-const JA_NEIN_FIELDS = new Set<string>([
-  'pickguard_checkbox',
-  'battery_compartment_checkbox',
-]);
+const JA_NEIN_FIELDS = CHECKBOX_FIELDS;
 
 /**
  * Reine Ja/Nein-Felder werden im PDF als echtes Ankreuzkaestchen ausgegeben —
@@ -125,7 +132,7 @@ const JA_NEIN_FIELDS = new Set<string>([
  * Auswahlwerten (Pickguard-Material, Binding-Farbe) bleiben Dropdowns, sonst
  * gingen die Vorgaben verloren.
  */
-function isCheckboxField(key: string): boolean {
+export function isCheckboxField(key: string): boolean {
   if (JA_NEIN_FIELDS.has(key)) return true;
   const options = AUTOFILL_OPTIONS[key];
   if (!options || options.length !== 2) return false;
@@ -225,15 +232,7 @@ export function checkboxDetail(value?: string): string | undefined {
 }
 
 export function isMultiline(key: string): boolean {
-  return (
-    key.endsWith('_notes') ||
-    key.endsWith('_extras') ||
-    key.endsWith('_description') ||
-    key.endsWith('_details') ||
-    key === 'notes' ||
-    key === 'elektronikparts' ||
-    key === 'headstock_logo_notes'
-  );
+  return isMultilineField(key);
 }
 
 export function labelForSpecKey(key: string): string {

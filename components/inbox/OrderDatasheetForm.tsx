@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from 'react';
-import { getCategoriesForOrderType, getFieldsForCategory, FIELD_LABELS, CATEGORY_LABELS, isFieldRequired, shouldShowField, sortSpecsByDefinedOrder } from '@/lib/order-presets';
+import { getCategoriesForOrderType, getFieldsForCategory, FIELD_LABELS, CATEGORY_LABELS, isFieldRequired, shouldShowField, sortSpecsByDefinedOrder, CHECKBOX_FIELDS, shouldRenderDetailField, isMultilineField } from '@/lib/order-presets';
 import AutoFillInput from '@/components/AutoFillInput';
 import BindingInput from '@/components/BindingInput';
 import PickguardInput from '@/components/PickguardInput';
@@ -129,6 +129,8 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 
 	const shouldRenderField = (fieldKey: string) => {
 		if (fieldKey === 'pickup_mount_frame' || fieldKey === 'headstock_logo_notes') return false;
+		// Detailfeld hinter einer Checkbox (Abschirmung, Fraesungen, Custom Finish)
+		if (!shouldRenderDetailField(fieldKey, specValues)) return false;
 		const hasTop = isTruthySpecValue(specValues['body_has_top']);
 		const hasLegacyValue = Boolean((specValues[fieldKey] || '').trim());
 		if (fieldKey === 'body_top' || fieldKey === 'body_top_thickness') return hasTop || hasLegacyValue;
@@ -214,7 +216,7 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 										return (
 											<div key={fieldKey} className="rounded border border-slate-800 bg-slate-950/50 px-2.5 py-2">
 												<div className="text-[11px] text-slate-500 mb-1">{label}</div>
-												<div className={`text-sm leading-snug break-words ${value ? 'text-slate-200' : 'text-slate-600'}`}>
+												<div className={`text-sm leading-snug break-words whitespace-pre-wrap ${value ? 'text-slate-200' : 'text-slate-600'}`}>
 													{value || 'Nicht ausgefuellt'}
 												</div>
 											</div>
@@ -356,7 +358,7 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 																	onNotesChange={(v) => updateSpec('headstock_logo_notes', v)}
 																	hasError={!!hasError}
 																/>
-															) : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+															) : CHECKBOX_FIELDS.has(fieldKey) ? (
 																<div className="flex items-center gap-2">
 																	<input
 																		type="checkbox"
@@ -393,19 +395,33 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 																	onChange={(v) => updateSpec(fieldKey, v)}
 																	hasError={!!hasError}
 																/>
-															) : fieldKey === 'body_has_top' ? (
-																<div className="flex items-center gap-2">
-																	<input
-																		type="checkbox"
-																		id={`body-top-checkbox-left-${fieldKey}`}
-																		checked={isTruthySpecValue(specValues[fieldKey])}
-																		onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
-																		className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
-																	/>
-																	<label htmlFor={`body-top-checkbox-left-${fieldKey}`} className="text-sm cursor-pointer">
-																		Top vorhanden
-																	</label>
-																</div>
+															) : isMultilineField(fieldKey) ? (
+																<textarea
+																	value={specValues[fieldKey] || ''}
+																	onChange={(e) => updateSpec(fieldKey, e.target.value)}
+																	rows={3}
+																	onDragOver={(e) => {
+																		e.preventDefault();
+																		e.currentTarget.classList.add('border-emerald-500', 'bg-emerald-500/5');
+																	}}
+																	onDragLeave={(e) => {
+																		e.preventDefault();
+																		e.currentTarget.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+																	}}
+																	onDrop={(e) => {
+																		e.preventDefault();
+																		e.currentTarget.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+																		const text = e.dataTransfer.getData('text/plain');
+																		if (!text) return;
+																		// Mehrzeilige Felder sammeln an -- reingezogener Mailtext soll
+																		// den bisherigen Stand nicht ueberschreiben.
+																		const current = (specValues[fieldKey] || '').trim();
+																		updateSpec(fieldKey, current ? [current, text.trim()].join('\n') : text.trim());
+																	}}
+																	className={`w-full rounded bg-slate-950 border px-2 py-1.5 text-sm transition-colors resize-y min-h-[64px] ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600 hover:border-slate-700'}`}
+																	placeholder={isRequiredField ? 'Pflichtfeld...' : 'Mehrzeilig - Enter macht eine neue Zeile'}
+																	title="Text hierhin ziehen oder eingeben"
+																/>
 															) : AUTO_FIELDS.has(fieldKey) ? (
 																<AutoFillInput
 																	fieldKey={fieldKey}
@@ -496,7 +512,7 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 																	onNotesChange={(v) => updateSpec('headstock_logo_notes', v)}
 																	hasError={!!hasError}
 																/>
-															) : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+															) : CHECKBOX_FIELDS.has(fieldKey) ? (
 																<div className="flex items-center gap-2">
 																	<input
 																		type="checkbox"
@@ -533,19 +549,33 @@ export default function OrderDatasheetForm({ orderId, orderType, editable = true
 																	onChange={(v) => updateSpec(fieldKey, v)}
 																	hasError={!!hasError}
 																/>
-															) : fieldKey === 'body_has_top' ? (
-																<div className="flex items-center gap-2">
-																	<input
-																		type="checkbox"
-																		id={`body-top-checkbox-right-${fieldKey}`}
-																		checked={isTruthySpecValue(specValues[fieldKey])}
-																		onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
-																		className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
-																	/>
-																	<label htmlFor={`body-top-checkbox-right-${fieldKey}`} className="text-sm cursor-pointer">
-																		Top vorhanden
-																	</label>
-																</div>
+															) : isMultilineField(fieldKey) ? (
+																<textarea
+																	value={specValues[fieldKey] || ''}
+																	onChange={(e) => updateSpec(fieldKey, e.target.value)}
+																	rows={3}
+																	onDragOver={(e) => {
+																		e.preventDefault();
+																		e.currentTarget.classList.add('border-emerald-500', 'bg-emerald-500/5');
+																	}}
+																	onDragLeave={(e) => {
+																		e.preventDefault();
+																		e.currentTarget.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+																	}}
+																	onDrop={(e) => {
+																		e.preventDefault();
+																		e.currentTarget.classList.remove('border-emerald-500', 'bg-emerald-500/5');
+																		const text = e.dataTransfer.getData('text/plain');
+																		if (!text) return;
+																		// Mehrzeilige Felder sammeln an -- reingezogener Mailtext soll
+																		// den bisherigen Stand nicht ueberschreiben.
+																		const current = (specValues[fieldKey] || '').trim();
+																		updateSpec(fieldKey, current ? [current, text.trim()].join('\n') : text.trim());
+																	}}
+																	className={`w-full rounded bg-slate-950 border px-2 py-1.5 text-sm transition-colors resize-y min-h-[64px] ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600 hover:border-slate-700'}`}
+																	placeholder={isRequiredField ? 'Pflichtfeld...' : 'Mehrzeilig - Enter macht eine neue Zeile'}
+																	title="Text hierhin ziehen oder eingeben"
+																/>
 															) : AUTO_FIELDS.has(fieldKey) ? (
 																<AutoFillInput
 																	fieldKey={fieldKey}

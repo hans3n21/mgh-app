@@ -1,6 +1,12 @@
 import { prisma } from './prisma';
-import { isMultiline, labelForSpecKey } from './customer-datasheet';
-import { SPEC_PRESETS, type OrderType as PresetOrderType } from './order-presets';
+import { isMultiline, isCheckboxField, labelForSpecKey } from './customer-datasheet';
+import {
+  SPEC_PRESETS,
+  CHECKBOX_DETAIL_FIELDS,
+  DETAIL_FIELD_BY_CHECKBOX,
+  isCheckedSpecValue,
+  type OrderType as PresetOrderType,
+} from './order-presets';
 
 // Raten-Modi (Anzahlung/Restzahlung) wurden bewusst entfernt: Rechnungen gehen
 // nur noch über den vollen Endbetrag in den Shop. Der interne Zahlungsstand
@@ -80,10 +86,36 @@ export async function createWooOrderForInternal(orderId: string, options: Create
 
   // Freitext-Felder wie "Notizen" (z.B. pg_notes: "1:1 Kopie") stecken sonst
   // nirgends im Woo-Auftrag -- weder im Produktnamen noch in meta_data.
+  // Detailangaben hinter einer Checkbox laufen ueber checkboxSummary(), sonst
+  // staende "Abschirmung: Ja" und "Abschirmung (Details): ..." doppelt drin.
   function noteFieldsForOrder(): string[] {
+    const kv: Record<string, string> = Object.fromEntries(order.specs.map(s => [s.key, s.value]));
     return order.specs
       .filter(s => isMultiline(s.key) && s.value && s.value.trim())
+      .filter(s => {
+        const controller = CHECKBOX_DETAIL_FIELDS[s.key];
+        return !controller || !isCheckedSpecValue(kv[controller]);
+      })
       .map(s => `${labelForSpecKey(s.key)}: ${s.value.trim()}`);
+  }
+
+  // Angehakte Ja/Nein-Felder (Abschirmung, Fraesung hinzufuegen/weglassen,
+  // Custom Finish, Batteriefach ...) sind Arbeitsauftraege und gehoeren in den
+  // Woo-Auftrag. Steht eine Detailangabe dahinter, ersetzt sie das blosse "Ja".
+  function checkboxSummary(): string[] {
+    const kv: Record<string, string> = Object.fromEntries(order.specs.map(s => [s.key, s.value]));
+    const preset = SPEC_PRESETS[order.type as PresetOrderType];
+    const keys = preset ? Object.values(preset.fields).flat() : Object.keys(kv);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const key of keys) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!isCheckboxField(key) || !isCheckedSpecValue(kv[key])) continue;
+      const detail = (kv[DETAIL_FIELD_BY_CHECKBOX[key] || ''] || '').trim();
+      out.push(`${labelForSpecKey(key)}: ${detail || 'Ja'}`);
+    }
+    return out;
   }
 
   // Pflichtfelder je Auftragstyp (dieselbe Liste, die auch die
@@ -105,6 +137,7 @@ export async function createWooOrderForInternal(orderId: string, options: Create
   const secondary = secondaryDetailForType();
   const orderNotes = noteFieldsForOrder();
   const coreFields = requiredFieldSummary();
+  const checkboxFields = checkboxSummary();
 
   // Betrag ermitteln (Basis = Endbetrag in Cent)
   let baseCents: number | undefined = options.amountCents ?? undefined;
@@ -142,6 +175,7 @@ export async function createWooOrderForInternal(orderId: string, options: Create
     customer_note: [
       `Interne Auftrags-ID: ${order.id} (${order.title})`,
       ...coreFields,
+      ...checkboxFields,
       ...orderNotes,
     ].filter(Boolean).join('\n'),
     billing: {

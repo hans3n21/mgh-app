@@ -19,7 +19,9 @@ const GLOBAL_ALIASES: Record<string, string> = {
   decke: 'body_has_top',
   guitar_model: 'body_shape',
   neck_profile: 'headstock_type',
-  pickguard_color: 'pg_color_finish',
+  // Farbe/Finish beim Pickguard ist jetzt die Custom-Finish-Detailangabe.
+  pickguard_color: 'pg_custom_finish_details',
+  pg_color_finish: 'pg_custom_finish_details',
 };
 
 export function applyAliases(kv: Kv, orderType: string): Kv {

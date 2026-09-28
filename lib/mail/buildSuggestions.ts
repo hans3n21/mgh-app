@@ -13,7 +13,7 @@ export type SpecSuggestion = {
 // Aliase/Tags je Mail-key → Preset-Feld(er). In einem echten System
 // könnten diese aus dem Preset kommen. Hier schlicht gehalten.
 const MAIL_KEY_ALIASES: Record<string, string[]> = {
-  color: ['farbe', 'finish_body', 'pg_color_finish', 'body_color'],
+  color: ['farbe', 'finish_body', 'pg_custom_finish_details', 'body_color'],
   model: ['body_shape', 'headstock_type', 'pg_model', 'pickup_model', 'engraving_motif'],
   instrumentType: ['objekt'],
   notes: ['notes', 'repair_description'],
