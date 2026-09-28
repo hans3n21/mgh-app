@@ -27,6 +27,7 @@
 - Antworten direkt aus der App (SMTP)
 - Antwort-Vorlagen (ReplyTemplate)
 - Ungelesen-Indikator auf Dashboard, Auftragsübersicht und Kommunikation-Tab
+- Suche: Betreff/Absender/Empfänger als Teilstring (Trigram-Indizes), Mailtext über Wortindex nach Wortanfängen (`lib/mail/search.ts`)
 
 ### PII-Anonymisierung (DSGVO)
 - **Erkennung**: Regex (E-Mail, Telefon, IBAN, Adresse, PLZ, Kundennr.), DB-Abgleich (Kunden), Kontext-Patterns (Anrede, Grußformel) — international (DE/EN/FR/ES/IT/NL/SE)

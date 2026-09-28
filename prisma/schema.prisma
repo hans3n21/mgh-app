@@ -440,6 +440,15 @@ model Mail {
   @@index([fromEmail])
   @@index([date])
   @@index([accountId, folder, isDeleted, date])
+  // Posteingang-Suche (Teilstring) ueber Betreff/Absender/Empfaenger, siehe
+  // Migration 20260828150000. Hier eingetragen, damit `prisma migrate dev`
+  // sie nicht wieder loescht. Der Wortindex auf dem Mailtext
+  // ("Mail_text_fts_idx", Migration 20260928120000) ist ein Ausdrucks-Index,
+  // den Prisma nicht abbilden kann und darum ignoriert.
+  @@index([subject(ops: raw("gin_trgm_ops"))], type: Gin, map: "Mail_subject_trgm_idx")
+  @@index([fromName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Mail_fromName_trgm_idx")
+  @@index([fromEmail(ops: raw("gin_trgm_ops"))], type: Gin, map: "Mail_fromEmail_trgm_idx")
+  @@index([toEmail(ops: raw("gin_trgm_ops"))], type: Gin, map: "Mail_toEmail_trgm_idx")
 }
 
 model Attachment {
