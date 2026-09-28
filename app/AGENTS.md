@@ -14,6 +14,7 @@
 | `/app/prices` | Preise & Leistungen | ja |
 | `/app/procurement` | Beschaffung | ja |
 | `/app/settings` | Einstellungen | ja |
+| `/app/ki-training` | Lokale Modelle, eingefrorene Prüffälle, Vergleich und Trainingsdatenexport | admin / admin_no_feedback |
 | `/app/posteingang` | E-Mail-Inbox | ja |
 | `/app/posteingang/[id]` | Mail-Detail | ja |
 

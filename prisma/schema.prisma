@@ -420,6 +420,8 @@ model Mail {
 
   attachments    Attachment[]
   extraction     MailExtraction?
+  trainingReview MailTrainingReview?
+  aiTrainingCases AiTrainingCase[]
   
   isRead         Boolean      @default(false)
   isDeleted      Boolean      @default(false)
@@ -440,6 +442,40 @@ model Mail {
   @@index([fromEmail])
   @@index([date])
   @@index([accountId, folder, isDeleted, date])
+}
+
+// Immutable, explicitly reviewed snapshots. Deleting the source mail removes its cases/results.
+model AiTrainingCase {
+  id          String @id @default(cuid())
+  mailId      String
+  mail        Mail @relation(fields: [mailId], references: [id], onDelete: Cascade)
+  accountId   String
+  groupKeys   String[]
+  partition   String
+  title       String
+  snapshot    Json
+  expected    Json
+  fingerprint String
+  createdBy   String
+  createdAt   DateTime @default(now())
+  results     AiTrainingResult[]
+  @@index([accountId, partition])
+}
+
+model AiTrainingResult {
+  id          String @id @default(cuid())
+  caseId      String
+  case        AiTrainingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  model       String
+  digest      String
+  protocol    String
+  examples    Json
+  findings    Json
+  metrics     Json
+  durationMs  Int
+  error       String?
+  createdAt   DateTime @default(now())
+  @@index([caseId, createdAt])
 }
 
 model Attachment {
@@ -468,6 +504,20 @@ model MailExtraction {
   createdAt DateTime @default(now())
 
   @@index([mailId])
+}
+
+// Local, human-reviewed annotations. Model suggestions never write order data.
+model MailTrainingReview {
+  mailId      String   @id
+  mail        Mail     @relation(fields: [mailId], references: [id], onDelete: Cascade)
+  sourceHash  String
+  orderId     String?
+  revision    Int      @default(0)
+  annotations Json
+  history     Json
+  updatedAt   DateTime @updatedAt
+
+  @@index([updatedAt])
 }
 
 model OrderFieldSuggestion {

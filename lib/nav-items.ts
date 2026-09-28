@@ -9,6 +9,7 @@ export interface NavItem {
   /** Kuerzere Beschriftung fuer die schmale mobile Leiste. */
   shortLabel?: string;
   icon: string;
+  adminOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -20,5 +21,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/app/prices', label: 'Preise', icon: '💰' },
   { href: '/app/wissen', label: 'Wissen', icon: '📚' },
   { href: '/app/procurement', label: 'Einkauf', icon: '📦' },
+  { href: '/app/ki-training', label: 'KI-Training', icon: '🧪', adminOnly: true },
   { href: '/app/settings', label: 'Einstellungen', icon: '⚙️' },
 ];

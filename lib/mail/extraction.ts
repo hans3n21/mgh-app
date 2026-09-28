@@ -310,12 +310,13 @@ function runContextCityScan(text: string): ExtractedEntity[] {
 export async function extractEntities(
   inputText: string,
   inputHtml?: string | null,
+  options?: { skipDb?: boolean },
 ): Promise<ExtractedEntity[]> {
   const text = normalize(inputText) || normalize(inputHtml);
   if (!text || text.length < 5) return [];
 
   const regexEntities = runRegexScan(text);
-  const dbEntities = await runDbMatch(text);
+  const dbEntities = options?.skipDb ? [] : await runDbMatch(text);
   const contextNames = runContextNameScan(text);
   const contextCities = runContextCityScan(text);
 

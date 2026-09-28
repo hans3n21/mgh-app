@@ -11,6 +11,21 @@
 
 ## Alle Endpunkte (68 Routes)
 
+### Lokale Mailprüfung (Laya-Pilot)
+| Route | Methods | Beschreibung |
+|---|---|---|
+| `/api/settings/local-ai` | GET, PUT | Aktivierung, private Dienstadresse und Zugriffsschlüssel; Änderungen nur Admin, Schlüssel wird nie zurückgegeben |
+| `/api/settings/local-ai/test` | POST | Admin-Test mit Beispieltext und Auftragstyp; keine DB-Schreibaktion |
+| `/api/mails/[id]/local-ai` | POST, PUT | Manuelle lokale Auswertung einer zugeordneten Mail; PUT merkt einen belegten Wert als offenen Vorschlag vor, keine direkte Spec-Änderung |
+
+### Lokaler Trainingsmodus (nur Admins)
+| Route | Methods | Beschreibung |
+|---|---|---|
+| `/api/mails/[id]/training` | GET, POST | Markierungen, Feedback und Verlauf; Aktionen review, model und apply. Review aktualisiert Datenschutzmarkierungen, apply übernimmt separat bestätigte Auftragswerte mit Versions- und Altwertprüfung. Kein Cloud-Aufruf; Beispiele bleiben im selben Postfach. |
+| `/api/admin/ai-training` | GET, POST | Nur admin/admin_no_feedback. GET: Ollama-Einstellungen, neueste 100 Prüffälle mit je 12 Läufen. POST: config, models (lokale GGUFs), create (vollständig geprüften Mailstand einfrieren), compare (ein Fall/ein Modell), delete (Fall und Läufe), export (alle verfügbaren Lernfälle als lokales JSONL). Serialisierbare Gruppentrennung, keine Auftragsänderungen, kein Cloud-Fallback. |
+
+Ollama ersetzt bei aktivierter Konfiguration die Laya-Aktion im Mail-Trainingsmodus und bekommt den zeitlich begrenzten Gesprächskontext. Die bisherige Laya-Pilotfläche bleibt separat. Modellmarkierungen müssen vor Speicherung/Übernahme geprüft werden; Kontextänderungen machen die ursprüngliche Modellprüfung ungültig.
+
 ### Auth
 | Route | Methods | Beschreibung |
 |---|---|---|

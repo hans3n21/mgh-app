@@ -191,6 +191,24 @@ export async function restoreFromJson(backupPath: string): Promise<{ success: bo
         }
         counts.mails = mails.length;
         console.log(`     ✅ ${mails.length} mails`);
+
+        // Older backups legitimately have no local training files.
+        const mailExtractions = loadJsonFile(backupPath, 'mailExtractions.json');
+        for (const extraction of mailExtractions) {
+            await prisma.mailExtraction.create({ data: extraction });
+        }
+        counts.mailExtractions = mailExtractions.length;
+        const mailTrainingReviews = loadJsonFile(backupPath, 'mailTrainingReviews.json');
+        for (const review of mailTrainingReviews) {
+            await prisma.mailTrainingReview.create({ data: review });
+        }
+        counts.mailTrainingReviews = mailTrainingReviews.length;
+        const aiTrainingCases = loadJsonFile(backupPath, 'aiTrainingCases.json');
+        for (const trainingCase of aiTrainingCases) await prisma.aiTrainingCase.create({ data: trainingCase });
+        counts.aiTrainingCases = aiTrainingCases.length;
+        const aiTrainingResults = loadJsonFile(backupPath, 'aiTrainingResults.json');
+        for (const result of aiTrainingResults) await prisma.aiTrainingResult.create({ data: result });
+        counts.aiTrainingResults = aiTrainingResults.length;
         
         // 6. Attachments (abhängig von Mail)
         const attachments = loadJsonFile(backupPath, 'attachments.json');

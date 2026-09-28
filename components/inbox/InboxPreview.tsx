@@ -2,6 +2,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message } from './types';
 import ReplyComposer from './ReplyComposer';
+import LocalMailAnalysis from './LocalMailAnalysis';
+import MailTrainingPanel from './MailTrainingPanel';
 import ImageCarouselModal, { type CarouselImage } from '@/components/ImageCarouselModal';
 import AnnotatedMailText from './AnnotatedMailText';
 import KnowledgeCaptureButton from './KnowledgeCaptureButton';
@@ -239,6 +241,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 
 	const [extraction, setExtraction] = useState<{ entities: ExtractedEntity[]; plaintext: string } | null>(null);
 	const [extractionLoading, setExtractionLoading] = useState(false);
+	const [extractionRevision, setExtractionRevision] = useState(0);
 	const [annotatedView, setAnnotatedView] = useState(false);
 	const [contextMenu, setContextMenu] = useState<{ entity: ExtractedEntity; rect: DOMRect } | null>(null);
 	const [excludedPiiIndices, setExcludedPiiIndices] = useState<Set<number>>(new Set());
@@ -326,6 +329,17 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 			.catch(() => {})
 			.finally(() => { if (active) setExtractionLoading(false); });
 		return () => { active = false; };
+	}, [message?.id, extractionRevision]);
+
+	useEffect(() => {
+		const refresh = (event: Event) => {
+			if ((event as CustomEvent).detail?.mailId === message?.id) {
+				setExcludedPiiIndices(new Set());
+				setExtractionRevision(n => n + 1);
+			}
+		};
+		window.addEventListener('mgh:extraction-updated', refresh);
+		return () => window.removeEventListener('mgh:extraction-updated', refresh);
 	}, [message?.id]);
 
 	const safeHtml = useMemo(() => {
@@ -720,6 +734,10 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 
 	const mailContent = (
 		<div className="flex-1 overflow-auto px-4 py-3">
+			{!isSentFolder(message.folder) && !messageIsInTrash && <MailTrainingPanel key={`training:${message.id}:${linkedOrderId || ''}`} mailId={message.id} />}
+			{linkedOrderId && !isSentFolder(message.folder) && !messageIsInTrash && (
+				<LocalMailAnalysis key={`${message.id}:${linkedOrderId}`} mailId={message.id} orderId={linkedOrderId} />
+			)}
 			<div className="mb-3 flex items-center gap-1.5">
 				<div className="flex items-center gap-1">
 						{/* KI-Toggle (Original / KI) - nur wenn AI-Inhalt vorhanden */}
