@@ -39,6 +39,17 @@ export default function MailAiSettings() {
     finally { setBusy(''); }
   }
 
+  async function runNow() {
+    setBusy('run'); setError(''); setNotice(''); setResult(null);
+    try {
+      const res = await fetch('/api/settings/mail-ai/run', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setNotice(`Prüfung gestartet: ${[data.pii && 'Personenangaben', data.suggestions && 'Auftragsvorschläge'].filter(Boolean).join(' und ')}. Ergebnisse erscheinen nach und nach (Auftragsmails je nach Rechner 10 s bis 2 min pro Mail).`);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Start fehlgeschlagen.'); }
+    finally { setBusy(''); }
+  }
+
   async function test() {
     setBusy('test'); setError(''); setNotice(''); setResult(null);
     try {
@@ -66,6 +77,7 @@ export default function MailAiSettings() {
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={save} className="rounded border border-sky-600 px-3 py-1 text-sm text-sky-200">{busy === 'save' ? 'Speichert …' : 'Speichern'}</button>
         <button type="button" onClick={test} className="rounded border border-slate-600 px-3 py-1 text-sm">{busy === 'test' ? 'Prüft …' : 'Dienst testen'}</button>
+        <button type="button" onClick={runNow} disabled={!enabled} className="rounded border border-slate-600 px-3 py-1 text-sm disabled:opacity-50">{busy === 'run' ? 'Startet …' : 'Letzte 24 Stunden jetzt prüfen'}</button>
       </div>
     </fieldset>
     {notice && <p role="status" className="text-sm text-emerald-300">{notice}</p>}
