@@ -19,8 +19,9 @@ import { prisma } from '@/lib/prisma';
 // Darum laeuft die Suchabfrage hier in einer Transaktion mit SET LOCAL
 // statement_timeout, und ein Client-Abbruch wird per pg_cancel_backend an
 // genau den Postgres-Prozess weitergereicht, der unsere Abfrage ausfuehrt.
-// Die eigentliche Beschleunigung kommt aus den Trigram-Indizes (Migration
-// 20260828150000_add_mail_search_trgm_indexes); das hier ist das Sicherheitsnetz.
+// Die eigentliche Beschleunigung kommt aus dem Wortindex auf dem Mailtext
+// (Migration 20260928120000_add_mail_fulltext_search, lib/mail/search.ts) und
+// den Trigram-Indizes auf Betreff/Adressen; das hier ist das Sicherheitsnetz.
 
 export const SEARCH_STATEMENT_TIMEOUT_MS = 20_000;
 
