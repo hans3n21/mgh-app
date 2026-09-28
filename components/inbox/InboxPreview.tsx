@@ -1042,7 +1042,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 							<p className="text-sm font-semibold text-slate-100">Vor dem KI-Versand</p>
 							<p className="text-xs text-slate-400 mt-0.5">
 								{(() => {
-									const activeEntities = extraction?.entities?.filter((_, i) => !excludedPiiIndices.has(i)) ?? [];
+									const activeEntities = extraction?.entities?.filter((e, i) => e.pii && !excludedPiiIndices.has(i)) ?? [];
 									if (activeEntities.length === 0 && !extraction) return 'Die E-Mail wird noch analysiert. Trotzdem senden?';
 									if (activeEntities.length === 0) return 'Keine personenbezogenen Daten erkannt. Mail wird so gesendet.';
 									return `${activeEntities.length} Stelle${activeEntities.length !== 1 ? 'n' : ''} anonymisiert. Alles korrekt?`;

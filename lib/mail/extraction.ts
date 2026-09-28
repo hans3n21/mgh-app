@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { followsInstrumentPart, isWorkshopTerm } from './workshop-terms';
 
 export type EntityType =
   | 'email'
@@ -25,6 +26,37 @@ export interface ExtractedEntity {
   confidence: number;
   source: EntitySource;
   pii: boolean;
+  /** Von einem Menschen als "keine personenbezogene Angabe" verworfen (dann pii: false).
+   *  Bleibt gespeichert, damit Neuerkennung und Anonymisierung die Entscheidung kennen. */
+  dismissed?: boolean;
+  /** Zeitpunkt der menschlichen Entscheidung (Hinzufuegen oder Verwerfen). */
+  decidedAt?: string;
+}
+
+const decisionKey = (text: string) => text.replace(/\s+/g, ' ').trim().toLocaleLowerCase('de');
+
+/**
+ * Texte, die ein Mensch verworfen und nicht spaeter wieder manuell markiert hat.
+ * Gilt fuer die ganze Mail, unabhaengig von der Position.
+ */
+export function dismissedTexts(entities: ExtractedEntity[]): Set<string> {
+  const remarked = new Set(entities.filter(e => e.source === 'manual' && !e.dismissed).map(e => decisionKey(e.text)));
+  return new Set(entities.filter(e => e.dismissed).map(e => decisionKey(e.text)).filter(k => !remarked.has(k)));
+}
+
+/**
+ * Neuerkennung (z. B. nach einem Ordnerwechsel) darf menschliche Entscheidungen
+ * nicht ueberschreiben: manuelle Markierungen und Verwerfungen bleiben, erneut
+ * erkannte verworfene Texte fallen weg.
+ */
+export function mergeManualDecisions(fresh: ExtractedEntity[], previous: unknown): ExtractedEntity[] {
+  const prev = Array.isArray(previous) ? (previous as ExtractedEntity[]) : [];
+  const decisions = prev.filter(e => e && typeof e.text === 'string' && (e.source === 'manual' || e.dismissed));
+  if (!decisions.length) return fresh;
+  const dismissed = dismissedTexts(decisions);
+  const kept = fresh.filter(e => !dismissed.has(decisionKey(e.text)) &&
+    !decisions.some(d => !d.dismissed && d.start === e.start && d.end === e.end));
+  return [...kept, ...decisions];
 }
 
 const PATTERNS: Array<{ type: EntityType; regex: RegExp; confidence: number }> = [
@@ -292,6 +324,8 @@ function runContextCityScan(text: string): ExtractedEntity[] {
     let match: RegExpExecArray | null;
     while ((match = re.exec(text)) !== null) {
       const city = match[1];
+      // "Korpus aus Erle" ist eine Holzangabe, kein Herkunftsort.
+      if (isWorkshopTerm(city) || followsInstrumentPart(text, match.index)) continue;
       const cityStart = match.index + match[0].indexOf(city);
       entities.push({
         type: 'address',
@@ -324,7 +358,8 @@ export async function extractEntities(
 }
 
 export async function extractAndStore(mailId: string, text?: string | null, html?: string | null): Promise<ExtractedEntity[]> {
-  const entities = await extractEntities(text || '', html);
+  const previous = await prisma.mailExtraction.findUnique({ where: { mailId }, select: { entities: true } });
+  const entities = mergeManualDecisions(await extractEntities(text || '', html), previous?.entities);
 
   await prisma.mailExtraction.upsert({
     where: { mailId },
