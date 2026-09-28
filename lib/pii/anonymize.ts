@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { dismissedTexts, extractEntities, isPiiEntity, type ExtractedEntity } from '@/lib/mail/extraction';
+import { detectPii } from '@/lib/mail-ai/client';
 import { tokenizePII, rehydratePII, type TokenMap } from './tokenizer';
 
 /**
@@ -88,8 +89,10 @@ export async function anonymizeText(
   text: string,
   mailId?: string | null,
 ): Promise<AnonymizeResult> {
-  const [stored, fresh] = await Promise.all([loadStoredEntities(mailId), extractEntities(text)]);
-  const located = locatePiiEntities(text, [...stored, ...fresh]);
+  // Drei Quellen: gespeicherte Funde der Mail, Regeln und (falls aktiviert) das
+  // lokale Modell, jeweils auf genau diesem Text. Ohne Dienst bleibt es bei den Regeln.
+  const [stored, fresh, model] = await Promise.all([loadStoredEntities(mailId), extractEntities(text), detectPii(text)]);
+  const located = locatePiiEntities(text, [...stored, ...fresh, ...model]);
 
   if (located.length === 0) {
     return { anonymizedText: text, tokenMap: {}, hadEntities: false };

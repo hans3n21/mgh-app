@@ -20,6 +20,20 @@ describe('Ortserkennung', () => {
   });
 });
 
+describe('Namen in der Grußformel', () => {
+  const names = async (text: string) =>
+    (await extractEntities(text, null, { skipDb: true })).filter(e => e.type === 'name').map(e => e.text);
+
+  it('erfasst Vor- und Nachnamen auf der Folgezeile', async () => {
+    expect(await names('Mit freundlichen Grüßen\nKatrin Probe\nBeispielweg 7a')).toContain('Katrin Probe');
+    expect(await names('Grüße aus Erlangen\nPaul Esche')).toContain('Paul Esche');
+  });
+
+  it('haelt kleingeschriebenen Folgetext nicht fuer einen Namen', async () => {
+    expect(await names('Viele Grüße\nhier noch ein Nachtrag')).toEqual([]);
+  });
+});
+
 describe('mergeManualDecisions', () => {
   const e = (text: string, extra: Partial<ExtractedEntity> = {}): ExtractedEntity => ({
     type: 'name', text, start: 0, end: text.length, confidence: 0.8, source: 'regex', pii: true, ...extra,

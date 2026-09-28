@@ -50,13 +50,28 @@ export function dismissedTexts(entities: ExtractedEntity[]): Set<string> {
  * erkannte verworfene Texte fallen weg.
  */
 export function mergeManualDecisions(fresh: ExtractedEntity[], previous: unknown): ExtractedEntity[] {
-  const prev = Array.isArray(previous) ? (previous as ExtractedEntity[]) : [];
-  const decisions = prev.filter(e => e && typeof e.text === 'string' && (e.source === 'manual' || e.dismissed));
-  if (!decisions.length) return fresh;
+  const prev = (Array.isArray(previous) ? (previous as ExtractedEntity[]) : []).filter(e => e && typeof e.text === 'string');
+  const decisions = prev.filter(e => e.source === 'manual' || e.dismissed);
+  const modelFinds = prev.filter(e => e.source === 'ml' && !e.dismissed);
+  if (!decisions.length && !modelFinds.length) return fresh;
   const dismissed = dismissedTexts(decisions);
   const kept = fresh.filter(e => !dismissed.has(decisionKey(e.text)) &&
     !decisions.some(d => !d.dismissed && d.start === e.start && d.end === e.end));
-  return [...kept, ...decisions];
+  // Modellfunde der Hintergrundpruefung ueberleben die Neuerkennung ebenfalls.
+  return mergeModelEntities([...kept, ...decisions], modelFinds);
+}
+
+/**
+ * Modellfunde (Quelle "ml") ersetzen fruehere Modellfunde. Menschlich verworfene
+ * Texte bleiben verworfen, und wo schon eine Regel oder ein Mensch markiert hat,
+ * kommt keine zweite, ueberlappende Markierung dazu.
+ */
+export function mergeModelEntities(existing: ExtractedEntity[], model: ExtractedEntity[]): ExtractedEntity[] {
+  const kept = existing.filter(e => e.source !== 'ml' || e.dismissed);
+  const dismissed = dismissedTexts(kept);
+  const active = kept.filter(e => e.pii && !e.dismissed);
+  const added = model.filter(m => !dismissed.has(decisionKey(m.text)) && !active.some(e => m.start < e.end && m.end > e.start));
+  return [...kept, ...added];
 }
 
 const PATTERNS: Array<{ type: EntityType; regex: RegExp; confidence: number }> = [
@@ -262,27 +277,27 @@ const CONTEXT_NAME_PATTERNS: RegExp[] = [
   new RegExp(`(?:Herr|Frau)[ ]+${NAME_GROUP}`, 'g'),
   new RegExp(`z\\.?\\s*(?:Hd|HD)\\.?\\s*(?:(?:Herr|Frau)[ ]+)?${NAME_GROUP}`, 'g'),
   new RegExp(`(?:Hallo|Hi|Hey)[ ]+(${CAP_NAME})`, 'g'),
-  // DE – Grußformel (darf Zeilenumbruch enthalten)
-  new RegExp(`(?:Grüße|Gruß|Gruss|Viele\\s+Grüße|Liebe\\s+Grüße|Mit\\s+freundlichen\\s+Grüßen)[,\\n]\\s*(${CAP_NAME})`, 'gi'),
+  // DE – Grußformel (darf Zeilenumbruch enthalten, auch "Grüße aus Erlangen\nName")
+  new RegExp(`(?:Grüße|Gruß|Gruss|Viele\\s+Grüße|Liebe\\s+Grüße|Mit\\s+freundlichen\\s+Grüßen)(?:[ ][^\\n,]{1,40})?[,\\n]\\s*${NAME_GROUP}`, 'gi'),
   // EN – salutation (same line)
   new RegExp(`(?:Mr\\.?|Mrs\\.?|Ms\\.?|Miss|Dr\\.?)[ ]+${NAME_GROUP}`, 'g'),
   new RegExp(`(?:Dear|Attn\\.?|Attention:?)[ ]+${NAME_GROUP}`, 'gi'),
   // EN – closing (may cross line)
-  new RegExp(`(?:Regards|Best\\s+regards|Kind\\s+regards|Sincerely|Yours\\s+truly|Best\\s+wishes|Cheers)[,\\n]\\s*(${CAP_NAME})`, 'gi'),
+  new RegExp(`(?:Regards|Best\\s+regards|Kind\\s+regards|Sincerely|Yours\\s+truly|Best\\s+wishes|Cheers)[,\\n]\\s*${NAME_GROUP}`, 'gi'),
   // FR
   new RegExp(`(?:Monsieur|Madame|Mme\\.?|M\\.?)[ ]+${NAME_GROUP}`, 'g'),
-  new RegExp(`(?:Cordialement|Bien\\s+cordialement|Salutations)[,\\n]\\s*(${CAP_NAME})`, 'gi'),
+  new RegExp(`(?:Cordialement|Bien\\s+cordialement|Salutations)[,\\n]\\s*${NAME_GROUP}`, 'gi'),
   // ES
   new RegExp(`(?:Señor|Señora|Sr\\.?|Sra\\.?|Estimado|Estimada)[ ]+${NAME_GROUP}`, 'gi'),
-  new RegExp(`(?:Saludos|Atentamente|Cordialmente)[,\\n]\\s*(${CAP_NAME})`, 'gi'),
+  new RegExp(`(?:Saludos|Atentamente|Cordialmente)[,\\n]\\s*${NAME_GROUP}`, 'gi'),
   // IT
   new RegExp(`(?:Signor|Signora|Sig\\.?|Sig\\.ra)[ ]+${NAME_GROUP}`, 'g'),
-  new RegExp(`(?:Cordiali\\s+saluti|Distinti\\s+saluti)[,\\n]\\s*(${CAP_NAME})`, 'gi'),
+  new RegExp(`(?:Cordiali\\s+saluti|Distinti\\s+saluti)[,\\n]\\s*${NAME_GROUP}`, 'gi'),
   // NL
   new RegExp(`(?:Geachte|Heer|Mevrouw)[ ]+${NAME_GROUP}`, 'g'),
-  new RegExp(`(?:Met\\s+vriendelijke\\s+groet|Groeten)[,\\n]\\s*(${CAP_NAME})`, 'gi'),
+  new RegExp(`(?:Met\\s+vriendelijke\\s+groet|Groeten)[,\\n]\\s*${NAME_GROUP}`, 'gi'),
   // SE/DK/NO
-  new RegExp(`(?:Herr|Fru|Hälsningar|Vänliga\\s+hälsningar)[,\\n]\\s*(${CAP_NAME})`, 'gi'),
+  new RegExp(`(?:Herr|Fru|Hälsningar|Vänliga\\s+hälsningar)[,\\n]\\s*${NAME_GROUP}`, 'gi'),
 ];
 
 function runContextNameScan(text: string): ExtractedEntity[] {
@@ -291,8 +306,13 @@ function runContextNameScan(text: string): ExtractedEntity[] {
     const re = new RegExp(pattern.source, pattern.flags);
     let match: RegExpExecArray | null;
     while ((match = re.exec(text)) !== null) {
-      const name = match[1];
-      const nameStart = match[0].lastIndexOf(name);
+      // Die Grußformel-Muster laufen mit Flag "i", damit passt das Namensmuster
+      // auch auf kleingeschriebene Woerter. Nur fuehrende grossgeschriebene
+      // Woerter sind ein Name ("Katrin Probe", nicht "hier noch was").
+      const leading = match[1].match(/^[A-ZÀ-ÖØ-Þ][^ ]*(?: +[A-ZÀ-ÖØ-Þ][^ ]*)*/);
+      if (!leading) continue;
+      const name = leading[0];
+      const nameStart = match[0].lastIndexOf(match[1]);
       const absoluteStart = match.index + nameStart;
       entities.push({
         type: 'name',

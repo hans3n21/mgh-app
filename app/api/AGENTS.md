@@ -11,6 +11,14 @@
 
 ## Alle Endpunkte (68 Routes)
 
+### Lokale Mail-Analyse (GLiNER-Dienst, services/mail-ai)
+| Route | Methods | Beschreibung |
+|---|---|---|
+| `/api/settings/mail-ai` | GET, PUT | Aktivierung, lokale/private Dienstadresse und Zugriffsschlüssel; Änderungen nur Admin, Schlüssel wird nie zurückgegeben |
+| `/api/settings/mail-ai/test` | POST | Admin-Test: Dienststatus plus Erkennung auf einem erfundenen Text; keine echte Mail, keine DB-Schreibaktion |
+
+Der Dienst ergänzt die Regeln bei der Anonymisierung vor jedem externen KI-Aufruf (`lib/pii/anonymize.ts`) und prüft neue Mails im Hintergrund nach dem Sync (`lib/mail-ai/background.ts`, Funde mit Quelle `ml` in `MailExtraction`). Ohne aktivierten oder erreichbaren Dienst gilt nur die Regelerkennung.
+
 ### Lokale Mailprüfung (Laya-Pilot)
 | Route | Methods | Beschreibung |
 |---|---|---|

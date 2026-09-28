@@ -6,6 +6,7 @@ import SpeechSettings from '@/components/SpeechSettings';
 import UpdateTemplateSettings from '@/components/UpdateTemplateSettings';
 import AiSettings from '@/components/AiSettings';
 import LocalAiSettings from '@/components/LocalAiSettings';
+import MailAiSettings from '@/components/MailAiSettings';
 import TelephonySettings from '@/components/TelephonySettings';
 import DhlSettings from '@/components/DhlSettings';
 import DatevSettings from '@/components/DatevSettings';
@@ -31,6 +32,8 @@ export default async function SettingsPage() {
       <SpeechSettings />
 
       <AiSettings />
+
+      <MailAiSettings />
 
       <LocalAiSettings />
 
