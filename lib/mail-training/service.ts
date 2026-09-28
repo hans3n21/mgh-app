@@ -20,6 +20,25 @@ const mailSelect = { id: true, text: true, html: true, orderId: true, accountId:
 type Client = Prisma.TransactionClient;
 const asJson = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 
+/**
+ * Auftragsfeld nur setzen, wenn es noch den Wert hat, den der Mensch beim
+ * Entscheiden gesehen hat. Liefert den Altwert fuer den Verlauf.
+ */
+export async function writeOrderSpec(tx: Client, orderId: string, specs: { key: string; value: string | null }[],
+  field: string, expectedValue: string, newValue: string) {
+  const current = specs.filter(s => s.key === field);
+  if (current.length > 1) throw new ReviewError('Das Auftragsfeld ist mehrfach vorhanden. Bitte zuerst im Auftrag bereinigen.');
+  const value = current[0]?.value || '';
+  if (value !== expectedValue) throw new ReviewError('Das Auftragsfeld wurde inzwischen geändert. Bitte neu laden und vergleichen.');
+  if (current.length) {
+    const changed = await tx.orderSpecKV.updateMany({ where: { orderId, key: field, value }, data: { value: newValue } });
+    if (changed.count !== 1) throw new ReviewError('Das Auftragsfeld hat sich geändert. Bitte neu laden.');
+  }
+  else await tx.orderSpecKV.create({ data: { orderId, key: field, value: newValue } });
+  await tx.order.update({ where: { id: orderId }, data: { lastActivityAt: new Date() } });
+  return value;
+}
+
 async function load(client: Client, id: string) {
   const mail = await client.mail.findUnique({ where: { id }, select: mailSelect });
   if (!mail || mail.isDeleted) throw new ReviewError('Mail nicht gefunden.', 404);
@@ -131,18 +150,9 @@ export async function mutateTraining(id: string, body: z.infer<typeof MutationSc
       const offset = text.indexOf(fresh);
       if (!fresh || offset < 0 || a.start < offset || a.end > offset + fresh.length)
         throw new ReviewError('Diese Stelle gehört zum zitierten Verlauf. Bitte die aktuelle Kundenaussage markieren.');
-      const current = mail.order.specs.filter(s => s.key === a.field);
-      if (current.length > 1) throw new ReviewError('Das Auftragsfeld ist mehrfach vorhanden. Bitte zuerst im Auftrag bereinigen.');
-      const value = current[0]?.value || '';
-      if (value !== body.expectedValue) throw new ReviewError('Das Auftragsfeld wurde inzwischen geändert. Bitte neu laden und vergleichen.');
       if (history.some(e => e.action === 'apply' && e.annotationId === a.id && e.newValue === a.value && e.orderId === mail.orderId))
         throw new ReviewError('Diese Entscheidung wurde bereits übernommen. Eine erneute Änderung bitte neu prüfen.');
-      if (current.length) {
-        const changed = await tx.orderSpecKV.updateMany({ where: { orderId: mail.orderId, key: a.field, value }, data: { value: a.value } });
-        if (changed.count !== 1) throw new ReviewError('Das Auftragsfeld hat sich geändert. Bitte neu laden.');
-      }
-      else await tx.orderSpecKV.create({ data: { orderId: mail.orderId, key: a.field, value: a.value } });
-      await tx.order.update({ where: { id: mail.orderId }, data: { lastActivityAt: new Date() } });
+      const value = await writeOrderSpec(tx, mail.orderId, mail.order.specs, a.field, body.expectedValue, a.value);
       Object.assign(event, { annotationId: a.id, orderId: mail.orderId, field: a.field, oldValue: value, newValue: a.value });
     }
     const data = { sourceHash: hash, orderId: mail.orderId, annotations: asJson(annotations), history: asJson([...history, event]) };
