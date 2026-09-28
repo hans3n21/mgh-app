@@ -9,20 +9,27 @@ param(
 # Modellgewichte); danach laeuft alles offline auf diesem Rechner.
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
+
+# Windows PowerShell 5.1 wertet jede stderr-Zeile eines Programms (etwa harmlose
+# Warnungen von pip oder Hugging Face) als Fehler und bricht unter 'Stop' ab.
+# Fuer externe Programme deshalb nur den Exit-Code pruefen.
+function Invoke-Native([scriptblock]$Command, [string]$Failure) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Command 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $previous }
+    if ($LASTEXITCODE -ne 0) { throw $Failure }
+}
 $python = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
 $dataPath = Join-Path $PSScriptRoot 'data'
 $models = Join-Path $dataPath 'models'
 
 if ($Install) {
     if (!(Test-Path -LiteralPath $python)) {
-        & $PythonExe -3 -m venv .venv
-        if ($LASTEXITCODE -ne 0) { throw 'Python 3.12 oder neuer installieren (py-Launcher) oder -PythonExe angeben.' }
+        Invoke-Native { & $PythonExe -3 -m venv .venv } 'Python 3.12 oder neuer installieren (py-Launcher) oder -PythonExe angeben.'
     }
-    & $python -m pip install --upgrade pip
-    & $python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.14.0'
-    if ($LASTEXITCODE -ne 0) { throw 'CPU-PyTorch konnte nicht installiert werden.' }
-    & $python -m pip install -r requirements.txt
-    if ($LASTEXITCODE -ne 0) { throw 'Pakete konnten nicht installiert werden.' }
+    Invoke-Native { & $python -m pip install --upgrade pip } 'pip konnte nicht aktualisiert werden.'
+    Invoke-Native { & $python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.14.0' } 'CPU-PyTorch konnte nicht installiert werden.'
+    Invoke-Native { & $python -m pip install -r requirements.txt } 'Pakete konnten nicht installiert werden.'
     # Feste Modellstaende (Commit-Kennungen), in normale Ordner statt in den
     # Symlink-Cache: Windows-Konten ohne Symlink-Recht scheitern sonst.
     $download = @"
@@ -34,8 +41,7 @@ for repo, rev, target in [
     print(snapshot_download(repo, revision=rev, local_dir=r'$models\\' + target))
 "@
     $env:HF_HUB_DISABLE_TELEMETRY = '1'
-    & $python -c $download
-    if ($LASTEXITCODE -ne 0) { throw 'Modelle konnten nicht geladen werden.' }
+    Invoke-Native { & $python -c $download } 'Modelle konnten nicht geladen werden.'
 }
 
 if (!(Test-Path -LiteralPath $python)) { throw 'Zuerst mit -Install einrichten.' }
@@ -60,5 +66,4 @@ $env:HF_HUB_OFFLINE = '1'
 $env:TRANSFORMERS_OFFLINE = '1'
 Write-Host "Zugriffsschluessel fuer die MGH-Einstellungen: $tokenPath"
 Write-Host "Dienst: http://127.0.0.1:$Port  (Strg+C beendet)"
-& $python server.py
-if ($LASTEXITCODE -ne 0) { throw 'Mail-Analysedienst wurde mit einem Fehler beendet.' }
+Invoke-Native { & $python server.py } 'Mail-Analysedienst wurde mit einem Fehler beendet.'

@@ -16,10 +16,10 @@ export async function readModelConfig(): Promise<ModelConfig> {
   const row = await prisma.systemSetting.findUnique({ where: { key: CONFIG_KEY } });
   return row ? ConfigSchema.parse(JSON.parse(row.value)) : { enabled: false, baseUrl: 'http://127.0.0.1:11434', model: '', useExamples: false, localOnlyConfirmed: false };
 }
-export async function localRequest(baseUrl: string, path: string, body?: unknown) {
+export async function localRequest(baseUrl: string, path: string, body?: unknown, timeoutMs = path === '/api/chat' ? 180000 : 10000) {
   try {
     const res = await fetch(`${localOrigin(baseUrl)}${path}`, { method: body ? 'POST' : 'GET', redirect: 'error', cache: 'no-store',
-      headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(path === '/api/chat' ? 180000 : 10000) });
+      headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok || !res.body) throw new Error('request');
     const reader = res.body.getReader(); const chunks: Uint8Array[] = []; let length = 0;
     while (true) {
@@ -56,17 +56,30 @@ export function buildMessages(snapshot: Snapshot, examples: { snapshot: Snapshot
     privacyFields: PRIVACY_FIELDS, examples: examples.map(e => ({ input: e.snapshot, output: { findings: e.expected } })), input: snapshot,
   }) }];
 }
-let busy = false;
+/** Nur lokal installierte GGUF-Modelle ohne Cloud-Weiterleitung. Vor jeder Uebertragung von Mailtext pruefen. */
+export async function assertLocalModel(baseUrl: string, model: string) {
+  const installed = (await installedModels(baseUrl)).find(m => m.name === model);
+  if (!installed) throw new TrainingError('Bitte ein installiertes lokales GGUF-Modell wählen.');
+  const show = await localRequest(baseUrl, '/api/show', { model });
+  if (show.remote_host || show.remote_model || !show.model_info || !show.details || show.details.format !== 'gguf')
+    throw new TrainingError('Cloud-Modelle oder nicht überprüfbare Modelle sind gesperrt.');
+  return { digest: installed.digest, thinking: !!show.capabilities?.includes('thinking') };
+}
+
+// Ein Modelllauf gleichzeitig pro Serverprozess. An globalThis, weil Next diese
+// Datei in mehrere Bundles packt (Admin-Route und Hintergrundpruefung).
+const ollamaState = globalThis as unknown as { __ollamaBusy?: boolean };
+export async function withOllamaLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (ollamaState.__ollamaBusy) throw new TrainingError('Ein lokaler Modelllauf läuft bereits. Bitte danach erneut versuchen.', 409);
+  ollamaState.__ollamaBusy = true;
+  try { return await fn(); } finally { ollamaState.__ollamaBusy = false; }
+}
+
 export async function runOllama(config: ModelConfig, model: string, snapshot: Snapshot, examples: { snapshot: Snapshot; expected: Finding[] }[] = []) {
   if (!config.localOnlyConfirmed) throw new TrainingError('Lokalen Dienstbetrieb zuerst unter „Lokale Modelle“ bestätigen und speichern.', 409);
-  if (busy) throw new TrainingError('Ein lokaler Modelllauf läuft bereits. Bitte danach erneut versuchen.', 409);
-  busy = true;
-  try {
-    const installed = (await installedModels(config.baseUrl)).find(m => m.name === model);
-    if (!installed) throw new TrainingError('Bitte ein installiertes lokales GGUF-Modell wählen.');
-    const show = await localRequest(config.baseUrl, '/api/show', { model });
-    if (show.remote_host || show.remote_model || !show.model_info || !show.details || show.details.format !== 'gguf')
-      throw new TrainingError('Cloud-Modelle oder nicht überprüfbare Modelle sind gesperrt.');
+  return withOllamaLock(async () => {
+    const installed = await assertLocalModel(config.baseUrl, model);
+    const show = { capabilities: installed.thinking ? ['thinking'] : [] };
     const messages = buildMessages(snapshot, examples);
     if (JSON.stringify(messages).length > 48000) throw new TrainingError('Kontext mit Beispielen zu lang. Beispiele abschalten oder kürzeren Fall wählen.', 422);
     const started = Date.now();
@@ -80,5 +93,5 @@ export async function runOllama(config: ModelConfig, model: string, snapshot: Sn
     const output = OutputSchema.safeParse(decoded);
     if (!output.success) throw new TrainingError('Modellantwort entspricht nicht dem Prüfschema.', 422);
     return { findings: validateFindings(output.data.findings, snapshot), digest: installed.digest, durationMs: Date.now() - started };
-  } finally { busy = false; }
+  });
 }

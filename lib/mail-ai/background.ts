@@ -6,16 +6,20 @@ import { prisma } from '@/lib/prisma';
 import { getPlaintext, mergeModelEntities, type ExtractedEntity } from '@/lib/mail/extraction';
 import { isSentFolderName } from '@/lib/mail/folders';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
+import { readModelConfig } from '@/lib/ai-training/ollama';
 import { detectPiiStrict, readMailAiConfig } from './client';
+import { suggestForMail } from './order-suggestions';
 
 const LOOKBACK_MS = 24 * 60 * 60 * 1000;
-const state = (globalThis as unknown as { __mailAiQueue?: { running: boolean; pending: boolean; done: Set<string> } })
-  .__mailAiQueue ??= { running: false, pending: false, done: new Set<string>() };
+type QueueState = { running: boolean; pending: boolean; done: Set<string>; suggested: Set<string> };
+const state = (globalThis as unknown as { __mailAiQueue?: QueueState })
+  .__mailAiQueue ??= { running: false, pending: false, done: new Set<string>(), suggested: new Set<string>() };
+const message = (error: unknown) => (error instanceof Error ? error.message : 'unbekannt');
 
 /** Sync meldet neue Mails; die Pruefung laeuft entkoppelt weiter. */
 export function scheduleMailAnalysis() {
   if (state.running) { state.pending = true; return; }
-  void run().catch(error => console.warn(`[mail-ai] Hintergrundprüfung abgebrochen: ${error instanceof Error ? error.message : 'unbekannt'}`));
+  void run().catch(error => console.warn(`[mail-ai] Hintergrundprüfung abgebrochen: ${message(error)}`));
 }
 
 async function run() {
@@ -23,18 +27,39 @@ async function run() {
   try {
     do {
       state.pending = false;
-      if (!(await readMailAiConfig(true)).enabled) return;
+      let pii = (await readMailAiConfig(true)).enabled;
+      let suggest = (await readModelConfig()).enabled;
+      if (!pii && !suggest) return;
       const recent = await prisma.mail.findMany({
         where: { createdAt: { gte: new Date(Date.now() - LOOKBACK_MS) }, isDeleted: false },
         select: { id: true, folder: true }, orderBy: { createdAt: 'asc' }, take: 300,
       });
       for (const mail of recent) {
-        if (state.done.has(mail.id) || isSentFolderName(mail.folder)) continue;
-        // Dienst weg: abbrechen, beim naechsten Sync erneut versuchen.
-        await analyzeMail(mail.id);
-        state.done.add(mail.id);
+        if (isSentFolderName(mail.folder)) continue;
+        if (pii && !state.done.has(mail.id)) {
+          try {
+            await analyzeMail(mail.id);
+            state.done.add(mail.id);
+          } catch (error) {
+            // Dienst weg: fuer diesen Lauf aufhoeren, beim naechsten Sync erneut versuchen.
+            console.warn(`[mail-ai] Personenerkennung pausiert: ${message(error)}`);
+            pii = false;
+          }
+        }
+        if (suggest && !state.suggested.has(mail.id)) {
+          try {
+            await suggestForMail(mail.id);
+            state.suggested.add(mail.id);
+          } catch (error) {
+            // Belegt (Admin-Vergleich) oder nicht erreichbar: spaeter erneut.
+            console.warn(`[mail-ai] Auftragsvorschläge pausiert: ${message(error)}`);
+            suggest = false;
+          }
+        }
+        if (!pii && !suggest) break;
       }
       if (state.done.size > 5000) state.done.clear();
+      if (state.suggested.size > 5000) state.suggested.clear();
     } while (state.pending);
   } finally {
     state.running = false;
