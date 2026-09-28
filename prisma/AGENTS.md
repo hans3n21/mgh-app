@@ -192,6 +192,11 @@
 
 **Hinweis**: Neue Models (OrderView, OrderTask, MailExtraction, OrderFieldSuggestion, SystemSetting) wurden nach der letzten formellen Migration hinzugefügt — Schema-Änderungen ggf. über `prisma db push` oder noch ausstehende Migrations.
 
+## Suchindizes auf `Mail` (Posteingang-Suche)
+- `Mail_subject_trgm_idx`, `Mail_fromName_trgm_idx`, `Mail_fromEmail_trgm_idx`, `Mail_toEmail_trgm_idx`: GIN/pg_trgm für die Teilstring-Suche, im Schema als `@@index(..., type: Gin)` eingetragen (sonst löscht `migrate dev` sie).
+- `Mail_text_fts_idx`: Wortindex auf `mail_search_vector("text")` (Migration `20260928120000_add_mail_fulltext_search`). Ausdrucks-Index, den Prisma nicht abbilden kann und ignoriert. Abfragen müssen exakt `mail_search_vector(m."text") @@ mail_search_query(...)` verwenden, siehe `lib/mail/search.ts`.
+- Keinen Index mehr direkt auf `text` anlegen: jede Mail-Änderung, die nicht an Ort und Stelle gespeichert werden kann, muss sonst den Mailtext vom NAS nachlesen.
+
 ## Workflow für Schema-Änderungen
 1. `prisma/schema.prisma` bearbeiten
 2. `npx prisma migrate dev --name beschreibung`

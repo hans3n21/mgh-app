@@ -5,6 +5,7 @@ import { parseMail } from '@/lib/mail/parseMail';
 import { auth } from '@/lib/auth';
 import { TRASH_FOLDER_CANDIDATES } from '@/lib/mail/folders';
 import { SEARCH_STATEMENT_TIMEOUT_MS, SearchInterruptedError, withSearchGuard } from '@/lib/mail/searchGuard';
+import { buildMailSearchIdsQuery } from '@/lib/mail/search';
 
 export async function GET(req: NextRequest) {
 	try {
@@ -61,22 +62,6 @@ export async function GET(req: NextRequest) {
 	} else if (accountIds.length > 0) {
 		where.accountId = { in: accountIds };
 	}
-		if (q) {
-			const searchFields: any[] = [
-				{ subject:   { contains: q, mode: 'insensitive' } },
-				{ fromEmail: { contains: q, mode: 'insensitive' } },
-				{ fromName:  { contains: q, mode: 'insensitive' } },
-				{ toEmail:   { contains: q, mode: 'insensitive' } },
-			];
-			// Volltext erst ab 3 Zeichen: kuerzere Begriffe treffen fast jede Mail
-			// und zwingen die DB durch saemtliche Mailtexte (Tabelle: mehrere GB).
-			// Auch der Trigram-Index (Migration 20260828150000) greift erst ab
-			// drei Zeichen richtig. Die Meta-Felder oben sind klein und schnell.
-			if (q.length >= 3) {
-				searchFields.push({ text: { contains: q, mode: 'insensitive' } });
-			}
-			where.OR = searchFields;
-		}
 		if (filter === 'assigned') {
 			where.orderId = { not: null };
 		} else if (filter === 'unassigned') {
@@ -88,9 +73,13 @@ export async function GET(req: NextRequest) {
 		}
 
 		const take = paginate ? limit + 1 : 200;
-		const runList = (client: Prisma.TransactionClient | typeof prisma): Promise<any[]> => summary
+		const findMails = (
+			client: Prisma.TransactionClient | typeof prisma,
+			mailWhere: Prisma.MailWhereInput,
+			page: { skip?: number; take: number },
+		): Promise<any[]> => summary
 			? client.mail.findMany({
-				where,
+				where: mailWhere,
 				orderBy: { date: 'desc' },
 				select: {
 					id: true,
@@ -113,20 +102,37 @@ export async function GET(req: NextRequest) {
 					snippet: true,
 					_count: { select: { attachments: true } },
 				},
-				skip: paginate ? skip : undefined,
-				take,
+				...page,
 			})
 			: client.mail.findMany({
-				where,
+				where: mailWhere,
 				orderBy: { date: 'desc' },
 				include: { attachments: true, order: { select: { id: true, title: true } } },
-				skip: paginate ? skip : undefined,
-				take,
+				...page,
 			});
+		// Suche: Trefferliste per SQL ueber Trigram- und Wortindex (siehe
+		// lib/mail/search.ts), danach die Felder der Seite per Prisma.
+		const runSearch = async (tx: Prisma.TransactionClient): Promise<any[]> => {
+			const rows = await tx.$queryRaw<{ id: string }[]>(buildMailSearchIdsQuery(q, {
+				folder,
+				includeTrash,
+				trashFolders: TRASH_FOLDER_CANDIDATES,
+				accountId,
+				accountIds,
+				filter,
+			}, { take, skip: paginate ? skip : 0 }));
+			if (rows.length === 0) return [];
+			const ids = rows.map((row) => row.id);
+			const position = new Map(ids.map((id, index) => [id, index]));
+			const found = await findMails(tx, { id: { in: ids } }, { take: ids.length });
+			return found.sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0));
+		};
 		// Nur die Suche braucht das Sicherheitsnetz (Zeitlimit + Abbruch-
 		// Weitergabe an Postgres, siehe lib/mail/searchGuard.ts). Die normale
 		// Ordnerliste laeuft ueber den zusammengesetzten Index und ist schnell.
-		const rawMails: any[] = q ? await withSearchGuard(req, runList) : await runList(prisma);
+		const rawMails: any[] = q
+			? await withSearchGuard(req, runSearch)
+			: await findMails(prisma, where, { skip: paginate ? skip : undefined, take });
 		const hasMore = paginate && rawMails.length > limit;
 		const mails = paginate ? rawMails.slice(0, limit) : rawMails;
 

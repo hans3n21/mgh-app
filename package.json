@@ -28,6 +28,7 @@
     "mail:sync": "tsx scripts/manual-sync.ts",
     "mail:sync-worker": "tsx scripts/sync-worker.ts",
     "mail:relink": "tsx scripts/relink-order-mails.ts",
+    "mail:trash-report": "tsx scripts/mail-trash-report.ts",
     "files:verify": "tsx scripts/verify-attachment-files.ts"
   },
   "dependencies": {
