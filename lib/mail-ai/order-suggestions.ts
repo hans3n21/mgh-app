@@ -35,6 +35,7 @@ Bezüge wie "die zweite Variante" ohne Wert in der Mail weglassen. Keine Persone
 // Bewusst keine Beispielwerte je Feld: im Test vom 28.09.2026 sank die Trefferzahl
 // damit von 29 auf 18 von 35, weil der Prompt zu lang wurde.
 const FIELD_HINTS: Record<string, string> = {
+  body_shape: 'Bauform bzw. Modell des Instruments, auch als Kurzform: Strat, Tele, Les Paul, SG, Jazzmaster',
   finish_body: 'Farbe oder Lackierung des Korpus, z. B. Olympic White, Sunburst, deckend schwarz',
   body_surface_treatment: 'nur die Oberflächenbehandlung ohne Farbangabe: Öl/Wachs, Hochglanz, Satin, Schliff',
   pickups: 'Tonabnehmer bzw. Bestückung, z. B. HSS, SSS, Humbucker, Modellname',

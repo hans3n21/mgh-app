@@ -341,6 +341,11 @@
           "intent": "confirmed"
         },
         {
+          "field": "pickups_style",
+          "value": "schwarzen Kappen",
+          "intent": "confirmed"
+        },
+        {
           "field": "tuners",
           "value": "Locking-Mechaniken",
           "intent": "confirmed"
