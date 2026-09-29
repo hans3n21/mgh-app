@@ -67,7 +67,7 @@
 - Kundenverwaltung (Customer CRUD)
 - Beschaffung (ProcurementItem)
 - WooCommerce-Integration
-- Feedback-System
+- Feedback-System: PointOut-Widget (Screenshot, Markierungen, Sprache), Abarbeiten in Claude Code mit `/feedback` (`.claude/skills/feedback`, `npm run feedback`)
 - Backup/Restore (PostgreSQL JSON-Backup)
 - Benutzerverwaltung mit Rollen (admin, admin_no_feedback, staff)
 - PWA-fähig (Service Worker)
@@ -98,6 +98,7 @@
 | `npm run mail:sync` | Mail-Synchronisation (einmalig) |
 | `npm run mail:sync-worker` | Mail-Sync-Worker (dauerhaft) |
 | `npm run mail:trash-report` | Papierkorb-Probelauf (nur Lesen) |
+| `npm run feedback` | Offenes App-Feedback anzeigen (`show`/`resolve`/`reopen <id>`) |
 
 ## Arbeitsregeln
 - **Vor PR**: `npm run lint && npm run build` muss erfolgreich sein

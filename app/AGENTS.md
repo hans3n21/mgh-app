@@ -14,7 +14,7 @@
 | `/app/prices` | Preise & Leistungen | ja |
 | `/app/procurement` | Beschaffung | ja |
 | `/app/settings` | Einstellungen | ja |
-| `/app/ki-training` | Lokale Modelle, eingefrorene Prüffälle, Vergleich und Trainingsdatenexport | admin / admin_no_feedback |
+| `/app/ki-training` | Lokales Sprachmodell für Auftragsvorschläge (Ollama-Einstellung), Links zu Trefferquote und Trainingsmodus | admin / admin_no_feedback |
 | `/app/posteingang` | E-Mail-Inbox | ja |
 | `/app/posteingang/[id]` | Mail-Detail | ja |
 
@@ -161,8 +161,8 @@ app/
 | `Navigation.tsx` | Hauptnavigation (Sidebar), Logout, Unread-Badge |
 | `GlobalMobileNav.tsx` | Mobile Navigation |
 | `SessionProvider.tsx` | NextAuth SessionProvider-Wrapper |
-| `FeedbackButton.tsx` | Feedback-Button (floating) |
-| `FeedbackDashboard.tsx` | Feedback-Übersicht (Admin) |
+| `FeedbackWidget.tsx` | Feedback-Knopf mit Screenshot/Markieren/Sprache (PointOut, `lib/pointout-server.ts`) |
+| `FeedbackDashboard.tsx` | Feedback-Übersicht (Admin, Dashboard); Kopier-Knopf für `/feedback <id>` in Claude Code |
 
 ## Wichtige Libs
 

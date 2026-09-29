@@ -29,7 +29,8 @@
     "mail:sync-worker": "tsx scripts/sync-worker.ts",
     "mail:relink": "tsx scripts/relink-order-mails.ts",
     "mail:trash-report": "tsx scripts/mail-trash-report.ts",
-    "files:verify": "tsx scripts/verify-attachment-files.ts"
+    "files:verify": "tsx scripts/verify-attachment-files.ts",
+    "feedback": "tsx scripts/feedback.ts"
   },
   "dependencies": {
     "@hans3n21/pointout": "https://github.com/hans3n21/pointout/archive/refs/tags/v0.4.1.tar.gz",
