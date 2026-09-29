@@ -160,8 +160,8 @@ app/
 | `Navigation.tsx` | Hauptnavigation (Sidebar), Logout, Unread-Badge |
 | `GlobalMobileNav.tsx` | Mobile Navigation |
 | `SessionProvider.tsx` | NextAuth SessionProvider-Wrapper |
-| `FeedbackButton.tsx` | Feedback-Button (floating) |
-| `FeedbackDashboard.tsx` | Feedback-Übersicht (Admin) |
+| `FeedbackWidget.tsx` | Feedback-Knopf mit Screenshot/Markieren/Sprache (PointOut, `lib/pointout-server.ts`) |
+| `FeedbackDashboard.tsx` | Feedback-Übersicht (Admin, Dashboard); Kopier-Knopf für `/feedback <id>` in Claude Code |
 
 ## Wichtige Libs
 

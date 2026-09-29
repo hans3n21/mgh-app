@@ -29,7 +29,17 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json(feedback);
+    // Wer hat's geschrieben? Nur bei PointOut-Feedback bekannt, alte Eintraege bleiben ohne Namen.
+    const authorIds = Array.from(new Set(feedback.map((f) => f.createdById).filter((id): id is string => !!id)));
+    const authors = authorIds.length
+      ? await prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } })
+      : [];
+    const authorName = new Map(authors.map((u) => [u.id, u.name]));
+
+    return NextResponse.json(feedback.map((f) => ({
+      ...f,
+      createdByName: f.createdById ? authorName.get(f.createdById) ?? null : null,
+    })));
 
   } catch (error) {
     console.error('Fehler beim Laden des Feedbacks:', error);
