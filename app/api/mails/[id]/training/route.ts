@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { MutationSchema } from '@/lib/mail-training/contracts';
 import { getTrainingData, mutateTraining, ReviewError } from '@/lib/mail-training/service';
-import { LocalAiError } from '@/lib/local-ai/client';
 import { TrainingError } from '@/lib/ai-training/context';
 
 export const runtime = 'nodejs';
 export const maxDuration = 210;
 type Context = { params: Promise<{ id: string }> };
 function failure(error: unknown) {
-  if (error instanceof ReviewError || error instanceof LocalAiError || error instanceof TrainingError) return NextResponse.json({ error: error.message }, { status: error.status });
+  if (error instanceof ReviewError || error instanceof TrainingError) return NextResponse.json({ error: error.message }, { status: error.status });
   const code = (error as { code?: string })?.code;
   if (code === 'P2034' || code === 'P2002') return NextResponse.json({ error: 'Gleichzeitige Änderung. Bitte neu laden.' }, { status: 409 });
   if (code === 'P2021') return NextResponse.json({ error: 'Die Datenbankmigration für den Trainingsmodus ist noch nicht installiert.' }, { status: 503 });

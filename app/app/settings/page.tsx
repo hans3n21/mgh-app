@@ -5,7 +5,6 @@ import ReplyTemplateManagement from '@/components/ReplyTemplateManagement';
 import SpeechSettings from '@/components/SpeechSettings';
 import UpdateTemplateSettings from '@/components/UpdateTemplateSettings';
 import AiSettings from '@/components/AiSettings';
-import LocalAiSettings from '@/components/LocalAiSettings';
 import MailAiSettings from '@/components/MailAiSettings';
 import TelephonySettings from '@/components/TelephonySettings';
 import DhlSettings from '@/components/DhlSettings';
@@ -34,8 +33,6 @@ export default async function SettingsPage() {
       <AiSettings />
 
       <MailAiSettings />
-
-      <LocalAiSettings />
 
       <TelephonySettings />
 

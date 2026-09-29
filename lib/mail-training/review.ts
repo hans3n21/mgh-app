@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { FIELD_LABELS, SPEC_PRESETS, OrderType } from '@/lib/order-presets';
-import { prepareCandidates } from '@/lib/local-ai/candidates';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import type { ExtractedEntity, EntityType } from '@/lib/mail/extraction';
 import { AnnotationSchema, PRIVACY_FIELDS, type Annotation } from './contracts';
@@ -21,7 +20,10 @@ export function validateAnnotation(a: Annotation, text: string, fields: { key: s
   if (a.kind === 'order' && !a.dismissed && !a.value.trim()) throw new Error('Bitte einen Wert angeben.');
 }
 
-export function initialAnnotations(text: string, entities: ExtractedEntity[], orderType?: string): Annotation[] {
+// Nur Datenschutzstellen. Auftragsangaben kommen als Vorschlaege des lokalen
+// Sprachmodells (lib/mail-ai/order-suggestions.ts); die frueheren Regel-Kandidaten
+// (jedes Holz zugleich fuer Hals, Griffbrett und Korpus) waren reines Rauschen.
+export function initialAnnotations(text: string, entities: ExtractedEntity[]): Annotation[] {
   const result: Annotation[] = [];
   for (const e of entities) {
     if (!e.pii || !Object.prototype.hasOwnProperty.call(PRIVACY_FIELDS, e.type)) continue;
@@ -31,21 +33,6 @@ export function initialAnnotations(text: string, entities: ExtractedEntity[], or
     result.push({ id: `privacy-${start}-${e.type}`, start, end: start + e.text.length, text: e.text,
       kind: 'privacy', field: e.type, value: e.text, intent: 'unclear', masked: true, dismissed: false,
       origin: e.source === 'manual' ? 'manual' : 'rules', reviewed: false });
-  }
-  if (orderType) {
-    try {
-      const prepared = prepareCandidates(text, orderType);
-      const freshStart = text.indexOf(prepared.text);
-      if (freshStart < 0) return result;
-      for (const c of prepared.candidates) {
-        const relative = prepared.text.indexOf(c.value);
-        if (relative < 0) continue;
-        const start = freshStart + relative;
-        result.push({ id: `order-${start}-${c.field}`, start, end: start + c.value.length, text: c.value,
-          kind: 'order', field: c.field, value: c.value, intent: 'unclear', masked: false, dismissed: false,
-          origin: 'rules', reviewed: false });
-      }
-    } catch { /* Manual annotations remain available for long mails / unsupported types. */ }
   }
   return result;
 }

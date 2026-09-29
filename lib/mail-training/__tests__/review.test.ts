@@ -13,10 +13,8 @@ describe('human review and conservative local learning', () => {
     expect(() => validateAnnotation({ ...a, start: 0 }, text, fields)).toThrow();
     expect(() => validateAnnotation(a, text, orderFields('BODY'))).toThrow();
   });
-  it('does not auto-confirm literal regex candidates or extract from old quotes', () => {
-    const result = initialAnnotations('Bitte Ahorn.\n> Früher Ebenholz.', [], 'GUITAR');
-    expect(result.every(a => a.intent === 'unclear' && !a.reviewed)).toBe(true);
-    expect(result.some(a => a.value === 'Ebenholz')).toBe(false);
+  it('creates no rule candidates for order fields (these come from the local model)', () => {
+    expect(initialAnnotations('Bitte Ahorn.\n> Früher Ebenholz.', [])).toEqual([]);
   });
   it('reuses a field correction for the entire same fresh text, as an unreviewed example', () => {
     const result = reuseExamples(`${text}\n> Alte Mail`, [{ text, annotations: [a] }], fields);

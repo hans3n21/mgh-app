@@ -65,7 +65,8 @@ export default function MailTrainingWorkspace({ data, onChange, mutate, reload }
           const saved = result.annotations.find(a => a.id === selected.id);
           setSelected(saved || null); setOriginal(saved || null);
         }
-        setMessage(action.action === 'apply' ? 'Auftrag aktualisiert. Alter und neuer Wert stehen im Verlauf.' : 'Korrektur lokal gespeichert.');
+        setMessage(action.action === 'apply' ? 'Auftrag aktualisiert. Alter und neuer Wert stehen im Verlauf.'
+          : action.action === 'model' ? 'Modellvorschläge geladen. Bitte einzeln prüfen.' : 'Korrektur lokal gespeichert.');
       } else {
         const reviewed = data.annotations.filter(a => a.reviewed || a.origin === 'example');
         const additions = result.annotations.filter(a => !reviewed.some(r => r.id === a.id || (r.kind === a.kind && r.field === a.field && r.start === a.start)));

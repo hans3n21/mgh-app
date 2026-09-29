@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import type { TrainingData } from '@/lib/mail-training/contracts';
 import MailTrainingWorkspace from './MailTrainingWorkspace';
-import SaveTrainingCase from './SaveTrainingCase';
 
 export default function MailTrainingPanel({ mailId }: { mailId: string }) {
   const [admin, setAdmin] = useState(false);
@@ -46,7 +45,6 @@ export default function MailTrainingPanel({ mailId }: { mailId: string }) {
         }
         return result;
       }} />}
-      {!loading && data && <SaveTrainingCase data={data} />}
     </div>}
   </section>;
 }

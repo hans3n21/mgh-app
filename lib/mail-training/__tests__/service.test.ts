@@ -4,7 +4,6 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), mail: vi.fn(), examples: vi.fn(), create: vi.fn(), update: vi.fn(),
   specs: vi.fn(), newSpec: vi.fn(), order: vi.fn(), extraction: vi.fn(), transaction: vi.fn(), config: vi.fn(), context: vi.fn() }));
 vi.mock('@/lib/auth', () => ({ auth: mocks.auth }));
-vi.mock('@/lib/local-ai/settings', () => ({ readLocalAiConfig: mocks.config }));
 vi.mock('@/lib/ai-training/ollama', () => ({ readModelConfig: mocks.config }));
 vi.mock('@/lib/ai-training/context', async original => ({ ...await original<typeof import('@/lib/ai-training/context')>(), loadContext: mocks.context }));
 vi.mock('@/lib/prisma', () => {

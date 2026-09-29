@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
-import { ConfigSchema, installedModels, runOllama } from '../ollama';
-import type { ModelConfig, Snapshot } from '../contracts';
+import { ConfigSchema, assertLocalModel, installedModels, localRequest } from '../ollama';
+import type { ModelConfig } from '../contracts';
 const config: ModelConfig = { enabled: true, localOnlyConfirmed: true, baseUrl: 'http://127.0.0.1:11434', model: 'qwen3.5:4b', useExamples: false };
-const snapshot: Snapshot = { currentId: 'm1', orderType: 'GUITAR', fields: [{ key: 'fretboard_material', label: 'Griffbrett' }], omitted: 0,
-  messages: [{ id: 'm1', date: '', role: 'customer', text: 'Bitte Palisander.' }] };
 const model = { name: config.model, size: 2000000000, digest: 'sha256:fixture', details: { format: 'gguf' } };
 const response = (v: unknown) => new Response(JSON.stringify(v), { headers: { 'Content-Type': 'application/json' } });
 afterEach(() => vi.unstubAllGlobals());
@@ -17,28 +15,25 @@ describe('local model boundary', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ models: [model, { ...model, name: 'remote:cloud' }, { ...model, name: 'remote', remote_host: 'https://remote.invalid' }, { ...model, name: 'stub', size: 100 }] })));
     expect((await installedModels(config.baseUrl)).map(m => m.name)).toEqual([config.model]);
   });
-  it('blocks a disguised cloud model before sending any mail text', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(response({ models: [model] })).mockResolvedValueOnce(response({ remote_host: 'https://remote.invalid', model_info: {}, details: { format: 'gguf' } })); vi.stubGlobal('fetch', fetch);
-    await expect(runOllama(config, config.model, snapshot)).rejects.toThrow('Cloud');
-    expect(fetch).toHaveBeenCalledTimes(2); expect(JSON.stringify(fetch.mock.calls)).not.toContain('Bitte Palisander');
-  });
-  it('uses structured output, disables thinking and unloads the model', async () => {
-    const fetch = vi.fn().mockResolvedValueOnce(response({ models: [model] })).mockResolvedValueOnce(response({ model_info: {}, details: { format: 'gguf' }, capabilities: ['thinking'] }))
-      .mockResolvedValueOnce(response({ done: true, done_reason: 'stop', prompt_eval_count: 700, message: { content: JSON.stringify({ findings: [{ kind: 'order', field: 'fretboard_material', value: 'Palisander', intent: 'confirmed', quote: 'Palisander', evidence: [] }] }) } }));
+  it('blocks a disguised cloud model before any mail text is sent', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ models: [model] })).mockResolvedValueOnce(response({ remote_host: 'https://remote.invalid', model_info: {}, details: { format: 'gguf' } }));
     vi.stubGlobal('fetch', fetch);
-    const result = await runOllama(config, config.model, snapshot);
-    expect(result.digest).toBe(model.digest); expect(result.findings).toHaveLength(1);
-    const [url, options] = fetch.mock.calls[2]; expect(url).toBe('http://127.0.0.1:11434/api/chat'); expect(options.redirect).toBe('error');
-    expect(JSON.parse(options.body)).toMatchObject({ think: false, keep_alive: 0, stream: false, options: { temperature: 0 }, format: { type: 'object' } });
+    await expect(assertLocalModel(config.baseUrl, config.model)).rejects.toThrow('Cloud');
+    // Nur Modellliste und Modellinfo, kein /api/chat.
+    expect(fetch.mock.calls.map(c => String(c[0]))).toEqual(['http://127.0.0.1:11434/api/tags', 'http://127.0.0.1:11434/api/show']);
+  });
+  it('accepts a local model and reports whether thinking must be disabled', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(response({ models: [model] })).mockResolvedValueOnce(response({ model_info: {}, details: { format: 'gguf' }, capabilities: ['thinking'] })));
+    expect(await assertLocalModel(config.baseUrl, config.model)).toEqual({ digest: model.digest, thinking: true });
   });
   it('does not turn a timeout or malformed result into a cloud fallback', async () => {
     const fetch = vi.fn().mockRejectedValue(new Error('private raw detail')); vi.stubGlobal('fetch', fetch);
-    await expect(runOllama(config, config.model, snapshot)).rejects.toThrow('kein Cloud-Ersatz');
+    await expect(localRequest(config.baseUrl, '/api/chat', { model: config.model })).rejects.toThrow('kein Cloud-Ersatz');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
-  it('requires local operation confirmation before accessing the service', async () => {
+  it('refuses non-local addresses before any request', async () => {
     const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
-    await expect(runOllama({ ...config, localOnlyConfirmed: false }, config.model, snapshot)).rejects.toThrow('bestätigen');
+    await expect(localRequest('https://ollama.com', '/api/chat', {})).rejects.toThrow('kein Cloud-Ersatz');
     expect(fetch).not.toHaveBeenCalled();
   });
 });

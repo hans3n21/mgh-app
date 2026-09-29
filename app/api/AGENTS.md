@@ -24,20 +24,15 @@ Wird eine Mail einem Auftrag zugeordnet (`assignMailToOrder`), werden sie und ih
 
 Der Dienst ergänzt die Regeln bei der Anonymisierung vor jedem externen KI-Aufruf (`lib/pii/anonymize.ts`) und prüft neue Mails im Hintergrund nach dem Sync (`lib/mail-ai/background.ts`, Funde mit Quelle `ml` in `MailExtraction`). Ohne aktivierten oder erreichbaren Dienst gilt nur die Regelerkennung.
 
-### Lokale Mailprüfung (Laya-Pilot)
-| Route | Methods | Beschreibung |
-|---|---|---|
-| `/api/settings/local-ai` | GET, PUT | Aktivierung, private Dienstadresse und Zugriffsschlüssel; Änderungen nur Admin, Schlüssel wird nie zurückgegeben |
-| `/api/settings/local-ai/test` | POST | Admin-Test mit Beispieltext und Auftragstyp; keine DB-Schreibaktion |
-| `/api/mails/[id]/local-ai` | POST, PUT | Manuelle lokale Auswertung einer zugeordneten Mail; PUT merkt einen belegten Wert als offenen Vorschlag vor, keine direkte Spec-Änderung |
+Einrichtung je Rechner über `update.bat` → `services/mail-ai/Install-LocalAi.ps1` (siehe `services/mail-ai/README.md`). Für `127.0.0.1` liest die App den Schlüssel aus `services/mail-ai/data/access-token.txt` und das Sprachmodell aus `data/ollama-model.txt` dieses Rechners; die gemeinsame Einstellung in der Datenbank muss keinen Schlüssel enthalten.
 
 ### Lokaler Trainingsmodus (nur Admins)
 | Route | Methods | Beschreibung |
 |---|---|---|
-| `/api/mails/[id]/training` | GET, POST | Markierungen, Feedback und Verlauf; Aktionen review, model und apply. Review aktualisiert Datenschutzmarkierungen, apply übernimmt separat bestätigte Auftragswerte mit Versions- und Altwertprüfung. Kein Cloud-Aufruf; Beispiele bleiben im selben Postfach. |
-| `/api/admin/ai-training` | GET, POST | Nur admin/admin_no_feedback. GET: Ollama-Einstellungen, neueste 100 Prüffälle mit je 12 Läufen. POST: config, models (lokale GGUFs), create (vollständig geprüften Mailstand einfrieren), compare (ein Fall/ein Modell), delete (Fall und Läufe), export (alle verfügbaren Lernfälle als lokales JSONL). Serialisierbare Gruppentrennung, keine Auftragsänderungen, kein Cloud-Fallback. |
+| `/api/mails/[id]/training` | GET, POST | Markierungen, Feedback und Verlauf; Aktionen review, model und apply. `model` erzeugt Auftragsvorschläge mit dem lokalen Sprachmodell (wie die Hintergrundprüfung) und liefert die aktualisierten Prüfdaten. Apply übernimmt bestätigte Auftragswerte mit Versions- und Altwertprüfung. Kein Cloud-Aufruf. |
+| `/api/admin/ai-training` | GET, POST | Nur admin/admin_no_feedback. GET: Einstellung des lokalen Sprachmodells (Ollama). POST: `config` (speichern), `models` (lokal installierte GGUF-Modelle, Cloud-Modelle ausgeblendet). |
 
-Ollama ersetzt bei aktivierter Konfiguration die Laya-Aktion im Mail-Trainingsmodus und bekommt den zeitlich begrenzten Gesprächskontext. Die bisherige Laya-Pilotfläche bleibt separat. Modellmarkierungen müssen vor Speicherung/Übernahme geprüft werden; Kontextänderungen machen die ursprüngliche Modellprüfung ungültig.
+Der frühere Laya-Pilot, die eingefrorenen Prüffälle mit Modellvergleich und der JSONL-Export wurden am 29.09.2026 entfernt; die Tabellen `AiTrainingCase`/`AiTrainingResult` bestehen noch (leer). Modellvergleiche laufen über `scripts/bench-mail-ai.ts` bzw. den KI-Harness.
 
 ### Auth
 | Route | Methods | Beschreibung |

@@ -1,15 +1,13 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { extractEntities, getPlaintext, type ExtractedEntity } from '@/lib/mail/extraction';
-import { readLocalAiConfig } from '@/lib/local-ai/settings';
-import { analyzeLocally } from '@/lib/local-ai/client';
 import { type TrainingData, type ReviewEvent, type Annotation, MutationSchema } from './contracts';
 import { applyPrivacyReview, canApply, initialAnnotations, mergeReviewed, orderFields, readAnnotations, reuseExamples, sourceHash, validateAnnotation } from './review';
 import type { z } from 'zod';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { readModelConfig } from '@/lib/ai-training/ollama';
 import { contextHash, loadContext, TrainingError } from '@/lib/ai-training/context';
-import { analyzeConversation } from '@/lib/ai-training/service';
+import { suggestForMail } from '@/lib/mail-ai/order-suggestions';
 
 export class ReviewError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -63,14 +61,16 @@ export async function getTrainingData(id: string): Promise<TrainingData> {
     .map(e => ({ text: getPlaintext(e.mail.text, e.mail.html), hash: e.sourceHash, annotations: readAnnotations(e.annotations) }))
     .filter(e => sourceHash(e.text) === e.hash);
   const reused = reuseExamples(text, eligible, fields);
-  let initial = initialAnnotations(text, entities, mail.order?.deletedAt ? undefined : mail.order?.type);
+  let initial = initialAnnotations(text, entities);
   // A reviewed example replaces the same candidate, never unrelated privacy marks.
   initial = initial.filter(a => !reused.some(r => r.id === a.id || (r.kind === a.kind && r.field === a.field && r.start === a.start)));
   let annotations = mergeReviewed([...initial, ...reused], saved);
   const modelConfig = await readModelConfig();
   let context: TrainingData['context'];
   let contextNotice: string | undefined;
-  if ((modelConfig.enabled || saved.some(a => a.contextHash)) && mail.order && !mail.order.deletedAt) {
+  // Gespraechsverlauf nur fuer aeltere kontextabhaengige Markierungen laden (bis zu
+  // 101 Mails samt Text vom NAS); die heutigen Vorschlaege beziehen sich nur auf die Mail selbst.
+  if (saved.some(a => a.contextHash) && mail.order && !mail.order.deletedAt) {
     try {
       context = (await loadContext(id)).snapshot;
       const currentHash = contextHash(context);
@@ -86,26 +86,22 @@ export async function getTrainingData(id: string): Promise<TrainingData> {
     currentValues: Object.fromEntries((mail.order?.specs || []).map(s => [s.key, s.value])),
     history: (review?.history || []) as unknown as ReviewEvent[],
     exampleCount: eligible.reduce((n, e) => n + e.annotations.filter(a => a.reviewed).length, 0),
-    modelEnabled: modelConfig.enabled || (await readLocalAiConfig()).enabled, context,
+    modelEnabled: modelConfig.enabled, context,
     notice: review && !validReview ? 'Mail oder Zuordnung geändert. Frühere Markierungen werden nicht angewendet; der Verlauf bleibt erhalten.' : contextNotice,
   };
 }
 
 export async function mutateTraining(id: string, body: z.infer<typeof MutationSchema>, userId: string) {
   if (body.action === 'model') {
-    const { mail, hash, text } = await load(prisma, id);
+    const { mail, hash } = await load(prisma, id);
     if (hash !== body.sourceHash || mail.orderId !== body.orderId || (mail.trainingReview?.revision || 0) !== body.revision)
       throw new ReviewError('Der Stand hat sich geändert. Bitte neu laden.');
     if (!mail.order || mail.order.deletedAt) throw new ReviewError('Bitte einen aktiven Auftrag zuordnen.');
-    if ((await readModelConfig()).enabled) return analyzeConversation(id);
-    const result = await analyzeLocally(await readLocalAiConfig(), text, mail.order.type);
-    const baseline = initialAnnotations(text, [], mail.order.type);
-    const annotations = result.findings.flatMap(f => {
-      const a = baseline.find(a => a.field === f.field && a.value === f.value);
-      return a ? [{ ...a, origin: 'model' as const, modelRevision: result.revision,
-        intent: f.decision === 'tentative' ? 'question' as const : f.decision }] : [];
-    });
-    return { annotations };
+    if (!(await readModelConfig()).enabled) throw new ReviewError('Lokales Sprachmodell ist nicht aktiviert (KI-Training → Lokale Modelle).', 409);
+    // Dieselbe Auswertung wie im Hintergrund; die Vorschlaege werden gespeichert
+    // und erscheinen ungeprueft in der Pruefansicht und in der Vorschlagsleiste.
+    await suggestForMail(id);
+    return getTrainingData(id);
   }
   await prisma.$transaction(async tx => {
     const { mail, text, hash } = await load(tx, id);
