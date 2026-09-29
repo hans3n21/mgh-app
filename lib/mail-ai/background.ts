@@ -96,7 +96,8 @@ async function run() {
         }
         if (suggest && !state.suggested.has(mail.id)) {
           try {
-            const result = await suggestForMail(mail.id);
+            // Angestossene Mails (Zuordnung) immer neu, sonst nur, was noch niemand ausgewertet hat.
+            const result = await suggestForMail(mail.id, { force: priority.includes(mail.id) });
             // Nur Kennung und Zahlen, kein Mailinhalt.
             if (result) console.info(`[mail-ai] ${mail.id}: ${result.count} Auftragsvorschläge in ${(result.durationMs / 1000).toFixed(1)} s`);
             state.suggested.add(mail.id);

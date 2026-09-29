@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSuggestionMessages, isOrderCustomerMail, mergeSuggestions, outputSchema, toSuggestionAnnotations } from '@/lib/mail-ai/order-suggestions';
+import { alreadyAnalyzed, buildSuggestionMessages, isOrderCustomerMail, mergeSuggestions, outputSchema, toSuggestionAnnotations } from '@/lib/mail-ai/order-suggestions';
 import type { Annotation } from '@/lib/mail-training/contracts';
 
 const FRESH = 'Hallo,\nich möchte jetzt doch Palisander statt Ebenholz für das Griffbrett.\nWas würden 22 Edelstahlbünde kosten?';
@@ -69,5 +69,18 @@ describe('Eingabe und Schema', () => {
     expect(isOrderCustomerMail({ ...base, senderId: 'u1' })).toBe(false);
     expect(isOrderCustomerMail({ ...base, orderId: null, order: null })).toBe(false);
     expect(isOrderCustomerMail({ ...base, order: { deletedAt: new Date() } })).toBe(false);
+  });
+});
+
+describe('alreadyAnalyzed', () => {
+  const model = (orderId: string, sourceHash: string) => ({ at: '', userId: 'system', action: 'model', orderId, sourceHash });
+  it('ueberspringt eine Mail, die in diesem Stand schon ausgewertet wurde (auch von einem anderen Rechner)', () => {
+    expect(alreadyAnalyzed({ sourceHash: 'h1', orderId: 'o1', history: [model('o1', 'h1')] }, 'h1', 'o1')).toBe(true);
+  });
+  it('wertet neu aus bei neuem Text, anderem Auftrag oder ohne Vermerk', () => {
+    expect(alreadyAnalyzed({ sourceHash: 'h1', orderId: 'o1', history: [model('o1', 'h1')] }, 'h2', 'o1')).toBe(false);
+    expect(alreadyAnalyzed({ sourceHash: 'h1', orderId: 'o2', history: [model('o1', 'h1')] }, 'h1', 'o2')).toBe(false);
+    expect(alreadyAnalyzed({ sourceHash: 'h1', orderId: 'o1', history: [{ at: '', userId: 'u', action: 'contact' }] }, 'h1', 'o1')).toBe(false);
+    expect(alreadyAnalyzed(null, 'h1', 'o1')).toBe(false);
   });
 });

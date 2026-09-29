@@ -26,7 +26,8 @@ export const AnnotationSchema = z.object({
 export type Annotation = z.infer<typeof AnnotationSchema>;
 export type ReviewEvent = {
   // contact: Kontaktfeld aus der Mail bestaetigt/korrigiert (field, oldValue = Vorschlag, newValue = bestaetigt).
-  at: string; userId: string; action: 'review' | 'apply' | 'reset' | 'contact'; annotationId?: string;
+  // model: KI-Auswertung dieses Stands (sourceHash, orderId; newValue = Anzahl, note = Modell), verhindert Doppelrechnen.
+  at: string; userId: string; action: 'review' | 'apply' | 'reset' | 'contact' | 'model'; annotationId?: string; sourceHash?: string;
   reason?: string; before?: Annotation; after?: Annotation;
   orderId?: string; field?: string; oldValue?: string; newValue?: string;
   // Bei apply: woertlicher Mailwert, falls ein Listenwert eingetragen wurde, und die Notizzeile fuer den Rest.

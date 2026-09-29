@@ -10,7 +10,7 @@ import { getPlaintext } from '@/lib/mail/extraction';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { assertLocalModel, localRequest, readModelConfig, withOllamaLock } from '@/lib/ai-training/ollama';
 import { orderFields, readAnnotations, sourceHash } from '@/lib/mail-training/review';
-import type { Annotation } from '@/lib/mail-training/contracts';
+import type { Annotation, ReviewEvent } from '@/lib/mail-training/contracts';
 import { loadExamples } from './learning';
 import { localOllamaModel } from './client';
 
@@ -105,7 +105,7 @@ export function toSuggestionAnnotations(full: string, fresh: string, findings: {
 }
 
 const mailSelect = { id: true, text: true, html: true, orderId: true, senderId: true, fromEmail: true,
-  account: { select: { email: true } },
+  account: { select: { email: true } }, trainingReview: { select: { sourceHash: true, orderId: true, history: true } },
   order: { select: { type: true, deletedAt: true, specs: { select: { key: true, value: true } } } } } as const;
 
 /** Kundenmail eines aktiven Auftrags? Eigene Mails und Mails ohne Auftrag werden (noch) nicht ausgewertet. */
@@ -115,8 +115,23 @@ export function isOrderCustomerMail(mail: { orderId: string | null; senderId: st
   return !!mail.orderId && !!mail.order && !mail.order.deletedAt && !own;
 }
 
-/** Vorschlaege fuer eine Mail erzeugen und speichern. Liefert null, wenn nichts zu tun ist. */
-export async function suggestForMail(mailId: string): Promise<{ count: number; durationMs: number } | null> {
+/**
+ * Wurde die Mail in diesem Stand (Text und Auftrag) schon ausgewertet? Steht im
+ * Pruefverlauf und gilt damit ueber Neustarts und alle Rechner mit derselben
+ * Datenbank hinweg; sonst rechnet jede App-Instanz dieselben Mails erneut.
+ */
+export function alreadyAnalyzed(review: { sourceHash: string; orderId: string | null; history: unknown } | null | undefined,
+  hash: string, orderId: string | null) {
+  if (!review || review.sourceHash !== hash || review.orderId !== orderId) return false;
+  const history = Array.isArray(review.history) ? review.history as ReviewEvent[] : [];
+  return history.some(e => e.action === 'model' && e.orderId === orderId && e.sourceHash === hash);
+}
+
+/**
+ * Vorschlaege fuer eine Mail erzeugen und speichern. Liefert null, wenn nichts zu tun ist.
+ * force: auch wenn schon ausgewertet (Mensch hat es angestossen).
+ */
+export async function suggestForMail(mailId: string, options: { force?: boolean } = {}): Promise<{ count: number; durationMs: number } | null> {
   const config = await readModelConfig();
   // Das von update.bat fuer diesen Rechner gewaehlte Modell hat Vorrang (kleinere Variante bei wenig RAM).
   const modelName = localOllamaModel() || config.model;
@@ -124,6 +139,7 @@ export async function suggestForMail(mailId: string): Promise<{ count: number; d
   const mail = await prisma.mail.findUnique({ where: { id: mailId }, select: mailSelect });
   if (!mail || !isOrderCustomerMail(mail)) return null;
   const full = getPlaintext(mail.text, mail.html);
+  if (!options.force && alreadyAnalyzed(mail.trainingReview, sourceHash(full), mail.orderId)) return null;
   const fresh = stripQuotedContent(full).freshContent.trim();
   if (fresh.length < 10 || fresh.length > MAX_FRESH) return null;
   const fields = orderFields(mail.order!.type);
@@ -149,7 +165,7 @@ export async function suggestForMail(mailId: string): Promise<{ count: number; d
     return toSuggestionAnnotations(full, fresh, parsed.findings, fields, `${modelName}@${model.digest.slice(0, 12)}${examples.length ? '+ex' : ''}`);
   });
   if (!annotations) return null;
-  await storeSuggestions(mailId, full, mail.orderId, annotations);
+  await storeSuggestions(mailId, full, mail.orderId, annotations, annotations[0]?.modelRevision ?? modelName);
   return { count: annotations.length, durationMs: Date.now() - started };
 }
 
@@ -163,17 +179,21 @@ export function mergeSuggestions(saved: Annotation[], suggestions: Annotation[])
   return [...kept, ...fresh];
 }
 
-async function storeSuggestions(mailId: string, full: string, orderId: string | null, suggestions: Annotation[]) {
+async function storeSuggestions(mailId: string, full: string, orderId: string | null, suggestions: Annotation[], modelRevision: string) {
   const hash = sourceHash(full);
+  // Vermerk "ausgewertet" (auch ohne Fund), damit keine App-Instanz dieselbe Mail erneut rechnet.
+  const event: ReviewEvent = { at: new Date().toISOString(), userId: 'system', action: 'model', orderId: orderId ?? undefined,
+    sourceHash: hash, newValue: String(suggestions.length), note: modelRevision.slice(0, 100) };
   await prisma.$transaction(async tx => {
     const review = await tx.mailTrainingReview.findUnique({ where: { mailId } });
     const valid = review?.sourceHash === hash && review.orderId === orderId;
     const annotations = mergeSuggestions(valid ? readAnnotations(review!.annotations) : [], suggestions);
     const json = JSON.parse(JSON.stringify(annotations)) as Prisma.InputJsonValue;
+    const history = JSON.parse(JSON.stringify([...((review?.history || []) as unknown as ReviewEvent[]), event])) as Prisma.InputJsonValue;
     if (review) {
-      await tx.mailTrainingReview.update({ where: { mailId }, data: { sourceHash: hash, orderId, annotations: json, revision: { increment: 1 } } });
+      await tx.mailTrainingReview.update({ where: { mailId }, data: { sourceHash: hash, orderId, annotations: json, history, revision: { increment: 1 } } });
     } else {
-      await tx.mailTrainingReview.create({ data: { mailId, sourceHash: hash, orderId, annotations: json, history: [], revision: 1 } });
+      await tx.mailTrainingReview.create({ data: { mailId, sourceHash: hash, orderId, annotations: json, history, revision: 1 } });
     }
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 15000 });
 }

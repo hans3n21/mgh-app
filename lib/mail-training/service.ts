@@ -126,7 +126,7 @@ export async function mutateTraining(id: string, body: z.infer<typeof MutationSc
     if (!(await readModelConfig()).enabled) throw new ReviewError('Lokales Sprachmodell ist nicht aktiviert (KI-Training → Lokale Modelle).', 409);
     // Dieselbe Auswertung wie im Hintergrund; die Vorschlaege werden gespeichert
     // und erscheinen ungeprueft in der Pruefansicht und in der Vorschlagsleiste.
-    await suggestForMail(id);
+    await suggestForMail(id, { force: true });
     return getTrainingData(id);
   }
   await prisma.$transaction(async tx => {
