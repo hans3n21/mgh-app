@@ -103,6 +103,36 @@ describe('Alle Wuensche uebernehmen', () => {
   });
 });
 
+describe('Listenwerte beim Uebernehmen', () => {
+  const t = 'Hallo,\nich hätte gern eine Strat, Korpus aus Esche, zweiteilig.';
+  const s = (id: string, value: string, field: string): Annotation => ({ id, start: t.indexOf(value), end: t.indexOf(value) + value.length,
+    text: value, value, kind: 'order', field, intent: 'confirmed', masked: false, dismissed: false, origin: 'model', reviewed: false });
+  const b = { mailId: 'm1', revision: 1, sourceHash: sourceHash(t) };
+  beforeEach(() => mocks.mail.mockResolvedValue({ text: t, html: null, orderId: 'o1', isDeleted: false,
+    order: { type: 'GUITAR', deletedAt: null, specs: [] },
+    trainingReview: { sourceHash: sourceHash(t), orderId: 'o1', revision: 1, history: [],
+      annotations: [s('shape', 'Strat', 'body_shape'), s('wood', 'Esche, zweiteilig', 'body_material')] } }));
+
+  it('traegt den Wert der Auswahlliste ein; der Mailwert bleibt Beleg', async () => {
+    const res = await POST(req({ ...b, annotationId: 'shape', action: 'accept', expectedValue: '' }), params);
+    expect(await res.json()).toMatchObject({ applied: true, newValue: 'Stratocaster' });
+    expect(mocks.newSpec).toHaveBeenCalledWith({ data: { orderId: 'o1', key: 'body_shape', value: 'Stratocaster' } });
+    expect(written().annotations.find(a => a.id === 'shape')).toMatchObject({ value: 'Strat', reason: 'correct' });
+    expect(written().history[0]).toMatchObject({ newValue: 'Stratocaster', sourceValue: 'Strat' });
+  });
+
+  it('was die Liste nicht abdeckt, kommt in die Notizen des Bereichs', async () => {
+    await POST(req({ ...b, annotationId: 'wood', action: 'accept', expectedValue: '' }), params);
+    expect(mocks.newSpec).toHaveBeenCalledWith({ data: { orderId: 'o1', key: 'body_material', value: 'Esche' } });
+    expect(mocks.newSpec).toHaveBeenCalledWith({ data: { orderId: 'o1', key: 'body_notes', value: 'Bodymaterial: Esche, zweiteilig' } });
+  });
+
+  it('einen im Banner geaenderten Wert wie getippt eintragen', async () => {
+    await POST(req({ ...b, annotationId: 'shape', action: 'accept', value: 'Strat Custom', expectedValue: '' }), params);
+    expect(mocks.newSpec).toHaveBeenCalledWith({ data: { orderId: 'o1', key: 'body_shape', value: 'Strat Custom' } });
+  });
+});
+
 describe('snippetAround', () => {
   it('zeigt den Satz um die Stelle', () => {
     const s = snippetAround(text, text.indexOf('Palisander'), text.indexOf('Palisander') + 10);

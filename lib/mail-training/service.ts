@@ -8,6 +8,8 @@ import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { readModelConfig } from '@/lib/ai-training/ollama';
 import { contextHash, loadContext, TrainingError } from '@/lib/ai-training/context';
 import { suggestForMail } from '@/lib/mail-ai/order-suggestions';
+import { FIELD_LABELS } from '@/lib/order-presets';
+import { notesFieldFor, specValueFor } from '@/lib/spec-options/match';
 
 export class ReviewError extends Error {
   constructor(message: string, public status = 409) { super(message); }
@@ -35,6 +37,30 @@ export async function writeOrderSpec(tx: Client, orderId: string, specs: { key: 
   else await tx.orderSpecKV.create({ data: { orderId, key: field, value: newValue } });
   await tx.order.update({ where: { id: orderId }, data: { lastActivityAt: new Date() } });
   return value;
+}
+
+/**
+ * Vorschlag ins Datenblatt schreiben. Statt des woertlichen Mailwerts der Wert
+ * aus der Auswahlliste ("Strat" -> "Stratocaster", nur feste Regeln); was die
+ * Liste nicht abdeckt, kommt als Zeile in die Notizen des Bereichs. Einen vom
+ * Menschen geaenderten Wert unveraendert uebernehmen. Der Mailwert bleibt Beleg
+ * in der Markierung.
+ */
+export async function writeSuggestedValue(tx: Client, orderId: string, orderType: string, specs: { key: string; value: string | null }[],
+  field: string, expectedValue: string, mailValue: string, intent: string, editedByHuman: boolean) {
+  const target = editedByHuman ? { value: mailValue, note: null } : specValueFor(field, mailValue, intent);
+  const oldValue = await writeOrderSpec(tx, orderId, specs, field, expectedValue, target.value);
+  const notesField = target.note ? notesFieldFor(orderType, field) : null;
+  let note: string | undefined;
+  if (target.note && notesField && notesField !== field) {
+    const current = specs.find(s => s.key === notesField)?.value || '';
+    const line = `${FIELD_LABELS[field] || field}: ${target.note}`;
+    if (current.indexOf(line) < 0) {
+      await writeOrderSpec(tx, orderId, specs, notesField, current, current ? `${current}\n${line}` : line);
+      note = line;
+    }
+  }
+  return { oldValue, newValue: target.value, note };
 }
 
 async function load(client: Client, id: string) {
@@ -146,10 +172,12 @@ export async function mutateTraining(id: string, body: z.infer<typeof MutationSc
       const offset = text.indexOf(fresh);
       if (!fresh || offset < 0 || a.start < offset || a.end > offset + fresh.length)
         throw new ReviewError('Diese Stelle gehört zum zitierten Verlauf. Bitte die aktuelle Kundenaussage markieren.');
-      if (history.some(e => e.action === 'apply' && e.annotationId === a.id && e.newValue === a.value && e.orderId === mail.orderId))
+      if (history.some(e => e.action === 'apply' && e.annotationId === a.id && (e.sourceValue ?? e.newValue) === a.value && e.orderId === mail.orderId))
         throw new ReviewError('Diese Entscheidung wurde bereits übernommen. Eine erneute Änderung bitte neu prüfen.');
-      const value = await writeOrderSpec(tx, mail.orderId, mail.order.specs, a.field, body.expectedValue, a.value);
-      Object.assign(event, { annotationId: a.id, orderId: mail.orderId, field: a.field, oldValue: value, newValue: a.value });
+      // Im Trainingsmodus ist der Wert die (ggf. vom Menschen korrigierte) Markierung; Listenregeln gelten trotzdem.
+      const written = await writeSuggestedValue(tx, mail.orderId, mail.order.type, mail.order.specs, a.field, body.expectedValue, a.value, a.intent ?? 'confirmed', false);
+      Object.assign(event, { annotationId: a.id, orderId: mail.orderId, field: a.field, oldValue: written.oldValue, newValue: written.newValue,
+        sourceValue: a.value, ...(written.note ? { note: written.note } : {}) });
     }
     const data = { sourceHash: hash, orderId: mail.orderId, annotations: asJson(annotations), history: asJson([...history, event]) };
     if (old) {

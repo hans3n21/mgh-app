@@ -40,6 +40,8 @@ function labelFor(field: string): string {
 interface MailSuggestion {
   mailId: string; annotationId: string; revision: number; sourceHash: string;
   field: string; value: string; intent: Intent; currentValue: string;
+  // Listenwert, der statt des Mailworts eingetragen wird, und Notiz fuer den Rest (lib/spec-options/match.ts).
+  target?: string; note?: string;
   snippet: { before: string; match: string; after: string }; mailDate: string; mailSubject: string;
 }
 type Intent = 'confirmed' | 'question' | 'change' | 'rejected' | 'unclear';
@@ -63,6 +65,7 @@ export function MailSuggestionRow({ orderId, item, fields, current, onDone }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const label = fields.find((f) => f.key === item.field)?.label || SPEC_FIELD_LABELS[item.field] || item.field;
+  const shown = item.target || item.value;
 
   const decide = async (action: 'accept' | 'acknowledge' | 'reject', edits?: { field: string; value: string; intent: Intent; current: string }) => {
     setBusy(true); setError('');
@@ -87,11 +90,13 @@ export function MailSuggestionRow({ orderId, item, fields, current, onDone }: {
         <span className="text-xs text-violet-400">{label}</span>
         <span className={`rounded border px-1.5 text-[11px] ${INTENT_STYLES[item.intent]}`}>{INTENT_LABELS[item.intent]}</span>
         <span className="text-sm text-slate-200">
-          {applies(item.intent) && item.currentValue && item.currentValue !== item.value
-            ? <><span className="text-slate-500 line-through">{item.currentValue}</span> → <strong>{item.value}</strong></>
-            : <strong>{item.value}</strong>}
+          {applies(item.intent) && item.currentValue && item.currentValue !== shown
+            ? <><span className="text-slate-500 line-through">{item.currentValue}</span> → <strong>{shown}</strong></>
+            : <strong>{shown}</strong>}
         </span>
+        {item.target && <span className="text-xs text-slate-500" title="Eingetragen wird der Wert aus der Auswahlliste des Datenblatts">aus „{item.value}“</span>}
       </div>
+      {item.note && <p className="text-xs text-slate-400">+ Notiz: „{item.note}“</p>}
       <p className="text-xs text-slate-400">
         „{item.snippet.before}<mark className="bg-violet-800/60 text-slate-100 rounded px-0.5">{item.snippet.match}</mark>{item.snippet.after}“
         <span className="text-slate-500"> · Mail vom {new Date(item.mailDate).toLocaleDateString('de-DE')}</span>

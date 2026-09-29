@@ -8,7 +8,8 @@ import { prisma } from '@/lib/prisma';
 import { getPlaintext } from '@/lib/mail/extraction';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { orderFields, readAnnotations, sourceHash, validateAnnotation } from '@/lib/mail-training/review';
-import { ReviewError, writeOrderSpec } from '@/lib/mail-training/service';
+import { ReviewError, writeSuggestedValue } from '@/lib/mail-training/service';
+import { notesFieldFor, specValueFor } from '@/lib/spec-options/match';
 import type { Annotation, ReviewEvent } from '@/lib/mail-training/contracts';
 import { isAnalyzing } from './background';
 import { snippetAround } from './snippet';
@@ -16,6 +17,8 @@ import { snippetAround } from './snippet';
 export type MailSuggestion = {
   mailId: string; annotationId: string; revision: number; sourceHash: string;
   field: string; value: string; intent: Annotation['intent']; currentValue: string;
+  // Was beim Uebernehmen eingetragen wird, falls anders als der Mailwert (Auswahlliste), und die Notizzeile.
+  target?: string; note?: string;
   snippet: { before: string; match: string; after: string }; mailDate: string; mailSubject: string;
 };
 
@@ -47,8 +50,12 @@ export async function listSuggestions(orderId: string): Promise<SuggestionList> 
     if (sourceHash(text) !== review.sourceHash) continue;
     for (const a of open) {
       if (!fields.some(f => f.key === a.field)) continue;
+      const applies = a.intent === 'confirmed' || a.intent === 'change';
+      const target = applies ? specValueFor(a.field, a.value, a.intent) : null;
       items.push({ mailId: review.mailId, annotationId: a.id, revision: review.revision, sourceHash: review.sourceHash,
         field: a.field, value: a.value, intent: a.intent, currentValue: current.get(a.field) || '',
+        ...(target && target.value !== a.value ? { target: target.value } : {}),
+        ...(target?.note && notesFieldFor(order.type, a.field) ? { note: target.note } : {}),
         snippet: snippetAround(text, a.start, a.end), mailDate: review.mail.date.toISOString(), mailSubject: review.mail.subject || '' });
     }
   }
@@ -130,9 +137,13 @@ export async function decideSuggestion(orderId: string, input: Decision, userId:
       const offset = text.indexOf(fresh);
       if (!fresh || offset < 0 || after.start < offset || after.end > offset + fresh.length)
         throw new ReviewError('Diese Stelle gehört zum zitierten Verlauf und wird nicht übernommen.', 400);
-      const oldValue = await writeOrderSpec(tx, orderId, mail.order.specs, after.field, input.expectedValue, after.value);
-      Object.assign(event, { action: 'apply', orderId, field: after.field, oldValue, newValue: after.value });
-      Object.assign(result, { applied: true, oldValue, newValue: after.value });
+      // Im Banner geaenderter Wert gilt wie getippt; sonst Listenwert statt Mailwert.
+      const editedByHuman = input.value !== undefined && input.value !== before.value;
+      const written = await writeSuggestedValue(tx, orderId, mail.order.type, mail.order.specs, after.field, input.expectedValue,
+        after.value, after.intent, editedByHuman);
+      Object.assign(event, { action: 'apply', orderId, field: after.field, oldValue: written.oldValue, newValue: written.newValue,
+        sourceValue: after.value, ...(written.note ? { note: written.note } : {}) });
+      Object.assign(result, { applied: true, oldValue: written.oldValue, newValue: written.newValue });
     }
 
     const next = annotations.map(a => (a.id === after.id ? after : a));

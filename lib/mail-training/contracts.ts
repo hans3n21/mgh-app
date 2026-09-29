@@ -28,6 +28,8 @@ export type ReviewEvent = {
   at: string; userId: string; action: 'review' | 'apply' | 'reset'; annotationId?: string;
   reason?: string; before?: Annotation; after?: Annotation;
   orderId?: string; field?: string; oldValue?: string; newValue?: string;
+  // Bei apply: woertlicher Mailwert, falls ein Listenwert eingetragen wurde, und die Notizzeile fuer den Rest.
+  sourceValue?: string; note?: string;
 };
 export type TrainingData = {
   mailId: string; sourceHash: string; revision: number; orderId: string | null;
