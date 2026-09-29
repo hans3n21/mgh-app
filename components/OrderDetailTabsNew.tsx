@@ -360,6 +360,20 @@ export default function OrderDetailTabsNew({
     );
     return { ...defaultValues, ...currentValues };
   });
+  // Uebernommene Vorschlaege (Vorschlagsleiste) sind schon gespeichert; das
+  // Datenblatt muss sie nur nachladen, sonst sieht man sie erst nach Neuladen.
+  useEffect(() => {
+    const reload = async () => {
+      try {
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/spec`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const rows: Array<{ key: string; value: string }> = await res.json();
+        setSpecValues(prev => ({ ...prev, ...Object.fromEntries(rows.map(r => [r.key, r.value])) }));
+      } catch { /* Werte sind gespeichert; Anzeige folgt beim naechsten Laden */ }
+    };
+    window.addEventListener('mgh:suggestions-applied', reload);
+    return () => window.removeEventListener('mgh:suggestions-applied', reload);
+  }, [orderId]);
   const [saving, setSaving] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});

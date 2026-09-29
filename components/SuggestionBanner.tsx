@@ -128,7 +128,8 @@ export function MailSuggestionRow({ orderId, item, fields, current, onDone }: {
 export default function SuggestionBanner({ orderId }: { orderId: string }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [mailData, setMailData] = useState<{ fields: { key: string; label: string }[]; current: Record<string, string>; items: MailSuggestion[]; analyzing: boolean }>({ fields: [], current: {}, items: [], analyzing: false });
-  const [expanded, setExpanded] = useState(false);
+  // null = noch nicht angefasst: KI-Vorschlaege aus Mails klappen von selbst auf.
+  const [expandedChoice, setExpanded] = useState<boolean | null>(null);
   const [processing, setProcessing] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMessage, setBulkMessage] = useState('');
@@ -184,7 +185,13 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
   };
 
   const total = pending.length + mailData.items.length;
-  if (total === 0 && !mailData.analyzing) return null;
+  const expanded = expandedChoice ?? mailData.items.length > 0;
+  if (total === 0 && !mailData.analyzing) {
+    // Nach "Alle uebernehmen" ist die Liste leer; die Bestaetigung soll trotzdem zu sehen sein.
+    return bulkMessage
+      ? <p role="status" className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-300">✓ {bulkMessage}</p>
+      : null;
+  }
   if (total === 0) {
     return (
       <div role="status" className="rounded-lg border border-violet-700/40 bg-violet-950/20 px-3 py-2 text-sm text-violet-300">

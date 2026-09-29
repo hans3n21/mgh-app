@@ -78,7 +78,11 @@ async function run() {
         where: { isDeleted: false, OR: [{ id: { in: priority } }, { createdAt: { gte: new Date(Date.now() - LOOKBACK_MS) } }] },
         select: { id: true, folder: true, orderId: true, customerId: true, fromEmail: true }, orderBy: { createdAt: 'asc' }, take: 300,
       });
+      let interrupted = false;
       for (const mail of prioritize(candidates, priority)) {
+        // Neu angestossene Mails (Zuordnung zum Auftrag) nicht hinter der
+        // 24-Stunden-Pruefung warten lassen: neu einlesen, Erledigtes wird uebersprungen.
+        if (state.priority.some(id => !priority.includes(id))) { interrupted = true; break; }
         state.current = mail.id;
         if (pii && !state.done.has(mail.id)) {
           try {
@@ -92,7 +96,9 @@ async function run() {
         }
         if (suggest && !state.suggested.has(mail.id)) {
           try {
-            await suggestForMail(mail.id);
+            const result = await suggestForMail(mail.id);
+            // Nur Kennung und Zahlen, kein Mailinhalt.
+            if (result) console.info(`[mail-ai] ${mail.id}: ${result.count} Auftragsvorschläge in ${(result.durationMs / 1000).toFixed(1)} s`);
             state.suggested.add(mail.id);
           } catch (error) {
             // Belegt (Admin-Vergleich) oder nicht erreichbar: spaeter erneut.
@@ -104,7 +110,7 @@ async function run() {
         if (!pii && !suggest) break;
       }
       // Angestossene Mails, die es nicht (mehr) gibt oder die nicht passen, nicht ewig als "wird geprueft" melden.
-      state.priority = state.priority.filter(id => !priority.includes(id));
+      if (!interrupted) state.priority = state.priority.filter(id => !priority.includes(id));
       if (state.done.size > 5000) state.done.clear();
       if (state.suggested.size > 5000) state.suggested.clear();
     } while (state.pending || state.priority.length);
