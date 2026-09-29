@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { Message } from './types';
-import { suggestType } from '@/lib/inbox/rules';
+import { guessOrderType, suggestType } from '@/lib/inbox/rules';
 import { parseFields as parseDraftFields, type DraftType, type ParsedDraft } from '@/lib/inbox/parse';
 import SpecForm from '@/components/specs/SpecForm';
 import OrderDatasheetForm from './OrderDatasheetForm';
@@ -27,6 +27,10 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 		if (!message) return null as null | { type: string | null };
 		return suggestType(message.html || message.snippet || '', message.subject || '');
 	}, [message]);
+	const guessedOrderType = useMemo(
+		() => (message ? guessOrderType((message as any).text || message.html || message.snippet || '', message.subject || '') : 'GUITAR'),
+		[message]
+	);
 
 	const initialDraft = useMemo(() => {
 		if (!message) return { fields: {}, source: 'regex' } as { fields: ParsedDraft; source: 'regex' };
@@ -492,15 +496,6 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 		if (draft.fretboard_radius_inch && allowed.has('fretboard_radius')) candidate['fretboard_radius'] = String(draft.fretboard_radius_inch);
 		if (draft.scale_length_mm && allowed.has('fretboard_scale')) candidate['fretboard_scale'] = String(draft.scale_length_mm);
 		return candidate;
-	}
-
-	function draftTypeToOrderType(type: DraftType | null | undefined): string {
-		if (type === 'Hals') return 'NECK';
-		if (type === 'Body') return 'BODY';
-		if (type === 'Pickguard') return 'PICKGUARD';
-		if (type === 'Pickups') return 'PICKUPS';
-		if (type === 'Rep.') return 'REPAIR';
-		return 'GUITAR';
 	}
 
 	// Neuen Auftrag erstellen
@@ -1295,14 +1290,26 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 								<>
 									<SpecForm type={((suggestion?.type as any) || 'Hals') as DraftType} value={draft} onChange={setDraft} />
 									{!selectedOrderId && (
-										<div className="flex gap-2 justify-end">
-											<button
-												disabled={submitting}
-												onClick={() => createNewOrder(draftTypeToOrderType((suggestion?.type as DraftType) || 'Hals'))}
-												className="rounded bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 text-sm"
-											>
-												Auftrag aus Mail erstellen
-											</button>
+										// Typ sichtbar waehlen statt still raten: vorher legte der Knopf jede
+										// Mail mit "Hals"/"Griffbrett" als Hals-Auftrag an, auch ganze Gitarren.
+										<div className="space-y-1.5">
+											<p className="text-xs text-slate-400">Auftrag aus Mail erstellen als:</p>
+											<div className="grid grid-cols-2 gap-1.5">
+												{ORDER_TYPE_CHIPS.map((chip) => (
+													<button
+														key={chip.value}
+														type="button"
+														disabled={submitting}
+														onClick={() => createNewOrder(chip.value)}
+														title={chip.value === guessedOrderType ? 'Vermutung aus dem Mailtext' : undefined}
+														className={chip.value === guessedOrderType
+															? 'rounded bg-emerald-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50'
+															: 'rounded border border-slate-700 bg-slate-800/75 px-2 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50'}
+													>
+														{chip.label}
+													</button>
+												))}
+											</div>
 										</div>
 									)}
 								</>

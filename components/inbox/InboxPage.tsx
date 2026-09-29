@@ -191,6 +191,10 @@ function mapMailToMessage(m: any, accountLabels: Record<string, string>, detailL
 		subject: m.subject || 'Ohne Betreff',
 		fromName: m.fromName || m.fromEmail || '–',
 		fromEmail: m.fromEmail || '',
+		// Kontaktformular-Mails (dein-pickguard.de): fromEmail ist die eigene
+		// Adresse, der Kunde steht im Reply-To. Ohne dieses Feld ordnet die
+		// Seitenleiste den Kunden falsch zu und Antworten gehen an uns selbst.
+		replyToEmail: m.replyToEmail || null,
 		accountId: m.accountId || null,
 		accountLabel: m.accountId ? (accountLabels[m.accountId] || null) : null,
 		toName: m.toName || null,
