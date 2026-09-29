@@ -41,11 +41,13 @@ if ($Install) {
     Invoke-Native { & $python -m pip install -q -r requirements.txt } 'Pakete konnten nicht installiert werden.'
     # Feste Modellstaende (Commit-Kennungen), in normale Ordner statt in den
     # Symlink-Cache: Windows-Konten ohne Symlink-Recht scheitern sonst.
+    # Das Feldmodell (1,1 GB) nur mit -WithFields; die App nutzt nur /pii.
+    $fieldsModel = if ($WithFields) { "('fastino/gliner2.5-multi-v1', '2ca71aafb3446d9014e1c55c7ff51c9bc7209c47', 'fields')," } else { '' }
     $download = @"
 from huggingface_hub import snapshot_download
 for repo, rev, target in [
     ('fastino/gliner2-privacy-filter-PII-multi', '1cb4166094dc58fa8d836429f060d6c95f62b495', 'pii'),
-    ('fastino/gliner2.5-multi-v1', '2ca71aafb3446d9014e1c55c7ff51c9bc7209c47', 'fields'),
+    $fieldsModel
 ]:
     print(snapshot_download(repo, revision=rev, local_dir=r'$models\\' + target))
 "@
@@ -55,6 +57,7 @@ for repo, rev, target in [
 
 if (!(Test-Path -LiteralPath $python)) { throw 'Zuerst mit -Install einrichten.' }
 if (!(Test-Path -LiteralPath (Join-Path $models 'pii'))) { throw 'Modelle fehlen. Mit -Install einrichten.' }
+if ($WithFields -and !(Test-Path -LiteralPath (Join-Path $models 'fields'))) { throw 'Feldmodell fehlt. Mit -Install -WithFields einrichten.' }
 
 # Zugriffsschluessel dieses Rechners. Die App liest ihn fuer 127.0.0.1 direkt
 # aus dieser Datei (lib/mail-ai/client.ts), er muss nirgends eingetragen werden.

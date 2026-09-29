@@ -3,7 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File services\mail-ai\Install-LocalAi.ps1
 #
 # 1. Analysedienst (Python, GLiNER): nur wenn noch nicht eingerichtet oder
-#    requirements/Startskript geaendert. Erster Lauf laedt ~3 GB.
+#    requirements/Startskript geaendert. Erster Lauf laedt ~2 GB.
 # 2. Ollama: bei Bedarf per winget installieren (mit Rueckfrage), auf "nur lokal,
 #    keine Cloud" stellen, Modell aus local-ai.json laden (erster Lauf ~10 GB).
 # Fehlt etwas oder schlaegt etwas fehl, gibt es einen Hinweis; die App laeuft
@@ -46,7 +46,7 @@ if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
         # Laufenden Dienst beenden, sonst sind Dateien der Python-Umgebung gesperrt.
         Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like "*$PSScriptRoot*" } |
             ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false }
-        Say 'Analysedienst wird eingerichtet (erster Lauf laedt ca. 3 GB, das dauert) ...'
+        Say 'Analysedienst wird eingerichtet (erster Lauf laedt ca. 2 GB, das dauert) ...'
         try {
             & (Join-Path $PSScriptRoot 'Start-MailAi.ps1') -Install -InstallOnly
             New-Item -ItemType Directory -Path 'data' -Force | Out-Null

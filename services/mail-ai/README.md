@@ -17,7 +17,7 @@ ausschließlich die lokale Ausführung (`gliner2[local]`).
 Macht `update.bat` (Schritt 6) über `Install-LocalAi.ps1`:
 
 1. Python-Umgebung und Modell des Analysedienstes, nur wenn noch nicht vorhanden oder
-   `requirements.txt` / `Start-MailAi.ps1` geändert (erster Lauf ca. 3 GB).
+   `requirements.txt` / `Start-MailAi.ps1` geändert (erster Lauf ca. 2 GB).
 2. Ollama bei Bedarf per `winget` (mit Rückfrage), auf „nur lokal“ stellen.
 3. Sprachmodell je Rechner nach `local-ai.json`: unter 24 GB Arbeitsspeicher die kleinere
    Variante `gemma4:e4b-it-qat` (6 GB), sonst `gemma4:e4b` (10 GB). Die Wahl steht in
@@ -42,6 +42,8 @@ einem minimierten Fenster, wenn er eingerichtet ist. Von Hand:
 .\Start-MailAi.ps1               # nur Personenerkennung (was die App nutzt)
 .\Start-MailAi.ps1 -WithFields   # zusätzlich /fields (GLiNER2.5), ca. 1 GB mehr RAM
 ```
+
+Das Feldmodell (1,1 GB) lädt nur `.\Start-MailAi.ps1 -Install -WithFields`; `update.bat` lässt es weg.
 
 Läuft der Dienst schon, beendet sich ein zweiter Start ohne Fehler.
 
