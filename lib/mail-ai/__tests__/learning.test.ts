@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeStats, pickExamples } from '@/lib/mail-ai/learning';
+import { computeContactStats, computeStats, pickExamples } from '@/lib/mail-ai/learning';
 import { buildSuggestionMessages } from '@/lib/mail-ai/order-suggestions';
 import type { Annotation } from '@/lib/mail-training/contracts';
 
@@ -44,6 +44,14 @@ describe('computeStats', () => {
     expect(stats.fields.find(f => f.field === 'inlays')).toMatchObject({ total: 1, corrected: 1 });
     expect(stats.fields.find(f => f.field === 'side_dots')).toMatchObject({ total: 1, wrong: 1 });
     expect(stats.variants).toEqual(expect.arrayContaining([{ withExamples: true, total: 1, correct: 0 }, { withExamples: false, total: 2, correct: 1 }]));
+  });
+});
+
+describe('computeContactStats', () => {
+  it('zaehlt unveraendert bestaetigte und vom Menschen geaenderte Kontaktfelder', () => {
+    const ev = (field: string, reason: string) => ({ at: '', userId: 'u', action: 'contact' as const, field, reason });
+    expect(computeContactStats([[ev('phone', 'correct'), ev('addressLine1', 'value')], [ev('phone', 'removed'), { at: '', userId: 'u', action: 'apply' as const }]]))
+      .toEqual([{ field: 'phone', label: 'Telefon', total: 2, correct: 1, corrected: 1 }, { field: 'addressLine1', label: 'Straße', total: 1, correct: 0, corrected: 1 }]);
   });
 });
 

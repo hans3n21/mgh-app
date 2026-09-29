@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { INTENTS, PRIVACY_FIELDS, REASONS, type Annotation, type TrainingData } from '@/lib/mail-training/contracts';
 import { highlightSegments } from '@/lib/mail-training/highlight';
+import { CONTACT_LABELS, type ContactField } from '@/lib/mail/contact-fields';
 
 type Action = Record<string, unknown>;
 export type TrainingMutation = (body: Action) => Promise<TrainingData | { annotations: Annotation[]; context?: TrainingData['context'] }>;
@@ -80,7 +81,7 @@ export default function MailTrainingWorkspace({ data, onChange, mutate, reload }
   }
   const dirty = selected && JSON.stringify(selected) !== JSON.stringify(original);
   const applicable = selected?.kind === 'order' && selected.reviewed && !selected.dismissed && ['confirmed', 'change'].includes(selected.intent) && !dirty;
-  const applied = selected && data.history.some(e => e.action === 'apply' && e.annotationId === selected.id && e.newValue === selected.value && e.orderId === data.orderId);
+  const applied = selected && data.history.some(e => e.action === 'apply' && e.annotationId === selected.id && (e.sourceValue ?? e.newValue) === selected.value && e.orderId === data.orderId);
   const maskedRanges = data.annotations.filter(a => a.kind === 'privacy' && a.masked && !a.dismissed && (a.reviewed || a.origin !== 'example'));
   const describe = (a: Annotation) => `${label(a)}: ${a.value} (${a.dismissed ? 'verworfen' : a.kind === 'privacy' ? a.masked ? 'zensieren' : 'freigeben' : INTENTS[a.intent]})`;
 
@@ -158,6 +159,6 @@ export default function MailTrainingWorkspace({ data, onChange, mutate, reload }
         </div>}
       </div>
     </div>
-    <details className="rounded border border-slate-700 p-3 text-xs text-slate-300"><summary className="cursor-pointer">Prüfverlauf ({data.history.length})</summary><div className="mt-2 space-y-2">{[...data.history].reverse().map((e, i) => <div key={i} className="border-b border-slate-800 pb-2"><p>{new Date(e.at).toLocaleString('de-DE')} · {e.action === 'apply' ? 'Auftrag geändert' : REASONS[e.reason as keyof typeof REASONS] || 'Prüfung'}</p><p className="break-words">{e.action === 'apply' ? `${data.fields.find(f => f.key === e.field)?.label || e.field}: ${e.oldValue || 'Leer'} → ${e.newValue}` : `${e.before ? describe(e.before) : 'Neue Markierung'} → ${e.after ? describe(e.after) : ''}`}</p></div>)}</div></details>
+    <details className="rounded border border-slate-700 p-3 text-xs text-slate-300"><summary className="cursor-pointer">Prüfverlauf ({data.history.length})</summary><div className="mt-2 space-y-2">{[...data.history].reverse().map((e, i) => <div key={i} className="border-b border-slate-800 pb-2"><p>{new Date(e.at).toLocaleString('de-DE')} · {e.action === 'apply' ? 'Auftrag geändert' : e.action === 'contact' ? 'Kontaktdaten bestätigt' : REASONS[e.reason as keyof typeof REASONS] || 'Prüfung'}</p><p className="break-words">{e.action === 'apply' ? `${data.fields.find(f => f.key === e.field)?.label || e.field}: ${e.oldValue || 'Leer'} → ${e.newValue}` : e.action === 'contact' ? `${CONTACT_LABELS[e.field as ContactField] || e.field}: ${e.oldValue || 'nicht erkannt'} → ${e.newValue || 'entfernt'}` : `${e.before ? describe(e.before) : 'Neue Markierung'} → ${e.after ? describe(e.after) : ''}`}</p></div>)}</div></details>
   </div>;
 }

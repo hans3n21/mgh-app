@@ -21,6 +21,14 @@ Einrichtung und Betrieb: [services/mail-ai/README.md](../services/mail-ai/README
 Vor jedem externen KI-Aufruf (Zusammenfassen, Übersetzen, Verfassen) schwärzt `lib/pii/anonymize.ts` den tatsächlich
 gesendeten Text inklusive Zitatverlauf: gespeicherte Funde, Regeln und – falls aktiviert – der lokale Analysedienst.
 
+## Kontaktdaten beim Anlegen aus der Mail
+
+Neben der Mail stehen Telefon, Straße, PLZ und Ort aus dem neuen Mailteil (dieselben Funde wie für die
+Anonymisierung) als vorausgefüllte Felder; nur eindeutige Angaben, bei zwei Adressen bleibt das Feld leer.
+Beim Anlegen gelten sie als bestätigt, Korrekturen tippt man ins Feld. Eingetragen wird nur in leere
+Kundenfelder; bestätigt/korrigiert/ergänzt/entfernt steht im Prüfverlauf der Mail (`contact`) und in der
+Trefferquote.
+
 ## Trainingsmodus (nur Admins)
 
 Im Posteingang „Trainingsmodus öffnen“ (auch im Papierkorb, dem Archiv). Markierungen für Datenschutz und

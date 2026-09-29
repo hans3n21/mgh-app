@@ -6,6 +6,7 @@ type TestResult = { status: string; fields?: boolean; elapsedMs?: number; found:
 type Stats = {
   fields: { field: string; label: string; total: number; correct: number; corrected: number; wrong: number }[];
   variants: { withExamples: boolean; total: number; correct: number }[];
+  contact?: { field: string; label: string; total: number; correct: number; corrected: number }[];
 };
 
 const percent = (part: number, total: number) => (total ? `${Math.round((100 * part) / total)} %` : '–');
@@ -49,6 +50,12 @@ function SuggestionStats() {
             </tbody>
           </table>
         </>
+      )}
+      {!!stats.contact?.length && (
+        <p className="text-xs text-slate-400">
+          Kontaktdaten beim Anlegen aus Mails: {stats.contact.map(c => `${c.label} ${c.correct}/${c.total} unverändert`).join(' · ')}
+          {' '}(Rest vom Menschen korrigiert, ergänzt oder entfernt).
+        </p>
       )}
     </div>
   );

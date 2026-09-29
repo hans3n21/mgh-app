@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { Message } from './types';
 import { guessOrderType, suggestType } from '@/lib/inbox/rules';
+import { CONTACT_FIELDS, CONTACT_LABELS, type ContactField, type MailContact } from '@/lib/mail/contact-fields';
 import { parseFields as parseDraftFields, type DraftType, type ParsedDraft } from '@/lib/inbox/parse';
 import SpecForm from '@/components/specs/SpecForm';
 import OrderDatasheetForm from './OrderDatasheetForm';
@@ -44,6 +45,19 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 
 	const [submitting, setSubmitting] = useState(false);
 	const [toast, setToast] = useState<string | null>(null);
+
+	// Kontaktdaten aus der Mail: vorausgefuellt, vor dem Anlegen pruefen oder korrigieren.
+	const [mailContact, setMailContact] = useState<MailContact>({});
+	useEffect(() => {
+		setMailContact({});
+		if (!message?.id || message.assignedTo) return;
+		let active = true;
+		fetch(`/api/mails/${encodeURIComponent(message.id)}/contact`)
+			.then((r) => (r.ok ? r.json() : null))
+			.then((d) => { if (active && d?.suggested) setMailContact(d.suggested); })
+			.catch(() => {});
+		return () => { active = false; };
+	}, [message?.id, message?.assignedTo]);
 	const [activePanelTab, setActivePanelTab] = useState<'auftrag' | 'info'>('auftrag');
 	const [editingDatasheet, setEditingDatasheet] = useState(false);
 	// Auftragsliste und ausgewählter Auftrag
@@ -560,6 +574,18 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 			
 			const newOrder = await orderRes.json();
 
+			// Bestaetigte bzw. korrigierte Kontaktdaten (nur leere Kundenfelder). Vor dem
+			// Zuordnen: das startet die KI-Auswertung, die in denselben Pruefverlauf schreibt.
+			const contactRes = await fetch(`/api/mails/${encodeURIComponent(message.id)}/contact`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ customerId, contact: mailContact }),
+			}).catch(() => null);
+			const contactResult = contactRes?.ok ? await contactRes.json().catch(() => null) : null;
+			const keptFields = Object.keys(contactResult?.kept || {}) as ContactField[];
+			const contactNote = !contactResult ? ' · Kontaktdaten nicht gespeichert'
+				: keptFields.length ? ` · ${keptFields.map((f) => CONTACT_LABELS[f]).join(', ')} im Kunden belassen` : '';
+
 			// Mail, Thread und Anhänge dem neuen Auftrag zuordnen.
 			const assignRes = await fetch('/api/inbox/assign-order', {
 				method: 'POST',
@@ -598,7 +624,7 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 			onOrderResolved?.(newOrder.id);
 			window.dispatchEvent(new CustomEvent('mail-assigned'));
 			setImageRefreshTrigger(prev => prev + 1);
-			setToast(specsImported ? `Neuer Auftrag ${newOrder.id} mit Specs und Mail erstellt` : `Neuer Auftrag ${newOrder.id} mit Mail erstellt`);
+			setToast((specsImported ? `Neuer Auftrag ${newOrder.id} mit Specs und Mail erstellt` : `Neuer Auftrag ${newOrder.id} mit Mail erstellt`) + contactNote);
 		} catch (e) {
 			console.error('Create order error:', e);
 			setToast('Fehler beim Erstellen des Auftrags');
@@ -1293,6 +1319,21 @@ export default function DatasheetSidebar({ message, isOpen, onToggle, onOrderRes
 										// Typ sichtbar waehlen statt still raten: vorher legte der Knopf jede
 										// Mail mit "Hals"/"Griffbrett" als Hals-Auftrag an, auch ganze Gitarren.
 										<div className="space-y-1.5">
+											<div className="rounded border border-slate-700/80 p-2 space-y-1.5">
+												<p className="text-xs text-slate-400">Kontakt aus der Mail – prüfen, bei Bedarf korrigieren:</p>
+												<div className="grid grid-cols-2 gap-1.5">
+													{CONTACT_FIELDS.map((field) => (
+														<label key={field} className={field === 'phone' || field === 'addressLine1' ? 'col-span-2' : ''}>
+															<span className="block text-[11px] text-slate-500">{CONTACT_LABELS[field]}</span>
+															<input
+																value={mailContact[field] || ''}
+																onChange={(e) => setMailContact((prev) => ({ ...prev, [field]: e.target.value }))}
+																className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100"
+															/>
+														</label>
+													))}
+												</div>
+											</div>
 											<p className="text-xs text-slate-400">Auftrag aus Mail erstellen als:</p>
 											<div className="grid grid-cols-2 gap-1.5">
 												{ORDER_TYPE_CHIPS.map((chip) => (

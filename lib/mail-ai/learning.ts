@@ -9,7 +9,8 @@ import { prisma } from '@/lib/prisma';
 import { FIELD_LABELS } from '@/lib/order-presets';
 import { getPlaintext } from '@/lib/mail/extraction';
 import { readAnnotations, sourceHash } from '@/lib/mail-training/review';
-import type { Annotation } from '@/lib/mail-training/contracts';
+import type { Annotation, ReviewEvent } from '@/lib/mail-training/contracts';
+import { CONTACT_FIELDS, CONTACT_LABELS, type ContactField } from '@/lib/mail/contact-fields';
 import { snippetAround } from './snippet';
 
 export type LearningExample = { text: string; findings: { field: string; value: string; intent: string; quote: string }[] };
@@ -85,7 +86,27 @@ export function computeStats(annotationSets: Annotation[][]): { fields: FieldSta
     variants: Array.from(variants.values()) };
 }
 
+export type ContactStat = { field: string; label: string; total: number; correct: number; corrected: number };
+
+/**
+ * Kontaktdaten aus Mails (Verlauf 'contact', lib/mail/contact.ts): unveraendert
+ * bestaetigt oder vom Menschen geaendert, ergaenzt bzw. entfernt. "korrigiert"
+ * heisst nicht zwingend falsch erkannt; man darf auch bewusst anders entscheiden.
+ */
+export function computeContactStats(histories: ReviewEvent[][]): ContactStat[] {
+  const stats = new Map<string, ContactStat>();
+  histories.forEach(history => history.forEach(e => {
+    if (e.action !== 'contact' || !e.field) return;
+    const stat = stats.get(e.field) ?? { field: e.field, label: CONTACT_LABELS[e.field as ContactField] || e.field, total: 0, correct: 0, corrected: 0 };
+    stat.total++;
+    if (e.reason === 'correct') stat.correct++; else stat.corrected++;
+    stats.set(e.field, stat);
+  }));
+  return CONTACT_FIELDS.map(f => stats.get(f)).filter((s): s is ContactStat => !!s);
+}
+
 export async function loadStats() {
-  const rows = await prisma.mailTrainingReview.findMany({ select: { annotations: true } });
-  return computeStats(rows.map(r => readAnnotations(r.annotations)));
+  const rows = await prisma.mailTrainingReview.findMany({ select: { annotations: true, history: true } });
+  return { ...computeStats(rows.map(r => readAnnotations(r.annotations))),
+    contact: computeContactStats(rows.map(r => (Array.isArray(r.history) ? r.history as unknown as ReviewEvent[] : []))) };
 }

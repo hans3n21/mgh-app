@@ -84,6 +84,7 @@ Der frühere Laya-Pilot, die eingefrorenen Prüffälle mit Modellvergleich und d
 | `/api/mails/[id]/mark-read` | POST | Mail als gelesen markieren |
 | `/api/mails/[id]/context` | GET | Kontext-Daten zur Mail (Kunde, Auftrag) |
 | `/api/mails/[id]/extraction` | GET, PATCH | PII-Entities extrahieren / manuell bearbeiten |
+| `/api/mails/[id]/contact` | GET, POST | Kontaktdaten (Telefon, Straße, PLZ, Ort) aus dem neuen Mailteil zum Bestätigen beim Anlegen aus der Mail (`lib/mail/contact.ts`). POST `{customerId, contact}` füllt nur leere Kundenfelder und vermerkt bestätigt/korrigiert im Prüfverlauf (Lernbeispiel, Trefferquote). |
 | `/api/mails/thread/[threadId]` | GET | Alle Mails eines Threads |
 
 ### Mail-System
