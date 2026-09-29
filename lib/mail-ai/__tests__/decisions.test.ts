@@ -79,6 +79,30 @@ describe('Vorschlaege im Auftrag entscheiden', () => {
   });
 });
 
+describe('Alle Wuensche uebernehmen', () => {
+  it('zaehlt die Version derselben Mail innerhalb des Stapels mit', async () => {
+    const both = [suggestion('p', 'Palisander', 'fretboard_material', 'change'), suggestion('b', '22 Edelstahlbünde', 'frets', 'confirmed')];
+    const at = (revision: number, annotations: Annotation[]) => ({ ...mail(), trainingReview: { ...mail().trainingReview, revision, annotations } });
+    mocks.mail.mockResolvedValueOnce(at(3, both)).mockResolvedValueOnce(at(4, [{ ...both[0], reviewed: true }, both[1]]));
+    const res = await POST(req({ action: 'accept-all', items: [
+      { mailId: 'm1', annotationId: 'p', revision: 3, sourceHash: sourceHash(text), expectedValue: 'Ebenholz' },
+      { mailId: 'm1', annotationId: 'b', revision: 3, sourceHash: sourceHash(text), expectedValue: '' },
+    ] }), params);
+    expect(await res.json()).toMatchObject({ applied: 2, failed: 0 });
+    expect(mocks.update.mock.calls.map(c => c[0].where.revision)).toEqual([3, 4]);
+  });
+
+  it('ein veralteter Vorschlag scheitert allein, die anderen werden trotzdem uebernommen', async () => {
+    const res = await POST(req({ action: 'accept-all', items: [
+      { mailId: 'm1', annotationId: 'p', revision: 3, sourceHash: sourceHash(text), expectedValue: 'Ahorn' },
+    ] }), params);
+    const data = await res.json();
+    expect(data).toMatchObject({ applied: 0, failed: 1 });
+    expect(data.results[0].error).toMatch(/inzwischen geändert/);
+    expect(mocks.specs).not.toHaveBeenCalled();
+  });
+});
+
 describe('snippetAround', () => {
   it('zeigt den Satz um die Stelle', () => {
     const s = snippetAround(text, text.indexOf('Palisander'), text.indexOf('Palisander') + 10);

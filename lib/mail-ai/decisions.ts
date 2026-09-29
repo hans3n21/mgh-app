@@ -10,6 +10,7 @@ import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { orderFields, readAnnotations, sourceHash, validateAnnotation } from '@/lib/mail-training/review';
 import { ReviewError, writeOrderSpec } from '@/lib/mail-training/service';
 import type { Annotation, ReviewEvent } from '@/lib/mail-training/contracts';
+import { isAnalyzing } from './background';
 
 export type MailSuggestion = {
   mailId: string; annotationId: string; revision: number; sourceHash: string;
@@ -30,11 +31,14 @@ export function snippetAround(text: string, start: number, end: number) {
 
 const pending = (a: Annotation) => a.kind === 'order' && a.origin === 'model' && !a.reviewed && !a.dismissed;
 
-export type SuggestionList = { fields: { key: string; label: string }[]; current: Record<string, string>; items: MailSuggestion[] };
+export type SuggestionList = { fields: { key: string; label: string }[]; current: Record<string, string>; items: MailSuggestion[]; analyzing: boolean };
 
 export async function listSuggestions(orderId: string): Promise<SuggestionList> {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { type: true, deletedAt: true, specs: { select: { key: true, value: true } } } });
-  if (!order || order.deletedAt) return { fields: [], current: {}, items: [] };
+  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { type: true, deletedAt: true, specs: { select: { key: true, value: true } },
+    mails: { where: { isDeleted: false }, select: { id: true } } } });
+  if (!order || order.deletedAt) return { fields: [], current: {}, items: [], analyzing: false };
+  // Liest die KI gerade Mails dieses Auftrags? Dann zeigt die Oberflaeche das an und fragt nach.
+  const analyzing = isAnalyzing(order.mails.map(m => m.id));
   const fields = orderFields(order.type);
   const current = new Map(order.specs.map(s => [s.key, s.value || '']));
   const reviews = await prisma.mailTrainingReview.findMany({
@@ -58,7 +62,7 @@ export async function listSuggestions(orderId: string): Promise<SuggestionList> 
   }
   items.sort((a, b) => a.mailDate.localeCompare(b.mailDate));
   // Aktuelle Werte aller Felder: beim Aendern des Feldes braucht die Oberflaeche den Altwert des Zielfelds.
-  return { fields, current: Object.fromEntries(current), items };
+  return { fields, current: Object.fromEntries(current), items, analyzing };
 }
 
 export const DecisionSchema = z.object({
@@ -71,6 +75,35 @@ export const DecisionSchema = z.object({
   expectedValue: z.string().max(10000).default(''),
 }).strict();
 export type Decision = z.infer<typeof DecisionSchema>;
+
+export const BatchSchema = z.object({
+  action: z.literal('accept-all'),
+  items: z.array(z.object({
+    mailId: z.string().min(1).max(100), annotationId: z.string().min(1).max(100),
+    revision: z.number().int().nonnegative(), sourceHash: z.string().length(64), expectedValue: z.string().max(10000).default(''),
+  }).strict()).min(1).max(50),
+}).strict();
+
+/**
+ * Mehrere Wuensche auf einmal uebernehmen. Pro Mail zaehlt die Version nach jeder
+ * Entscheidung dieses Stapels mit; aendert jemand anderes zwischendurch etwas,
+ * scheitert nur der betroffene Vorschlag und bleibt offen.
+ */
+export async function decideMany(orderId: string, items: z.infer<typeof BatchSchema>['items'], userId: string) {
+  const revisions = new Map<string, number>();
+  const results: ({ annotationId: string; ok: true } & DecisionResult | { annotationId: string; ok: false; error: string })[] = [];
+  for (const item of items) {
+    const revision = revisions.get(item.mailId) ?? item.revision;
+    try {
+      const result = await decideSuggestion(orderId, { ...item, revision, action: 'accept' }, userId);
+      revisions.set(item.mailId, revision + 1);
+      results.push({ annotationId: item.annotationId, ok: true, ...result });
+    } catch (error) {
+      results.push({ annotationId: item.annotationId, ok: false, error: error instanceof Error ? error.message : 'Fehler' });
+    }
+  }
+  return { results, applied: results.filter(r => r.ok && r.applied).length, failed: results.filter(r => !r.ok).length };
+}
 
 /** Ergebnis der Entscheidung fuer die Oberflaeche. */
 export type DecisionResult = { applied: boolean; field: string; oldValue?: string; newValue?: string };

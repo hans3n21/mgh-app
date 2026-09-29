@@ -11,15 +11,58 @@ import { detectPiiStrict, readMailAiConfig } from './client';
 import { suggestForMail } from './order-suggestions';
 
 const LOOKBACK_MS = 24 * 60 * 60 * 1000;
-type QueueState = { running: boolean; pending: boolean; done: Set<string>; suggested: Set<string> };
-const state = (globalThis as unknown as { __mailAiQueue?: QueueState })
-  .__mailAiQueue ??= { running: false, pending: false, done: new Set<string>(), suggested: new Set<string>() };
+// Im Hintergrund reicht der Anfang langer Mails; vor einem externen KI-Versand
+// prueft anonymizeText ohnehin den ganzen Text, der tatsaechlich rausgeht.
+const BACKGROUND_TEXT_LIMIT = 20_000;
+const MAX_PRIORITY_PER_CALL = 10;
+
+type QueueState = { running: boolean; pending: boolean; done: Set<string>; suggested: Set<string>; priority: string[]; current: string | null };
+const state = (globalThis as unknown as { __mailAiQueue?: QueueState }).__mailAiQueue ??=
+  { running: false, pending: false, done: new Set<string>(), suggested: new Set<string>(), priority: [], current: null };
+// Bundles, die vor der Vorrangliste geladen wurden, kennen die neuen Felder noch nicht.
+state.priority ??= [];
+state.current ??= null;
 const message = (error: unknown) => (error instanceof Error ? error.message : 'unbekannt');
 
-/** Sync meldet neue Mails; die Pruefung laeuft entkoppelt weiter. */
-export function scheduleMailAnalysis() {
+/**
+ * Pruefung anstossen. Ohne Angabe: die Mails der letzten 24 Stunden (nach einem
+ * Sync). Mit mailIds: genau diese Mails zuerst und erneut, z. B. nach dem
+ * Zuordnen zu einem Auftrag, auch wenn sie aelter als 24 Stunden sind.
+ */
+export function scheduleMailAnalysis(mailIds: string[] = []) {
+  for (const id of mailIds.slice(0, MAX_PRIORITY_PER_CALL)) {
+    state.done.delete(id);
+    state.suggested.delete(id);
+    if (!state.priority.includes(id)) state.priority.push(id);
+  }
   if (state.running) { state.pending = true; return; }
   void run().catch(error => console.warn(`[mail-ai] Hintergrundprüfung abgebrochen: ${message(error)}`));
+}
+
+/** Wird eine dieser Mails gerade geprueft oder wartet darauf (fuer "KI liest noch" in der Oberflaeche)? */
+export function isAnalyzing(mailIds: string[]) {
+  return mailIds.some(id => id === state.current || state.priority.includes(id));
+}
+
+// Automatische Absender (Newsletter, Benachrichtigungen): keine Kundenmails,
+// im Hintergrund nicht pruefen. "info@" bleibt drin, das nutzen auch Kunden.
+const BULK_SENDER = /(^|[._+-])(no-?reply|do-?not-?reply|newsletters?|news|mailer(-daemon)?|notifications?|notify|marketing|bounces?)([._+-]|@)/i;
+export const isBulkSender = (email: string | null | undefined) => !!email && BULK_SENDER.test(email);
+
+type Candidate = { id: string; folder: string; orderId: string | null; customerId: string | null; fromEmail: string | null };
+
+/** Reihenfolge: angestossene Mails, dann Auftragsmails, dann Kundenmails, dann der Rest. */
+export function prioritize(mails: Candidate[], priority: string[]): Candidate[] {
+  const rank = (m: Candidate) => {
+    const p = priority.indexOf(m.id);
+    if (p >= 0) return p;
+    return priority.length + (m.orderId ? 0 : m.customerId ? 1 : 2);
+  };
+  return mails
+    .filter(m => !isSentFolderName(m.folder) && (priority.includes(m.id) || m.orderId || m.customerId || !isBulkSender(m.fromEmail)))
+    .map((m, index) => ({ m, index, r: rank(m) }))
+    .sort((a, b) => a.r - b.r || a.index - b.index)
+    .map(x => x.m);
 }
 
 async function run() {
@@ -29,13 +72,14 @@ async function run() {
       state.pending = false;
       let pii = (await readMailAiConfig(true)).enabled;
       let suggest = (await readModelConfig()).enabled;
-      if (!pii && !suggest) return;
-      const recent = await prisma.mail.findMany({
-        where: { createdAt: { gte: new Date(Date.now() - LOOKBACK_MS) }, isDeleted: false },
-        select: { id: true, folder: true }, orderBy: { createdAt: 'asc' }, take: 300,
+      if (!pii && !suggest) { state.priority = []; return; }
+      const priority = state.priority.slice();
+      const candidates = await prisma.mail.findMany({
+        where: { isDeleted: false, OR: [{ id: { in: priority } }, { createdAt: { gte: new Date(Date.now() - LOOKBACK_MS) } }] },
+        select: { id: true, folder: true, orderId: true, customerId: true, fromEmail: true }, orderBy: { createdAt: 'asc' }, take: 300,
       });
-      for (const mail of recent) {
-        if (isSentFolderName(mail.folder)) continue;
+      for (const mail of prioritize(candidates, priority)) {
+        state.current = mail.id;
         if (pii && !state.done.has(mail.id)) {
           try {
             await analyzeMail(mail.id);
@@ -56,12 +100,16 @@ async function run() {
             suggest = false;
           }
         }
+        state.priority = state.priority.filter(id => id !== mail.id);
         if (!pii && !suggest) break;
       }
+      // Angestossene Mails, die es nicht (mehr) gibt oder die nicht passen, nicht ewig als "wird geprueft" melden.
+      state.priority = state.priority.filter(id => !priority.includes(id));
       if (state.done.size > 5000) state.done.clear();
       if (state.suggested.size > 5000) state.suggested.clear();
-    } while (state.pending);
+    } while (state.pending || state.priority.length);
   } finally {
+    state.current = null;
     state.running = false;
   }
 }
@@ -73,7 +121,7 @@ async function run() {
 export async function analyzeMail(mailId: string) {
   const mail = await prisma.mail.findUnique({ where: { id: mailId }, select: { text: true, html: true, extraction: { select: { entities: true } } } });
   if (!mail) return;
-  const text = getPlaintext(stripQuotedContent(mail.text ?? '').freshContent, mail.html);
+  const text = getPlaintext(stripQuotedContent(mail.text ?? '').freshContent, mail.html).slice(0, BACKGROUND_TEXT_LIMIT);
   if (text.length < 5) return;
   const ml = await detectPiiStrict(text, 120_000);
   const existing = (mail.extraction?.entities ?? []) as unknown as ExtractedEntity[];

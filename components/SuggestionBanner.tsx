@@ -127,9 +127,11 @@ export function MailSuggestionRow({ orderId, item, fields, current, onDone }: {
 
 export default function SuggestionBanner({ orderId }: { orderId: string }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [mailData, setMailData] = useState<{ fields: { key: string; label: string }[]; current: Record<string, string>; items: MailSuggestion[] }>({ fields: [], current: {}, items: [] });
+  const [mailData, setMailData] = useState<{ fields: { key: string; label: string }[]; current: Record<string, string>; items: MailSuggestion[]; analyzing: boolean }>({ fields: [], current: {}, items: [], analyzing: false });
   const [expanded, setExpanded] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState('');
 
   const loadSuggestions = useCallback(async () => {
     try {
@@ -151,6 +153,13 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
     window.addEventListener('mgh:suggestions-updated', loadSuggestions);
     return () => window.removeEventListener('mgh:suggestions-updated', loadSuggestions);
   }, [loadSuggestions]);
+
+  // Solange die lokale KI Mails dieses Auftrags liest, regelmaessig nachsehen.
+  useEffect(() => {
+    if (!mailData.analyzing) return;
+    const timer = setTimeout(() => { void loadSuggestions(); }, 10_000);
+    return () => clearTimeout(timer);
+  }, [mailData, loadSuggestions]);
 
   const pending = suggestions.filter((s) => s.status === 'suggested');
 
@@ -175,11 +184,39 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
   };
 
   const total = pending.length + mailData.items.length;
-  if (total === 0) return null;
+  if (total === 0 && !mailData.analyzing) return null;
+  if (total === 0) {
+    return (
+      <div role="status" className="rounded-lg border border-violet-700/40 bg-violet-950/20 px-3 py-2 text-sm text-violet-300">
+        🔍 Die Mails zu diesem Auftrag werden gerade lokal ausgewertet. Vorschläge erscheinen gleich hier.
+      </div>
+    );
+  }
 
   const afterMailDecision = (applied: boolean) => {
     void loadSuggestions();
     if (applied) window.dispatchEvent(new CustomEvent('mgh:suggestions-applied'));
+  };
+
+  // "Alle Wuensche uebernehmen": nur Wunsch/Aenderung, und nur Felder mit genau
+  // einem offenen Vorschlag. Widerspruechliche Vorschlaege bleiben zur Einzelentscheidung.
+  const applicable = mailData.items.filter((i) => applies(i.intent));
+  const perField = applicable.reduce<Record<string, number>>((n, i) => ({ ...n, [i.field]: (n[i.field] || 0) + 1 }), {});
+  const bulkItems = applicable.filter((i) => perField[i.field] === 1);
+  const acceptAll = async () => {
+    setBulkBusy(true); setBulkMessage('');
+    try {
+      const res = await fetch(`/api/orders/${orderId}/mail-suggestions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'accept-all', items: bulkItems.map((i) => ({
+          mailId: i.mailId, annotationId: i.annotationId, revision: i.revision, sourceHash: i.sourceHash, expectedValue: i.currentValue })) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Übernehmen fehlgeschlagen.');
+      setBulkMessage(data.failed ? `${data.applied} übernommen, ${data.failed} bitte einzeln prüfen.` : `${data.applied} übernommen.`);
+      afterMailDecision(data.applied > 0);
+    } catch (e) { setBulkMessage(e instanceof Error ? e.message : 'Übernehmen fehlgeschlagen.'); }
+    finally { setBulkBusy(false); }
   };
 
   return (
@@ -192,6 +229,7 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
           <span className="text-violet-400 text-sm">📬</span>
           <span className="text-sm text-violet-200">
             {total} {total === 1 ? 'Vorschlag' : 'Vorschläge'} (E-Mail / Datenblatt)
+            {mailData.analyzing && <span className="text-violet-400"> · weitere Mails werden ausgewertet …</span>}
           </span>
         </div>
         <span className={`text-xs text-violet-400 transition-transform ${expanded ? 'rotate-180' : ''}`}>
@@ -201,7 +239,16 @@ export default function SuggestionBanner({ orderId }: { orderId: string }) {
 
       {expanded && mailData.items.length > 0 && (
         <div className="border-t border-violet-800/50">
-          <p className="px-3 pt-2 text-[11px] uppercase tracking-wide text-violet-400">Aus Mails erkannt · lokal geprüft</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 pt-2">
+            <p className="text-[11px] uppercase tracking-wide text-violet-400">Aus Mails erkannt · lokal geprüft</p>
+            {bulkItems.length >= 2 && (
+              <button type="button" disabled={bulkBusy} onClick={acceptAll}
+                className="px-2 py-1 rounded text-xs border border-emerald-700 bg-emerald-900/30 text-emerald-300 hover:bg-emerald-800/40 disabled:opacity-50">
+                {bulkBusy ? 'Übernimmt …' : `✓ Alle Wünsche übernehmen (${bulkItems.length})`}
+              </button>
+            )}
+          </div>
+          {bulkMessage && <p role="status" className="px-3 pt-1 text-xs text-slate-300">{bulkMessage}</p>}
           <div className="divide-y divide-violet-800/30">
             {mailData.items.map((item) => (
               <MailSuggestionRow key={`${item.mailId}:${item.annotationId}`} orderId={orderId} item={item} fields={mailData.fields} current={mailData.current} onDone={afterMailDecision} />

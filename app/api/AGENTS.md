@@ -16,6 +16,10 @@
 |---|---|---|
 | `/api/settings/mail-ai` | GET, PUT | Aktivierung, lokale/private Dienstadresse und Zugriffsschlüssel; Änderungen nur Admin, Schlüssel wird nie zurückgegeben |
 | `/api/settings/mail-ai/test` | POST | Admin-Test: Dienststatus plus Erkennung auf einem erfundenen Text; keine echte Mail, keine DB-Schreibaktion |
+| `/api/settings/mail-ai/run` | POST | Admin: Hintergrundprüfung der letzten 24 Stunden sofort anstoßen |
+| `/api/orders/[id]/mail-suggestions` | GET, POST | Alle Angemeldeten. GET: offene Vorschläge der lokalen Mail-Analyse zum Auftrag (Feld, Wert, Absicht, Belegsatz), aktuelle Feldwerte, `analyzing` solange Mails des Auftrags ausgewertet werden. POST: Entscheidung `accept` / `acknowledge` / `reject` (optional mit korrigiertem Feld/Wert/Absicht) oder `accept-all` für mehrere Wünsche; schreibt nur Wunsch/Änderung aus dem neuen Mailteil mit Altwert-Prüfung, jede Entscheidung wird in `MailTrainingReview` als Lernbeispiel vermerkt |
+
+Wird eine Mail einem Auftrag zugeordnet (`assignMailToOrder`), werden sie und ihr Gespräch sofort vorrangig ausgewertet (max. 10 Mails). Im Hintergrund zuerst Auftrags-, dann Kundenmails; automatische Absender (noreply, newsletter …) ohne Kunden-/Auftragsbezug werden übersprungen.
 
 Der Dienst ergänzt die Regeln bei der Anonymisierung vor jedem externen KI-Aufruf (`lib/pii/anonymize.ts`) und prüft neue Mails im Hintergrund nach dem Sync (`lib/mail-ai/background.ts`, Funde mit Quelle `ml` in `MailExtraction`). Ohne aktivierten oder erreichbaren Dienst gilt nur die Regelerkennung.
 

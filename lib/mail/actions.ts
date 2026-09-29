@@ -388,6 +388,12 @@ export async function assignMailToOrder(
         for (const linkedMailId of Array.from(mailIdsToLink)) {
             await linkMailArtifactsToOrder(linkedMailId, orderId);
         }
+        // Neue Zuordnung: diese Mail (und ihr Gespraech) sofort lokal auswerten,
+        // damit die Auftragsvorschlaege gleich im Auftrag erscheinen. Ohne
+        // aktivierten Analysedienst/Sprachmodell passiert nichts.
+        import('@/lib/mail-ai/background')
+            .then(({ scheduleMailAnalysis }) => scheduleMailAnalysis(Array.from(mailIdsToLink)))
+            .catch(() => { /* Analyse ist optional */ });
     }
 
     return updated;
