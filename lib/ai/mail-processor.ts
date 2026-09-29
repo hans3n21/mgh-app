@@ -1,5 +1,4 @@
-import { extractEntities } from '@/lib/mail/extraction'
-import { tokenizePII } from '@/lib/pii/tokenizer'
+import { anonymizeText } from '@/lib/pii/anonymize'
 import { callLLM, getGlobalAiDefaults } from '@/lib/ai/llm-client'
 import type { AiProfile } from '@prisma/client'
 
@@ -39,18 +38,10 @@ export async function processMailForTraining(
   existingTemplateKeys: string[],
   existingKnowledgeTitles: string[]
 ): Promise<ProcessedMail> {
-  // 1. PII-Anonymisierung direkt auf dem Raw-Text (kein mailId vorhanden)
-  const entities = await extractEntities(rawMailText)
-  const piiEntities = entities.filter(e => e.pii)
-
-  let anonymizedText = rawMailText
-  let tokenMap: Record<string, string> = {}
-
-  if (piiEntities.length > 0) {
-    const result = tokenizePII(rawMailText, entities)
-    anonymizedText = result.tokenizedText
-    tokenMap = result.tokenMap
-  }
+  // 1. PII-Anonymisierung direkt auf dem Raw-Text (kein mailId vorhanden).
+  // anonymizeText verortet die Funde im Rohtext; extractEntities allein liefert
+  // Positionen im normalisierten Text.
+  const { anonymizedText, tokenMap } = await anonymizeText(rawMailText)
 
   const hadPII = Object.keys(tokenMap).length > 0
 

@@ -23,8 +23,8 @@ export const AUTO_FIELDS = new Set<string>([
   'pickup_type','bobbin_1','bobbin_2','magnet_type','wire','cover','pickup_surface_treatment',
   // Reparatur
   'repair_type','repair_area','repair_priority',
-  // Pickguard
-  'pg_material','pg_thickness','pg_shielding',
+  // Pickguard (Abschirmung/Fraesungen/Custom Finish sind Checkboxen, siehe CHECKBOX_FIELDS)
+  'pg_material',
   // Gravur
   'engraving_material','engraving_depth_technique','vectorization_needed',
 ]);
@@ -110,8 +110,6 @@ export const AUTOFILL_OPTIONS: Record<string,string[]> = {
 
   // Pickguard fields
   pg_material: ['Kunststoff 1-lagig','Kunststoff 3-lagig','Metall/Alu','Holz','Kunde liefert'],
-  pg_thickness: ['2 mm','2.5 mm','3 mm'],
-  pg_shielding: JA_NEIN,
 
   // Gravur fields
   engraving_material: ['Holz','Metall','Kunststoff/Pickguard','Leder'],

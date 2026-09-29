@@ -108,6 +108,26 @@ async function checkAllTypes(outDir: string): Promise<number> {
       ],
       expectImages: false,
     },
+    {
+      // Pickguard: vier Checkboxen mit Detailangabe -- ohne Haken bleiben alle
+      // Detailzeilen aus.
+      type: 'PICKGUARD',
+      label: 'pickguard',
+      expectHidden: [
+        'order.pg_custom_finish_details',
+        'order.pg_routing_add_details',
+        'order.pg_routing_remove_details',
+        'order.pg_shielding_details',
+      ],
+      expectImages: false,
+    },
+    {
+      type: 'PICKGUARD',
+      label: 'pickguard-mit-fraesung',
+      values: { 'order.pg_routing_add': 'Ja', 'order.pg_shielding': 'Ja' },
+      expectHidden: ['order.pg_custom_finish_details', 'order.pg_routing_remove_details'],
+      expectImages: false,
+    },
     { type: 'FINISH_ONLY', label: 'finish-only', expectHidden: [], expectImages: false },
   ];
 

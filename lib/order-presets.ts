@@ -92,7 +92,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
   PICKGUARD: {
     categories: ["pickguard"],
     fields: {
-      pickguard: ["pg_model","pg_material","pg_color_finish","pg_thickness","pg_shielding","pg_notes"],
+      pickguard: ["pg_model","pg_material","pg_custom_finish","pg_custom_finish_details","pg_shielding","pg_shielding_details","pg_routing_add","pg_routing_add_details","pg_routing_remove","pg_routing_remove_details","pg_notes"],
       body: [], 
       neck: [], 
       finish: [],
@@ -228,11 +228,19 @@ export const FIELD_LABELS: Record<string, string> = {
   repair_notes: "Reparatur-Notizen",
 
   // Pickguard fields
+  // Feedback 01.09.2026: "Dicke" entfaellt (nie gepflegt), "Farbe/Finish" ist
+  // durch die Custom-Finish-Checkbox ersetzt. Abschirmung/Fraesungen sind
+  // Ja/Nein-Entscheidungen mit optionaler Detailangabe.
   pg_model: "Pickguard-Modell",
   pg_material: "Material",
-  pg_color_finish: "Farbe/Finish",
-  pg_thickness: "Dicke",
+  pg_custom_finish: "Custom Finish",
+  pg_custom_finish_details: "Custom Finish (Details)",
   pg_shielding: "Abschirmung",
+  pg_shielding_details: "Abschirmung (Details)",
+  pg_routing_add: "Fräsung hinzufügen",
+  pg_routing_add_details: "Fräsung hinzufügen (welche?)",
+  pg_routing_remove: "Fräsung weglassen",
+  pg_routing_remove_details: "Fräsung weglassen (welche?)",
   pg_notes: "Notizen",
 
   // Pickups fields
@@ -273,6 +281,77 @@ export const CATEGORY_LABELS: Record<CategoryKey, string> = {
   pickups: "Tonabnehmer",
   engraving: "Gravur",
 };
+
+/**
+ * Reine Ja/Nein-Felder, die im Auftragsformular als echtes Ankreuzkaestchen
+ * erscheinen (Wert "Ja"/"Nein") -- und im Kunden-PDF als Checkbox.
+ * Felder mit echter Auswahlliste (Pickguard-Material, Binding-Farbe) gehoeren
+ * hier NICHT rein, sonst gingen die Vorgaben verloren.
+ */
+export const CHECKBOX_FIELDS = new Set<string>([
+  'body_has_top',
+  'customer_provides_body',
+  'customer_provides_neck',
+  'pickguard_checkbox',
+  'battery_compartment_checkbox',
+  'pg_custom_finish',
+  'pg_shielding',
+  'pg_routing_add',
+  'pg_routing_remove',
+]);
+
+/**
+ * Detailfeld -> steuernde Checkbox. Das Detailfeld wird nur angezeigt, wenn die
+ * Checkbox gesetzt ist (oder das Detailfeld noch einen Altwert traegt).
+ * Einzige Quelle fuer diese Abhaengigkeit: Formulare, Datenblatt-PDF und der
+ * Woo-Auftrag leiten sich alle hiervon ab.
+ */
+export const CHECKBOX_DETAIL_FIELDS: Record<string, string> = {
+  pickguard_material: 'pickguard_checkbox',
+  battery_compartment_details: 'battery_compartment_checkbox',
+  pg_custom_finish_details: 'pg_custom_finish',
+  pg_shielding_details: 'pg_shielding',
+  pg_routing_add_details: 'pg_routing_add',
+  pg_routing_remove_details: 'pg_routing_remove',
+};
+
+/** Umkehrung von CHECKBOX_DETAIL_FIELDS: Checkbox -> zugehoeriges Detailfeld. */
+export const DETAIL_FIELD_BY_CHECKBOX: Record<string, string> = Object.fromEntries(
+  Object.entries(CHECKBOX_DETAIL_FIELDS).map(([detail, controller]) => [controller, detail]),
+);
+
+/** Wie `isTruthySpecValue` in den Formularen -- alle Schreibweisen fuer "Ja". */
+export function isCheckedSpecValue(value?: string): boolean {
+  const normalized = (value || '').trim().toLowerCase();
+  return normalized === 'ja' || normalized === 'true' || normalized === '1' || normalized === 'yes';
+}
+
+/**
+ * Sichtbarkeit eines Detailfelds. Felder ohne Checkbox davor sind immer
+ * sichtbar; Detailfelder nur, wenn angehakt -- oder wenn schon ein Wert
+ * drinsteht (Altdaten/Mail-Vorschlaege sollen nicht unsichtbar verschwinden).
+ */
+export function shouldRenderDetailField(fieldKey: string, values: Record<string, string>): boolean {
+  const controller = CHECKBOX_DETAIL_FIELDS[fieldKey];
+  if (!controller) return true;
+  return isCheckedSpecValue(values[controller]) || Boolean((values[fieldKey] || '').trim());
+}
+
+/**
+ * Mehrzeilige Freitextfelder -- werden im Formular als Textarea gerendert und
+ * im PDF/Woo-Auftrag als Fliesstext uebernommen.
+ */
+export function isMultilineField(key: string): boolean {
+  return (
+    key.endsWith('_notes') ||
+    key.endsWith('_extras') ||
+    key.endsWith('_description') ||
+    key.endsWith('_details') ||
+    key === 'notes' ||
+    key === 'elektronikparts' ||
+    key === 'headstock_logo_notes'
+  );
+}
 
 // Helper functions
 export function getPresetForOrderType(orderType: string): Preset {

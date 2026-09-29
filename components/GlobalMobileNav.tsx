@@ -4,10 +4,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { NAV_ITEMS } from '@/lib/nav-items';
+import { useSession } from 'next-auth/react';
 
 export default function GlobalMobileNav() {
   // Mobile Navigation Component
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const admin = ['admin', 'admin_no_feedback'].includes(session?.user?.role || '');
 
   // Die Leiste ist mit neun Punkten deutlich breiter als der Bildschirm (846px
   // gegen 375px), und die vier sichtbaren enden zufaellig genau am Rand — es gibt
@@ -29,7 +32,7 @@ export default function GlobalMobileNav() {
       el.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
     };
-  }, [pathname]);
+  }, [pathname, admin]);
 
   // Nicht anzeigen auf Auftragsdetails-Seiten (die haben ihre eigene Navigation).
   // Statische Unterseiten wie /app/orders/trash sind KEINE Detailseiten und
@@ -65,7 +68,7 @@ export default function GlobalMobileNav() {
         {/* scrollbar-hide statt no-scrollbar: die Klasse hiess nie so,
             der Balken war deshalb immer sichtbar (globals.css). */}
         <div ref={scrollerRef} className="flex overflow-x-auto px-4 gap-2 scrollbar-hide">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter(item => !item.adminOnly || admin).map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link

@@ -11,6 +11,9 @@ import {
   sortSpecsByDefinedOrder,
   FIELD_LABELS,
   CATEGORY_LABELS,
+  CHECKBOX_FIELDS,
+  shouldRenderDetailField,
+  isMultilineField,
   CategoryKey,
 } from '@/lib/order-presets';
 import AutoFillInput from '@/components/AutoFillInput';
@@ -166,6 +169,8 @@ export default function OrderSpecsSidebar({
 
   const shouldRenderField = (fieldKey: string) => {
     if (fieldKey === 'pickup_mount_frame' || fieldKey === 'headstock_logo_notes') return false;
+    // Detailfeld hinter einer Checkbox (Abschirmung, Fraesungen, Custom Finish)
+    if (!shouldRenderDetailField(fieldKey, specValues)) return false;
     const hasTop = isTruthySpecValue(specValues['body_has_top']);
     const hasLegacyValue = Boolean((specValues[fieldKey] || '').trim());
     if (fieldKey === 'body_top' || fieldKey === 'body_top_thickness') return hasTop || hasLegacyValue;
@@ -345,7 +350,7 @@ export default function OrderSpecsSidebar({
                             onNotesChange={(v) => updateSpec('headstock_logo_notes', v)}
                             hasError={!!hasError}
                           />
-                        ) : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+                        ) : CHECKBOX_FIELDS.has(fieldKey) ? (
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
@@ -382,19 +387,14 @@ export default function OrderSpecsSidebar({
                             onChange={(v) => updateSpec(fieldKey, v)}
                             hasError={!!hasError}
                           />
-                        ) : fieldKey === 'body_has_top' ? (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`body-top-checkbox-sidebar-${fieldKey}`}
-                              checked={isTruthySpecValue(specValues[fieldKey])}
-                              onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
-                              className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
-                            />
-                            <label htmlFor={`body-top-checkbox-sidebar-${fieldKey}`} className="text-xs cursor-pointer">
-                              Top vorhanden
-                            </label>
-                          </div>
+                        ) : isMultilineField(fieldKey) ? (
+                          <textarea
+                            value={specValues[fieldKey] || ''}
+                            onChange={(e) => updateSpec(fieldKey, e.target.value)}
+                            rows={3}
+                            className={`w-full rounded bg-slate-950 border px-2 py-1 text-xs resize-y min-h-[56px] ${hasError ? 'border-red-500 focus:border-red-400' : 'border-slate-800 focus:border-slate-600'}`}
+                            placeholder={isRequired ? 'Pflichtfeld...' : 'Mehrzeilig - Enter macht eine neue Zeile'}
+                          />
                         ) : AUTO_FIELDS.has(fieldKey) ? (
                           <AutoFillInput
                             fieldKey={fieldKey}

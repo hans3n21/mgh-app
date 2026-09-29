@@ -72,7 +72,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Mail not found' }, { status: 404 });
     }
 
-    const existing = (mail.extraction?.entities as unknown as ExtractedEntity[]) || [];
+    let existing = (mail.extraction?.entities as unknown as ExtractedEntity[]) || [];
+    const decidedAt = new Date().toISOString();
 
     if (body.add) {
       const PII_TYPES = new Set(['email', 'phone', 'iban', 'address', 'postalCode', 'name', 'customerNumber']);
@@ -84,14 +85,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         confidence: 1.0,
         source: 'manual',
         pii: PII_TYPES.has(body.add.type),
+        decidedAt,
       };
+      // Erneutes Markieren hebt eine fruehere Verwerfung desselben Textes auf.
+      const key = newEntity.text.replace(/\s+/g, ' ').trim().toLocaleLowerCase('de');
+      existing = existing.filter(e => !(e.dismissed && e.text.replace(/\s+/g, ' ').trim().toLocaleLowerCase('de') === key));
       existing.push(newEntity);
     }
 
     if (body.remove !== undefined) {
       const idx = typeof body.remove === 'number' ? body.remove : -1;
       if (idx >= 0 && idx < existing.length) {
-        existing.splice(idx, 1);
+        // Nicht loeschen: Die Entscheidung "keine personenbezogene Angabe" muss
+        // Neuerkennung und Anonymisierung ueberdauern (und ist ein Lernbeispiel).
+        // Stabile Indizes erlauben zudem mehrere Entfernungen hintereinander.
+        existing[idx] = { ...existing[idx], pii: false, dismissed: true, decidedAt };
       }
     }
 

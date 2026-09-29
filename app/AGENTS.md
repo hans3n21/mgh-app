@@ -14,6 +14,7 @@
 | `/app/prices` | Preise & Leistungen | ja |
 | `/app/procurement` | Beschaffung | ja |
 | `/app/settings` | Einstellungen | ja |
+| `/app/ki-training` | Lokales Sprachmodell für Auftragsvorschläge (Ollama-Einstellung), Links zu Trefferquote und Trainingsmodus | admin / admin_no_feedback |
 | `/app/posteingang` | E-Mail-Inbox | ja |
 | `/app/posteingang/[id]` | Mail-Detail | ja |
 

@@ -1,0 +1,10 @@
+gliner2[local]==2.0.0
+transformers==4.57.6
+huggingface_hub==0.36.2
+tokenizers==0.22.2
+safetensors==0.8.0
+peft==0.21.0
+numpy==2.5.3
+protobuf==7.36.2
+sentencepiece==0.2.2
+tiktoken==0.14.0

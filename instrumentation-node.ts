@@ -22,7 +22,9 @@ export function startMailSyncWorker() {
 	if (g.__mailSyncWorkerStarted) return;
 	g.__mailSyncWorkerStarted = true;
 
-	const raw = process.env.MAIL_SYNC_WORKER_INTERVAL_MS;
+	// trim: unter Windows landet bei "set VAR=0 && ..." ein Leerzeichen im Wert,
+	// und "0 " haette den Worker sonst trotzdem gestartet.
+	const raw = process.env.MAIL_SYNC_WORKER_INTERVAL_MS?.trim();
 	if (raw === '0' || raw === 'off') {
 		console.log('[mail-sync-worker] deaktiviert (MAIL_SYNC_WORKER_INTERVAL_MS=0)');
 		return;

@@ -400,6 +400,16 @@ async function backup() {
         appendFileSync(mailsPath, '\n]\n');
         console.log(`     ✅ ${mailsCount} mails`);
 
+        // Local review examples and the resulting privacy masks belong together.
+        const mailExtractions = await prisma.mailExtraction.findMany();
+        writeFileSync(join(backupDir, 'mailExtractions.json'), JSON.stringify(mailExtractions, null, 2));
+        const mailTrainingReviews = await prisma.mailTrainingReview.findMany();
+        writeFileSync(join(backupDir, 'mailTrainingReviews.json'), JSON.stringify(mailTrainingReviews, null, 2));
+        const aiTrainingCases = await prisma.aiTrainingCase.findMany();
+        writeFileSync(join(backupDir, 'aiTrainingCases.json'), JSON.stringify(aiTrainingCases, null, 2));
+        const aiTrainingResults = await prisma.aiTrainingResult.findMany();
+        writeFileSync(join(backupDir, 'aiTrainingResults.json'), JSON.stringify(aiTrainingResults, null, 2));
+
         // 7a. Attachments
         const attachments = await prisma.attachment.findMany();
         writeFileSync(join(backupDir, 'attachments.json'), JSON.stringify(attachments, null, 2));
@@ -445,6 +455,10 @@ async function backup() {
                 procurementItems: procurementItems.length,
                 mailAccounts: mailAccounts.length,
                 mails: mailsCount,
+                mailExtractions: mailExtractions.length,
+                mailTrainingReviews: mailTrainingReviews.length,
+                aiTrainingCases: aiTrainingCases.length,
+                aiTrainingResults: aiTrainingResults.length,
                 replyTemplates: replyTemplates.length,
                 systemSettings: systemSettings.length,
                 feedback: feedback.length,

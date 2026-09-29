@@ -15,6 +15,11 @@ import {
   sortSpecsByDefinedOrder,
   FIELD_LABELS,
   CATEGORY_LABELS,
+  CHECKBOX_FIELDS,
+  DETAIL_FIELD_BY_CHECKBOX,
+  CHECKBOX_DETAIL_FIELDS,
+  shouldRenderDetailField,
+  isMultilineField,
   CategoryKey,
   ImageScope
 } from '@/lib/order-presets';
@@ -355,6 +360,20 @@ export default function OrderDetailTabsNew({
     );
     return { ...defaultValues, ...currentValues };
   });
+  // Uebernommene Vorschlaege (Vorschlagsleiste) sind schon gespeichert; das
+  // Datenblatt muss sie nur nachladen, sonst sieht man sie erst nach Neuladen.
+  useEffect(() => {
+    const reload = async () => {
+      try {
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/spec`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const rows: Array<{ key: string; value: string }> = await res.json();
+        setSpecValues(prev => ({ ...prev, ...Object.fromEntries(rows.map(r => [r.key, r.value])) }));
+      } catch { /* Werte sind gespeichert; Anzeige folgt beim naechsten Laden */ }
+    };
+    window.addEventListener('mgh:suggestions-applied', reload);
+    return () => window.removeEventListener('mgh:suggestions-applied', reload);
+  }, [orderId]);
   const [saving, setSaving] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -513,6 +532,8 @@ export default function OrderDetailTabsNew({
     if (fieldKey === 'pickup_mount_frame' || fieldKey === 'headstock_logo_notes') {
       return false;
     }
+    // Detailfeld hinter einer Checkbox (Abschirmung, Fraesungen, Custom Finish)
+    if (!shouldRenderDetailField(fieldKey, specValues)) return false;
     const hasTop = isTruthySpecValue(specValues['body_has_top']);
     const hasLegacyValue = Boolean((specValues[fieldKey] || '').trim());
     if (fieldKey === 'body_top' || fieldKey === 'body_top_thickness') return hasTop || hasLegacyValue;
@@ -560,9 +581,19 @@ export default function OrderDetailTabsNew({
       return parts.length > 0 ? parts.join(' - ') : null;
     }
 
-    if (fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' || fieldKey === 'body_has_top') {
-      return isTruthySpecValue(specValues[fieldKey]) ? 'Ja' : null;
+    // Ja/Nein-Feld: nur zeigen, wenn angehakt. Steht eine Detailangabe dahinter
+    // (Abschirmung, Fraesung, Custom Finish), ersetzt sie das blosse "Ja".
+    if (CHECKBOX_FIELDS.has(fieldKey)) {
+      if (!isTruthySpecValue(specValues[fieldKey])) return null;
+      const detailKey = DETAIL_FIELD_BY_CHECKBOX[fieldKey];
+      const detail = detailKey ? (specValues[detailKey] || '').trim() : '';
+      return hasReadableValue(detail) ? detail : 'Ja';
     }
+
+    // Detail steht schon in der Checkbox-Zeile -- eine eigene Zeile bekommt es
+    // nur, wenn die Checkbox aus ist und trotzdem ein Altwert drinsteht.
+    const controllerKey = CHECKBOX_DETAIL_FIELDS[fieldKey];
+    if (controllerKey && isTruthySpecValue(specValues[controllerKey])) return null;
 
     const value = (specValues[fieldKey] || '').trim();
     return hasReadableValue(value) ? value : null;
@@ -973,7 +1004,7 @@ export default function OrderDetailTabsNew({
                                         hasError={!!hasError}
                                         disabled={!editingDatasheet}
                                       />
-                                    ) : fieldKey === 'headstock_logo_notes' ? null : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+                                    ) : fieldKey === 'headstock_logo_notes' ? null : CHECKBOX_FIELDS.has(fieldKey) ? (
                                       <div className="flex items-center gap-2">
                                         <input
                                           type="checkbox"
@@ -1015,20 +1046,19 @@ export default function OrderDetailTabsNew({
                                         hasError={!!hasError}
                                         disabled={!editingDatasheet}
                                       />
-                                    ) : fieldKey === 'body_has_top' ? (
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          id={`body-top-checkbox-left-${fieldKey}`}
-                                          checked={isTruthySpecValue(specValues[fieldKey])}
-                                          onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
-                                          disabled={!editingDatasheet}
-                                          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
-                                        />
-                                        <label htmlFor={`body-top-checkbox-left-${fieldKey}`} className="text-sm cursor-pointer">
-                                          Top vorhanden
-                                        </label>
-                                      </div>
+                                    ) : isMultilineField(fieldKey) ? (
+                                      <textarea
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(e) => updateSpec(fieldKey, e.target.value)}
+                                        disabled={!editingDatasheet}
+                                        rows={3}
+                                        className={`w-full rounded border px-2 py-1.5 transition-colors resize-y min-h-[64px] ${
+                                          hasError
+                                            ? 'border-red-500 focus:border-red-400 bg-slate-950 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                            : 'bg-slate-950 border-slate-800 focus:border-slate-600 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                        } disabled:cursor-not-allowed`}
+                                        placeholder={isRequired ? 'Pflichtfeld...' : 'Mehrzeilig - Enter macht eine neue Zeile'}
+                                      />
                                     ) : AUTO_FIELDS.has(fieldKey) ? (
                                       <AutoFillInput
                                         fieldKey={fieldKey}
@@ -1110,7 +1140,7 @@ export default function OrderDetailTabsNew({
                                         hasError={!!hasError}
                                         disabled={!editingDatasheet}
                                       />
-                                    ) : fieldKey === 'headstock_logo_notes' ? null : fieldKey === 'customer_provides_body' || fieldKey === 'customer_provides_neck' ? (
+                                    ) : fieldKey === 'headstock_logo_notes' ? null : CHECKBOX_FIELDS.has(fieldKey) ? (
                                       <div className="flex items-center gap-2">
                                         <input
                                           type="checkbox"
@@ -1152,20 +1182,19 @@ export default function OrderDetailTabsNew({
                                         hasError={!!hasError}
                                         disabled={!editingDatasheet}
                                       />
-                                    ) : fieldKey === 'body_has_top' ? (
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          id={`body-top-checkbox-right-${fieldKey}`}
-                                          checked={isTruthySpecValue(specValues[fieldKey])}
-                                          onChange={(e) => updateSpec(fieldKey, e.target.checked ? 'Ja' : 'Nein')}
-                                          disabled={!editingDatasheet}
-                                          className="rounded border-slate-600 bg-slate-950 text-sky-600 focus:ring-sky-500 focus:ring-offset-0 disabled:bg-slate-800 disabled:border-slate-500 disabled:cursor-not-allowed"
-                                        />
-                                        <label htmlFor={`body-top-checkbox-right-${fieldKey}`} className="text-sm cursor-pointer">
-                                          Top vorhanden
-                                        </label>
-                                      </div>
+                                    ) : isMultilineField(fieldKey) ? (
+                                      <textarea
+                                        value={specValues[fieldKey] || ''}
+                                        onChange={(e) => updateSpec(fieldKey, e.target.value)}
+                                        disabled={!editingDatasheet}
+                                        rows={3}
+                                        className={`w-full rounded border px-2 py-1.5 transition-colors resize-y min-h-[64px] ${
+                                          hasError
+                                            ? 'border-red-500 focus:border-red-400 bg-slate-950 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                            : 'bg-slate-950 border-slate-800 focus:border-slate-600 disabled:bg-slate-900/80 disabled:border-slate-700 disabled:text-slate-400'
+                                        } disabled:cursor-not-allowed`}
+                                        placeholder={isRequired ? 'Pflichtfeld...' : 'Mehrzeilig - Enter macht eine neue Zeile'}
+                                      />
                                     ) : AUTO_FIELDS.has(fieldKey) ? (
                                       <AutoFillInput
                                         fieldKey={fieldKey}

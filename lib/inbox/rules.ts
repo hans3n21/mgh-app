@@ -14,6 +14,27 @@ export function suggestType(body: string, subject: string): { type: SuggestedTyp
 	return { type: null };
 }
 
+export type GuessedOrderType = 'GUITAR' | 'NECK' | 'BODY' | 'PICKGUARD' | 'REPAIR' | 'PICKUPS';
+
+/**
+ * Auftragstyp fuer "Auftrag aus Mail erstellen" (nur Vorauswahl, der Mensch klickt).
+ * Ganze Instrumente -- Hals und Korpus, oder ein Modellname -- sind Gitarren;
+ * ohne Hinweis ebenfalls Gitarre, der haeufigste Auftrag.
+ */
+export function guessOrderType(body: string, subject: string): GuessedOrderType {
+	const hay = `${subject}\n${body}`.toLowerCase();
+	if (/(pickguard|schlagbrett)/.test(hay)) return 'PICKGUARD';
+	if (/\b(reparatur|repair|defekt|kaputt|gebrochen|abgebrochen|riss)\b/.test(hay)) return 'REPAIR';
+	const hasNeck = /(\bhals|\bneck\b|griffbrett|fretboard|\bbünde|bundstäbchen|kopfplatte|headstock|mensur)/.test(hay);
+	const hasBody = /(korpus|\bbody\b|fräsung)/.test(hay);
+	const instrument = /\b(gitarre|guitar|bass|tele(caster)?|strat(ocaster)?|les ?paul|jazzmaster|jaguar)\b/.test(hay);
+	if (instrument || (hasNeck && hasBody)) return 'GUITAR';
+	if (hasNeck) return 'NECK';
+	if (hasBody) return 'BODY';
+	if (/(tonabnehmer|\bpickups?\b|humbucker|single ?coil)/.test(hay)) return 'PICKUPS';
+	return 'GUITAR';
+}
+
 export type ParsedField = { key: string; label: string; value: string; source: 'regex' };
 
 function extractPlainText(htmlOrText: string): string {

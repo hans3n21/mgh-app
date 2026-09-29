@@ -63,7 +63,7 @@ export default function Navigation({ user, customers = [], users = [] }: Navigat
 
   // Reihenfolge und Beschriftungen kommen aus lib/nav-items.ts, damit obere und
   // untere Leiste nicht wieder auseinanderlaufen. Das Badge haengt nur hier dran.
-  const navItems = NAV_ITEMS.map((item) => ({
+  const navItems = NAV_ITEMS.filter(item => !item.adminOnly || ['admin', 'admin_no_feedback'].includes(user.role)).map((item) => ({
     ...item,
     badge: item.href === '/app/posteingang' && unreadCount > 0 ? unreadCount : undefined,
   }));

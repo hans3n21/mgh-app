@@ -21,6 +21,12 @@ const nextConfig: NextConfig = {
           '**/.git/**',
           '**/.next/**',
           '**/dist/**',
+          // Python-Umgebungen und Modelldateien der lokalen KI-Dienste
+          // (services/*/.venv, services/*/data): zigtausend Dateien und
+          // mehrere GB. Mit Polling legte das den Dev-Server lahm.
+          '**/.venv/**',
+          '**/services/*/data/**',
+          '**/__pycache__/**',
         ],
       };
     }

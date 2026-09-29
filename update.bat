@@ -121,6 +121,22 @@ if errorlevel 1 (
 )
 echo.
 
+REM Lokale KI (Analysedienst fuer Personenangaben, Ollama mit Sprachmodell fuer
+REM Auftragsvorschlaege). Richtet nur ein, was fehlt oder sich geaendert hat;
+REM der erste Lauf laedt mehrere GB. Scheitert etwas, laeuft die App trotzdem
+REM (dann nur mit Regeln) - deshalb hier kein Abbruch.
+REM Achtung: Dieses Skript laeuft aus einer Kopie (siehe oben). Ein neu
+REM hinzugekommener Schritt wirkt deshalb erst beim naechsten Update-Lauf.
+if exist "services\mail-ai\Install-LocalAi.ps1" (
+    echo 6. Lokale KI einrichten bzw. aktualisieren...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "services\mail-ai\Install-LocalAi.ps1"
+    if errorlevel 1 (
+        echo HINWEIS: Die lokale KI ist nicht vollstaendig eingerichtet ^(siehe oben^).
+        echo Die App funktioniert trotzdem, dann nur mit den Regeln.
+    )
+    echo.
+)
+
 echo ========================================
 echo Update erfolgreich abgeschlossen!
 echo ========================================

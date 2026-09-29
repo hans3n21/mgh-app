@@ -11,6 +11,29 @@
 
 ## Alle Endpunkte (68 Routes)
 
+### Lokale Mail-Analyse (GLiNER-Dienst, services/mail-ai)
+| Route | Methods | Beschreibung |
+|---|---|---|
+| `/api/settings/mail-ai` | GET, PUT | Aktivierung, lokale/private Dienstadresse und Zugriffsschlüssel; Änderungen nur Admin, Schlüssel wird nie zurückgegeben |
+| `/api/settings/mail-ai/test` | POST | Admin-Test: Dienststatus plus Erkennung auf einem erfundenen Text; keine echte Mail, keine DB-Schreibaktion |
+| `/api/settings/mail-ai/run` | POST | Admin: Hintergrundprüfung der letzten 24 Stunden sofort anstoßen |
+| `/api/settings/mail-ai/stats` | GET | Admin: Trefferquote der Auftragsvorschläge je Feld (richtig/korrigiert/falsch) und getrennt nach Läufen mit/ohne Lernbeispiele; nur Zahlen |
+| `/api/orders/[id]/mail-suggestions` | GET, POST | Alle Angemeldeten. GET: offene Vorschläge der lokalen Mail-Analyse zum Auftrag (Feld, Wert, Absicht, Belegsatz), aktuelle Feldwerte, `analyzing` solange Mails des Auftrags ausgewertet werden. POST: Entscheidung `accept` / `acknowledge` / `reject` (optional mit korrigiertem Feld/Wert/Absicht) oder `accept-all` für mehrere Wünsche; schreibt nur Wunsch/Änderung aus dem neuen Mailteil mit Altwert-Prüfung, jede Entscheidung wird in `MailTrainingReview` als Lernbeispiel vermerkt |
+
+Wird eine Mail einem Auftrag zugeordnet (`assignMailToOrder`), werden sie und ihr Gespräch sofort vorrangig ausgewertet (max. 10 Mails). Im Hintergrund zuerst Auftrags-, dann Kundenmails; automatische Absender (noreply, newsletter …) ohne Kunden-/Auftragsbezug werden übersprungen.
+
+Der Dienst ergänzt die Regeln bei der Anonymisierung vor jedem externen KI-Aufruf (`lib/pii/anonymize.ts`) und prüft neue Mails im Hintergrund nach dem Sync (`lib/mail-ai/background.ts`, Funde mit Quelle `ml` in `MailExtraction`). Ohne aktivierten oder erreichbaren Dienst gilt nur die Regelerkennung.
+
+Einrichtung je Rechner über `update.bat` → `services/mail-ai/Install-LocalAi.ps1` (siehe `services/mail-ai/README.md`). Für `127.0.0.1` liest die App den Schlüssel aus `services/mail-ai/data/access-token.txt` und das Sprachmodell aus `data/ollama-model.txt` dieses Rechners; die gemeinsame Einstellung in der Datenbank muss keinen Schlüssel enthalten.
+
+### Lokaler Trainingsmodus (nur Admins)
+| Route | Methods | Beschreibung |
+|---|---|---|
+| `/api/mails/[id]/training` | GET, POST | Markierungen, Feedback und Verlauf; Aktionen review, model und apply. `model` erzeugt Auftragsvorschläge mit dem lokalen Sprachmodell (wie die Hintergrundprüfung) und liefert die aktualisierten Prüfdaten. Apply übernimmt bestätigte Auftragswerte mit Versions- und Altwertprüfung. Kein Cloud-Aufruf. |
+| `/api/admin/ai-training` | GET, POST | Nur admin/admin_no_feedback. GET: Einstellung des lokalen Sprachmodells (Ollama). POST: `config` (speichern), `models` (lokal installierte GGUF-Modelle, Cloud-Modelle ausgeblendet). |
+
+Der frühere Laya-Pilot, die eingefrorenen Prüffälle mit Modellvergleich und der JSONL-Export wurden am 29.09.2026 entfernt; die Tabellen `AiTrainingCase`/`AiTrainingResult` bestehen noch (leer). Modellvergleiche laufen über `scripts/bench-mail-ai.ts` bzw. den KI-Harness.
+
 ### Auth
 | Route | Methods | Beschreibung |
 |---|---|---|
@@ -61,6 +84,7 @@
 | `/api/mails/[id]/mark-read` | POST | Mail als gelesen markieren |
 | `/api/mails/[id]/context` | GET | Kontext-Daten zur Mail (Kunde, Auftrag) |
 | `/api/mails/[id]/extraction` | GET, PATCH | PII-Entities extrahieren / manuell bearbeiten |
+| `/api/mails/[id]/contact` | GET, POST | Kontaktdaten (Telefon, Straße, PLZ, Ort) aus dem neuen Mailteil zum Bestätigen beim Anlegen aus der Mail (`lib/mail/contact.ts`). POST `{customerId, contact}` füllt nur leere Kundenfelder und vermerkt bestätigt/korrigiert im Prüfverlauf (Lernbeispiel, Trefferquote). |
 | `/api/mails/thread/[threadId]` | GET | Alle Mails eines Threads |
 
 ### Mail-System

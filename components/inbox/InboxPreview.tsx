@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Message } from './types';
 import ReplyComposer from './ReplyComposer';
+import MailTrainingPanel from './MailTrainingPanel';
 import ImageCarouselModal, { type CarouselImage } from '@/components/ImageCarouselModal';
 import AnnotatedMailText from './AnnotatedMailText';
 import KnowledgeCaptureButton from './KnowledgeCaptureButton';
@@ -239,6 +240,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 
 	const [extraction, setExtraction] = useState<{ entities: ExtractedEntity[]; plaintext: string } | null>(null);
 	const [extractionLoading, setExtractionLoading] = useState(false);
+	const [extractionRevision, setExtractionRevision] = useState(0);
 	const [annotatedView, setAnnotatedView] = useState(false);
 	const [contextMenu, setContextMenu] = useState<{ entity: ExtractedEntity; rect: DOMRect } | null>(null);
 	const [excludedPiiIndices, setExcludedPiiIndices] = useState<Set<number>>(new Set());
@@ -326,6 +328,17 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 			.catch(() => {})
 			.finally(() => { if (active) setExtractionLoading(false); });
 		return () => { active = false; };
+	}, [message?.id, extractionRevision]);
+
+	useEffect(() => {
+		const refresh = (event: Event) => {
+			if ((event as CustomEvent).detail?.mailId === message?.id) {
+				setExcludedPiiIndices(new Set());
+				setExtractionRevision(n => n + 1);
+			}
+		};
+		window.addEventListener('mgh:extraction-updated', refresh);
+		return () => window.removeEventListener('mgh:extraction-updated', refresh);
 	}, [message?.id]);
 
 	const safeHtml = useMemo(() => {
@@ -720,6 +733,8 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 
 	const mailContent = (
 		<div className="flex-1 overflow-auto px-4 py-3">
+			{/* Auch im Papierkorb: der ist bei MGH das Archiv (rund 80 % aller Mails). */}
+			{!isSentFolder(message.folder) && <MailTrainingPanel key={`training:${message.id}:${linkedOrderId || ''}`} mailId={message.id} />}
 			<div className="mb-3 flex items-center gap-1.5">
 				<div className="flex items-center gap-1">
 						{/* KI-Toggle (Original / KI) - nur wenn AI-Inhalt vorhanden */}
@@ -1024,7 +1039,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 							<p className="text-sm font-semibold text-slate-100">Vor dem KI-Versand</p>
 							<p className="text-xs text-slate-400 mt-0.5">
 								{(() => {
-									const activeEntities = extraction?.entities?.filter((_, i) => !excludedPiiIndices.has(i)) ?? [];
+									const activeEntities = extraction?.entities?.filter((e, i) => e.pii && !excludedPiiIndices.has(i)) ?? [];
 									if (activeEntities.length === 0 && !extraction) return 'Die E-Mail wird noch analysiert. Trotzdem senden?';
 									if (activeEntities.length === 0) return 'Keine personenbezogenen Daten erkannt. Mail wird so gesendet.';
 									return `${activeEntities.length} Stelle${activeEntities.length !== 1 ? 'n' : ''} anonymisiert. Alles korrekt?`;

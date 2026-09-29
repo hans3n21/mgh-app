@@ -158,6 +158,14 @@ export async function syncMails(options?: SyncOptions) {
 		}
 	}
 
+	// Neue Mails lokal mit dem Analysedienst pruefen (Personenangaben). Laeuft
+	// entkoppelt nach dem Sync, ohne IMAP-Lock; ohne aktivierten Dienst passiert nichts.
+	if (totalProcessed > 0) {
+		import('@/lib/mail-ai/background')
+			.then(({ scheduleMailAnalysis }) => scheduleMailAnalysis())
+			.catch(() => { /* Analyse ist optional */ });
+	}
+
 	return {
 		success: errorCount === 0,
 		accounts,

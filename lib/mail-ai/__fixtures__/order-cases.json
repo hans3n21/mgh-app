@@ -1,0 +1,392 @@
+{
+  "hinweis": "Erfundene Testmails (keine Kundendaten) fuer lokale KI: erwartete Personenangaben (pii) und Auftragsangaben mit Absicht (order). Genutzt von scripts/bench-mail-ai.ts und dem KI-Harness.",
+  "orderType": "GUITAR",
+  "cases": [
+    {
+      "id": "wechsel-griffbrett",
+      "text": "Hallo,\n\nich möchte jetzt doch Palisander statt Ebenholz für das Griffbrett.\nWas würden 22 Edelstahlbünde kosten? Bitte noch nicht ändern.\n\nLieferadresse: Anna Beispiel, Musterstraße 12, 12345 Musterstadt.\n\nViele Grüße\nAnna Beispiel",
+      "current": {
+        "fretboard_material": "Ebenholz"
+      },
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Anna Beispiel"
+        },
+        {
+          "type": "address",
+          "quote": "Musterstraße 12"
+        },
+        {
+          "type": "postalCode",
+          "quote": "12345 Musterstadt"
+        }
+      ],
+      "order": [
+        {
+          "field": "fretboard_material",
+          "value": "Palisander",
+          "intent": "change"
+        },
+        {
+          "field": "fretboard_material",
+          "value": "Ebenholz",
+          "intent": "rejected"
+        },
+        {
+          "field": "frets",
+          "value": "22 Edelstahlbünde",
+          "intent": "question"
+        }
+      ]
+    },
+    {
+      "id": "feste-bestellung",
+      "text": "Guten Tag,\n\nhiermit bestelle ich verbindlich eine Strat: Korpus aus Erle, Hals aus Ahorn mit Palisandergriffbrett, 22 Medium-Jumbo-Bünde, Radius 9,5 Zoll, Mensur 648 mm. Bestückung SSS, Finish 3-Tone Sunburst, Hardware in Chrom.\n\nFür Rückfragen erreichen Sie mich unter 0171 2345678.\n\nMit freundlichen Grüßen\nThomas Mustermann",
+      "current": {},
+      "pii": [
+        {
+          "type": "phone",
+          "quote": "0171 2345678"
+        },
+        {
+          "type": "name",
+          "quote": "Thomas Mustermann"
+        }
+      ],
+      "order": [
+        {
+          "field": "body_shape",
+          "value": "Strat",
+          "intent": "confirmed"
+        },
+        {
+          "field": "body_material",
+          "value": "Erle",
+          "intent": "confirmed"
+        },
+        {
+          "field": "neck_wood",
+          "value": "Ahorn",
+          "intent": "confirmed"
+        },
+        {
+          "field": "fretboard_material",
+          "value": "Palisander",
+          "intent": "confirmed"
+        },
+        {
+          "field": "frets",
+          "value": "22 Medium-Jumbo-Bünde",
+          "intent": "confirmed"
+        },
+        {
+          "field": "fretboard_radius",
+          "value": "9,5 Zoll",
+          "intent": "confirmed"
+        },
+        {
+          "field": "fretboard_scale",
+          "value": "648 mm",
+          "intent": "confirmed"
+        },
+        {
+          "field": "pickups",
+          "value": "SSS",
+          "intent": "confirmed"
+        },
+        {
+          "field": "finish_body",
+          "value": "3-Tone Sunburst",
+          "intent": "confirmed"
+        },
+        {
+          "field": "hardware_color",
+          "value": "Chrom",
+          "intent": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "ablehnungen",
+      "text": "Hi,\n\nnoch zwei Punkte zum Hals: bitte keine Inlays, nur Side Dots. Und kein Binding am Hals, das gefällt mir nicht.\n\nDanke!\nLena",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Lena"
+        }
+      ],
+      "order": [
+        {
+          "field": "inlays",
+          "value": "keine Inlays",
+          "intent": "rejected"
+        },
+        {
+          "field": "side_dots",
+          "value": "Side Dots",
+          "intent": "confirmed"
+        },
+        {
+          "field": "neck_binding",
+          "value": "Binding",
+          "intent": "rejected"
+        }
+      ]
+    },
+    {
+      "id": "nur-fragen",
+      "text": "Hallo zusammen,\n\nwäre ein Griffbrettradius von 12 Zoll möglich? Und was würde ein Riegelahorn-Top auf dem Korpus zusätzlich kosten? Ich überlege noch.\n\nGruß\nMarkus Beispielmann\nmarkus.beispielmann@example.org",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Markus Beispielmann"
+        },
+        {
+          "type": "email",
+          "quote": "markus.beispielmann@example.org"
+        }
+      ],
+      "order": [
+        {
+          "field": "fretboard_radius",
+          "value": "12 Zoll",
+          "intent": "question"
+        },
+        {
+          "field": "body_top",
+          "value": "Riegelahorn",
+          "intent": "question"
+        }
+      ]
+    },
+    {
+      "id": "englisch",
+      "text": "Hello,\n\nI'd like to order a single-cut with a mahogany body and a flamed maple top, 24.75 inch scale and an ebony fretboard. Could you also do gold hardware? Not sure yet.\n\nBest regards,\nJohn Example\n+44 20 7946 0958",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "John Example"
+        },
+        {
+          "type": "phone",
+          "quote": "+44 20 7946 0958"
+        }
+      ],
+      "order": [
+        {
+          "field": "body_shape",
+          "value": "single-cut",
+          "intent": "confirmed"
+        },
+        {
+          "field": "body_material",
+          "value": "mahogany",
+          "intent": "confirmed"
+        },
+        {
+          "field": "body_top",
+          "value": "flamed maple",
+          "intent": "confirmed"
+        },
+        {
+          "field": "fretboard_scale",
+          "value": "24.75 inch",
+          "intent": "confirmed"
+        },
+        {
+          "field": "fretboard_material",
+          "value": "ebony",
+          "intent": "confirmed"
+        },
+        {
+          "field": "hardware_color",
+          "value": "gold",
+          "intent": "question"
+        }
+      ]
+    },
+    {
+      "id": "bezug-unklar",
+      "text": "Hallo,\n\ndanke für die Vorschläge. Wir nehmen die zweite Variante, so wie besprochen.\n\nViele Grüße\nFamilie Musterfrau",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Familie Musterfrau"
+        }
+      ],
+      "order": []
+    },
+    {
+      "id": "zahlung-ohne-auftragsdaten",
+      "text": "Sehr geehrte Damen und Herren,\n\ndie Anzahlung für Kundennummer K-20417 habe ich überwiesen, von IBAN DE89 3704 0044 0532 0130 00. Bitte kurz bestätigen.\n\nMit freundlichen Grüßen\nPetra Probe\nBeispielweg 7a\n54321 Probstadt",
+      "current": {},
+      "pii": [
+        {
+          "type": "customerNumber",
+          "quote": "K-20417"
+        },
+        {
+          "type": "iban",
+          "quote": "DE89 3704 0044 0532 0130 00"
+        },
+        {
+          "type": "name",
+          "quote": "Petra Probe"
+        },
+        {
+          "type": "address",
+          "quote": "Beispielweg 7a"
+        },
+        {
+          "type": "postalCode",
+          "quote": "54321 Probstadt"
+        }
+      ],
+      "order": []
+    },
+    {
+      "id": "holz-als-kontext",
+      "text": "Moin,\n\nmeine alte Gitarre hat ein Ebenholzgriffbrett, das war mir immer zu glatt. Die neue soll deshalb ein Griffbrett aus Palisander bekommen.\n\nGrüße aus Erlangen\nPaul Esche",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Paul Esche"
+        }
+      ],
+      "order": [
+        {
+          "field": "fretboard_material",
+          "value": "Palisander",
+          "intent": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "farben-trennen",
+      "text": "Hallo,\n\nder Korpus soll Olympic White werden, die Hardware bitte in Gold und die Kopfplatte passend zum Korpus lackiert.\n\nLG\nSven",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Sven"
+        }
+      ],
+      "order": [
+        {
+          "field": "finish_body",
+          "value": "Olympic White",
+          "intent": "confirmed"
+        },
+        {
+          "field": "hardware_color",
+          "value": "Gold",
+          "intent": "confirmed"
+        },
+        {
+          "field": "headstock_finish",
+          "value": "passend zum Korpus lackiert",
+          "intent": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "bundaenderung",
+      "text": "Hallo nochmal,\n\nkleine Änderung: statt 21 bitte doch 22 Bünde. Der Rest bleibt wie besprochen.\n\nDanke und Gruß\nKatrin Beispiel\nTel. 030 1234567",
+      "current": {
+        "frets": "21 Vintage"
+      },
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Katrin Beispiel"
+        },
+        {
+          "type": "phone",
+          "quote": "030 1234567"
+        }
+      ],
+      "order": [
+        {
+          "field": "frets",
+          "value": "22 Bünde",
+          "intent": "change"
+        },
+        {
+          "field": "frets",
+          "value": "21",
+          "intent": "rejected"
+        }
+      ]
+    },
+    {
+      "id": "tonabnehmer",
+      "text": "Hi,\n\nals Bestückung hätte ich gern HSS mit einem Humbucker am Steg, gern mit schwarzen Kappen. Die Mechaniken sollen Locking-Mechaniken sein.\n\nViele Grüße\nMaximilian Beispiel",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Maximilian Beispiel"
+        }
+      ],
+      "order": [
+        {
+          "field": "pickups",
+          "value": "HSS",
+          "intent": "confirmed"
+        },
+        {
+          "field": "pickups_style",
+          "value": "schwarzen Kappen",
+          "intent": "confirmed"
+        },
+        {
+          "field": "tuners",
+          "value": "Locking-Mechaniken",
+          "intent": "confirmed"
+        }
+      ]
+    },
+    {
+      "id": "franzoesisch",
+      "text": "Bonjour,\n\nje voudrais une touche en érable et un manche en érable torréfié. Est-ce possible avec 24 frettes ?\n\nCordialement,\nClaire Exemple\n12 rue de l'Exemple, 75001 Paris",
+      "current": {},
+      "pii": [
+        {
+          "type": "name",
+          "quote": "Claire Exemple"
+        },
+        {
+          "type": "address",
+          "quote": "12 rue de l'Exemple"
+        },
+        {
+          "type": "postalCode",
+          "quote": "75001 Paris"
+        }
+      ],
+      "order": [
+        {
+          "field": "fretboard_material",
+          "value": "érable",
+          "intent": "confirmed"
+        },
+        {
+          "field": "neck_wood",
+          "value": "érable torréfié",
+          "intent": "confirmed"
+        },
+        {
+          "field": "frets",
+          "value": "24 frettes",
+          "intent": "question"
+        }
+      ]
+    }
+  ]
+}
