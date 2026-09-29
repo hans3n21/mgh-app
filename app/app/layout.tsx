@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import Navigation from '@/components/Navigation';
 import SessionProvider from '@/components/SessionProvider';
 import GlobalMobileNav from '@/components/GlobalMobileNav';
-import FeedbackButton from '@/components/FeedbackButton';
+import FeedbackWidget from '@/components/FeedbackWidget';
 import { ensureDailyBackup } from '@/lib/backup-auto';
 
 export default async function AppLayout({
@@ -58,7 +58,7 @@ export default async function AppLayout({
           {children}
         </main>
         <GlobalMobileNav />
-        <FeedbackButton />
+        <FeedbackWidget />
       </div>
     </SessionProvider>
   );
