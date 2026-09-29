@@ -3,6 +3,56 @@
 import { useEffect, useState } from 'react';
 
 type TestResult = { status: string; fields?: boolean; elapsedMs?: number; found: { type: string; text: string }[] };
+type Stats = {
+  fields: { field: string; label: string; total: number; correct: number; corrected: number; wrong: number }[];
+  variants: { withExamples: boolean; total: number; correct: number }[];
+};
+
+const percent = (part: number, total: number) => (total ? `${Math.round((100 * part) / total)} %` : '–');
+
+/** Trefferquote der Auftragsvorschlaege je Feld, aus den Entscheidungen in der Vorschlagsleiste. */
+function SuggestionStats() {
+  const [stats, setStats] = useState<Stats | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/settings/mail-ai/stats', { signal: controller.signal }).then(r => (r.ok ? r.json() : null))
+      .then(s => { if (!controller.signal.aborted) setStats(s); }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+  if (!stats) return null;
+  const total = stats.fields.reduce((n, f) => n + f.total, 0);
+  return (
+    <div className="border-t border-slate-700 pt-3 space-y-2">
+      <h4 className="text-sm font-medium">Trefferquote der Auftragsvorschläge</h4>
+      {total === 0 ? (
+        <p className="text-xs text-slate-400">Noch keine Entscheidungen. Jede Übernahme, Korrektur oder „Falsch erkannt“ im Auftrag zählt hier.</p>
+      ) : (
+        <>
+          <p className="text-xs text-slate-400">
+            {total} entschiedene Vorschläge, davon {percent(stats.fields.reduce((n, f) => n + f.correct, 0), total)} unverändert richtig.
+            {stats.variants.length > 1 && ' ' + stats.variants.map(v => `${v.withExamples ? 'Mit' : 'Ohne'} Lernbeispiele: ${percent(v.correct, v.total)} von ${v.total}`).join(' · ')}
+          </p>
+          <table className="w-full text-xs">
+            <thead className="text-slate-400"><tr>
+              <th className="text-left font-normal py-1">Feld</th><th className="text-right font-normal">Vorschläge</th>
+              <th className="text-right font-normal">richtig</th><th className="text-right font-normal">korrigiert</th>
+              <th className="text-right font-normal">falsch</th><th className="text-right font-normal">Quote</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-800">
+              {stats.fields.map(f => (
+                <tr key={f.field}>
+                  <td className="py-1">{f.label}</td><td className="text-right">{f.total}</td>
+                  <td className="text-right text-emerald-300">{f.correct}</td><td className="text-right text-sky-300">{f.corrected}</td>
+                  <td className="text-right text-rose-300">{f.wrong}</td><td className="text-right">{percent(f.correct, f.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
 
 const TYPE_LABELS: Record<string, string> = { name: 'Name', address: 'Adresse', postalCode: 'PLZ / Ort', email: 'E-Mail', phone: 'Telefon', iban: 'IBAN', customerNumber: 'Kundennummer' };
 
@@ -88,5 +138,6 @@ export default function MailAiSettings() {
         : <p className="text-amber-200">Dienst meldet „{result.status}“ (Modelle laden noch oder Start fehlgeschlagen).</p>}
       {result.found.length > 0 && <p className="text-slate-400">Im erfundenen Testtext erkannt: {result.found.map(f => `${TYPE_LABELS[f.type] || f.type}: ${f.text}`).join(' · ')}</p>}
     </div>}
+    <SuggestionStats />
   </section>;
 }

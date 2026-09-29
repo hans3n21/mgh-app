@@ -11,6 +11,7 @@ import { orderFields, readAnnotations, sourceHash, validateAnnotation } from '@/
 import { ReviewError, writeOrderSpec } from '@/lib/mail-training/service';
 import type { Annotation, ReviewEvent } from '@/lib/mail-training/contracts';
 import { isAnalyzing } from './background';
+import { snippetAround } from './snippet';
 
 export type MailSuggestion = {
   mailId: string; annotationId: string; revision: number; sourceHash: string;
@@ -18,16 +19,7 @@ export type MailSuggestion = {
   snippet: { before: string; match: string; after: string }; mailDate: string; mailSubject: string;
 };
 
-/** Satz um die Stelle herum, damit man ohne Mail oeffnen sieht, worauf sich der Vorschlag stuetzt. */
-export function snippetAround(text: string, start: number, end: number) {
-  const headStart = Math.max(0, start - 120);
-  const head = text.slice(headStart, start);
-  const cut = Math.max(head.lastIndexOf('.'), head.lastIndexOf('!'), head.lastIndexOf('?'), head.lastIndexOf('\n'));
-  const from = headStart + (cut >= 0 ? cut + 1 : 0);
-  const rest = text.slice(end).search(/[.!?\n]/);
-  const to = Math.min(text.length, end + 120, rest < 0 ? text.length : end + rest + 1);
-  return { before: text.slice(from, start).trimStart(), match: text.slice(start, end), after: text.slice(end, to).trimEnd() };
-}
+export { snippetAround };
 
 const pending = (a: Annotation) => a.kind === 'order' && a.origin === 'model' && !a.reviewed && !a.dismissed;
 

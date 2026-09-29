@@ -11,6 +11,7 @@ import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { assertLocalModel, localRequest, readModelConfig, withOllamaLock } from '@/lib/ai-training/ollama';
 import { orderFields, readAnnotations, sourceHash } from '@/lib/mail-training/review';
 import type { Annotation } from '@/lib/mail-training/contracts';
+import { loadExamples } from './learning';
 
 export const SUGGESTION_PROTOCOL = 'mgh-order-v1';
 const INTENTS = ['confirmed', 'question', 'change', 'rejected', 'unclear'] as const;
@@ -48,8 +49,14 @@ export type SuggestionInput = {
   examples?: { text: string; findings: { field: string; value: string; intent: string; quote: string }[] }[];
 };
 
+const EXAMPLES_NOTE = `
+"examples" sind von Menschen geprüfte Stellen aus früheren Mails (Satz und richtige Zuordnung). Sie zeigen, wie zugeordnet wird,
+sind aber keine Angaben dieser Mail: Gib nur Stellen aus "mail" aus.`;
+
 export function buildSuggestionMessages(input: SuggestionInput) {
-  return [{ role: 'system', content: SUGGESTION_PROMPT }, { role: 'user', content: JSON.stringify({
+  // Der Hinweis nur mit Beispielen: ohne Beispiele bleibt der gemessene Prompt unveraendert.
+  const system = input.examples?.length ? SUGGESTION_PROMPT + EXAMPLES_NOTE : SUGGESTION_PROMPT;
+  return [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify({
     fields: input.fields.map(f => ({ key: f.key, label: f.label,
       ...(FIELD_HINTS[f.key] ? { hint: FIELD_HINTS[f.key] } : {}),
       ...(input.current[f.key] ? { current: input.current[f.key] } : {}) })),
@@ -119,19 +126,23 @@ export async function suggestForMail(mailId: string): Promise<{ count: number; d
   if (!fields.length) return null;
   const current = Object.fromEntries(mail.order!.specs.filter(s => s.value).map(s => [s.key, s.value]));
 
+  // Optional (KI-Training -> "Lernfaelle beifuegen"): bis zu zwei gepruefte Stellen
+  // desselben Auftragstyps als Beispiele. Kennung "+ex", damit die Trefferquote
+  // mit und ohne Beispiele getrennt auswertbar bleibt.
+  const examples = config.useExamples ? await loadExamples(mail.order!.type, mailId) : [];
   const started = Date.now();
   const annotations = await withOllamaLock(async () => {
     const model = await assertLocalModel(config.baseUrl, config.model);
     const schema = outputSchema(fields.map(f => f.key));
     const result = await localRequest(config.baseUrl, '/api/chat', {
-      model: config.model, stream: false, messages: buildSuggestionMessages({ fresh, fields, current }),
+      model: config.model, stream: false, messages: buildSuggestionMessages({ fresh, fields, current, examples }),
       ...(model.thinking ? { think: false } : {}), format: z.toJSONSchema(schema),
       options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: 1500 }, keep_alive: '2m',
     }, 300_000);
     if (result.done !== true || result.done_reason === 'length' || typeof result.message?.content !== 'string') return null;
     let parsed: z.infer<typeof schema>;
     try { parsed = schema.parse(JSON.parse(result.message.content)); } catch { return null; }
-    return toSuggestionAnnotations(full, fresh, parsed.findings, fields, `${config.model}@${model.digest.slice(0, 12)}`);
+    return toSuggestionAnnotations(full, fresh, parsed.findings, fields, `${config.model}@${model.digest.slice(0, 12)}${examples.length ? '+ex' : ''}`);
   });
   if (!annotations) return null;
   await storeSuggestions(mailId, full, mail.orderId, annotations);
