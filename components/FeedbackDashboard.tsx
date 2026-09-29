@@ -12,7 +12,28 @@ interface Feedback {
   resolvedBy?: string;
   resolvedAt?: string;
   createdAt: string;
+  category?: string | null;
+  screenshotPath?: string | null;
+  metadata?: {
+    steps?: FeedbackStep[];
+    app_context?: Record<string, string | number | boolean | null>;
+  } | null;
 }
+
+// Letzte Bedienschritte, wie PointOut sie mitsendet (Klicks, JS-Fehler, fehlgeschlagene Anfragen).
+interface FeedbackStep {
+  seconds_before: number;
+  kind: 'click' | 'error' | 'request';
+  label: string;
+  area?: string;
+  count?: number;
+}
+
+const CATEGORY_LABELS: Record<string, { label: string; className: string }> = {
+  bug: { label: 'Fehler', className: 'bg-red-900/20 text-red-300 border-red-800' },
+  idea: { label: 'Idee', className: 'bg-sky-900/20 text-sky-300 border-sky-800' },
+  design: { label: 'Design', className: 'bg-violet-900/20 text-violet-300 border-violet-800' },
+};
 
 export default function FeedbackDashboard() {
   const [feedback, setFeedback] = useState<Feedback[]>([]);
@@ -162,6 +183,11 @@ export default function FeedbackDashboard() {
                     <span className="text-xs text-slate-500">
                       {formatDate(item.timestamp)}
                     </span>
+                    {item.category && CATEGORY_LABELS[item.category] && (
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs border ${CATEGORY_LABELS[item.category].className}`}>
+                        {CATEGORY_LABELS[item.category].label}
+                      </span>
+                    )}
                     {item.resolved && (
                       <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-900/20 text-green-400 border border-green-800">
                         ✓ Erledigt
@@ -173,6 +199,44 @@ export default function FeedbackDashboard() {
                   <div className="text-sm text-slate-300 mb-3 whitespace-pre-wrap">
                     {item.message}
                   </div>
+
+                  {/* Screenshot mit eingezeichneten Markierungen */}
+                  {item.screenshotPath && (
+                    <a
+                      href={`/api/feedback/${item.id}/screenshot`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mb-3 block w-fit"
+                      title="Screenshot in voller Größe öffnen"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/feedback/${item.id}/screenshot`}
+                        alt="Screenshot zum Feedback"
+                        loading="lazy"
+                        className="max-h-64 max-w-full rounded border border-slate-700 hover:border-slate-500"
+                      />
+                    </a>
+                  )}
+
+                  {item.metadata?.steps && item.metadata.steps.length > 0 && (
+                    <details className="mb-3 text-xs text-slate-400">
+                      <summary className="cursor-pointer select-none hover:text-slate-300">
+                        Letzte Schritte ({item.metadata.steps.length})
+                      </summary>
+                      <ol className="mt-2 space-y-1 border-l border-slate-800 pl-3">
+                        {item.metadata.steps.map((step, index) => (
+                          <li key={index} className={step.kind === 'click' ? '' : 'text-red-300'}>
+                            <span className="text-slate-500">vor {step.seconds_before} s · </span>
+                            {step.kind === 'error' ? 'Fehler: ' : step.kind === 'request' ? 'Anfrage: ' : ''}
+                            {step.label}
+                            {step.area ? <span className="text-slate-500"> ({step.area})</span> : null}
+                            {step.count ? <span className="text-slate-500"> ×{step.count}</span> : null}
+                          </li>
+                        ))}
+                      </ol>
+                    </details>
+                  )}
 
                   {/* URL */}
                   <div className="text-xs text-slate-500 mb-2">

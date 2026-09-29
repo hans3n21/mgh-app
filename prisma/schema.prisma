@@ -534,7 +534,16 @@ model Feedback {
   resolvedBy String?
   resolvedAt DateTime?
   createdAt DateTime @default(now())
-  
+  // PointOut: Kategorie, Screenshot (Pfad unter uploads/feedback), Markierungen,
+  // Geraet und Bedienschritte. Alte Eintraege aus dem Textformular haben hier null.
+  category       String?
+  screenshotPath String?
+  annotation     Json?
+  device         Json?
+  metadata       Json?
+  appVersion     String?
+  createdById    String?
+
   @@index([resolved])
   @@index([createdAt])
 }

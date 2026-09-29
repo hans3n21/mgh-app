@@ -126,7 +126,10 @@
 | Route | Methods | Beschreibung |
 |---|---|---|
 | `/api/health` | GET | App Health Check |
-| `/api/feedback` | GET, POST | Feedback erfassen/auflisten |
+| `/api/feedback` | GET, PATCH | Nur admin. Feedback auflisten, erledigt markieren |
+| `/api/feedback/[id]/screenshot` | GET | Nur admin. Screenshot zum Feedback aus `uploads/feedback/` (FILES_ROOT) |
+| `/api/pointout/feedback` | POST | Angemeldet. PointOut-Widget: Text, markierter Screenshot, Gerät, letzte Bedienschritte → Tabelle `Feedback`. 30/h je Person |
+| `/api/pointout/transcribe` | POST | Angemeldet. PointOut-Spracheingabe → lokaler Whisper (`WHISPER_API_URL`). 60/h je Person |
 | `/api/admin/backup` | GET, POST | Backup erstellen/auflisten |
 | `/api/admin/backup/auto` | POST | Automatisches tägliches Backup |
 | `/api/admin/restore` | POST | Datenbank aus Backup wiederherstellen |

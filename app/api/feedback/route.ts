@@ -4,66 +4,12 @@ import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 
-const feedbackSchema = z.object({
-  message: z.string().min(1, 'Nachricht ist erforderlich'),
-  page: z.string(),
-  url: z.string().url(),
-  timestamp: z.string(),
-  userAgent: z.string().optional(),
-});
-
 const resolveSchema = z.object({
   id: z.string(),
   resolved: z.boolean(),
 });
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const validatedData = feedbackSchema.parse(body);
-
-    // Feedback in die Datenbank speichern
-    const feedback = await prisma.feedback.create({ 
-      data: {
-        message: validatedData.message,
-        page: validatedData.page,
-        url: validatedData.url,
-        timestamp: new Date(validatedData.timestamp),
-        userAgent: validatedData.userAgent,
-      }
-    });
-
-    // Zusätzlich in die Konsole loggen
-    console.log('📝 Neues Feedback erhalten:', {
-      id: feedback.id,
-      page: validatedData.page,
-      url: validatedData.url,
-      timestamp: new Date(validatedData.timestamp).toLocaleString('de-DE'),
-      message: validatedData.message,
-      userAgent: validatedData.userAgent,
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Feedback erfolgreich gesendet' 
-    });
-
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Ungültige Daten', details: error.issues },
-        { status: 400 }
-      );
-    }
-
-    console.error('Feedback-Fehler:', error);
-    return NextResponse.json(
-      { error: 'Fehler beim Senden des Feedbacks' },
-      { status: 500 }
-    );
-  }
-}
-
+// Neues Feedback kommt ueber PointOut (/api/pointout/feedback). Hier nur Liste und Erledigt-Status.
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
