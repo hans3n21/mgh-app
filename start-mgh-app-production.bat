@@ -32,5 +32,12 @@ if not errorlevel 1 (
     echo Bei Zertifikatsfehlern im Mailabruf hilft ein Node-Update ^(ab 22.15^).
 )
 
+REM Lokaler Analysedienst (Personenangaben, Auftragsvorschlaege), falls per
+REM update.bat eingerichtet. Eigenes, minimiertes Fenster; laeuft er schon,
+REM beendet sich der zweite Start still. Ohne ihn arbeitet die App mit Regeln.
+if exist "services\mail-ai\.venv\Scripts\python.exe" (
+    start "MGH Mail-Analyse" /min powershell -NoProfile -ExecutionPolicy Bypass -File "services\mail-ai\Start-MailAi.ps1"
+)
+
 REM Starte die App im Netzwerk-Modus
 call npm run start:network

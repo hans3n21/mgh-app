@@ -12,6 +12,7 @@ import { assertLocalModel, localRequest, readModelConfig, withOllamaLock } from 
 import { orderFields, readAnnotations, sourceHash } from '@/lib/mail-training/review';
 import type { Annotation } from '@/lib/mail-training/contracts';
 import { loadExamples } from './learning';
+import { localOllamaModel } from './client';
 
 export const SUGGESTION_PROTOCOL = 'mgh-order-v1';
 const INTENTS = ['confirmed', 'question', 'change', 'rejected', 'unclear'] as const;
@@ -116,7 +117,9 @@ export function isOrderCustomerMail(mail: { orderId: string | null; senderId: st
 /** Vorschlaege fuer eine Mail erzeugen und speichern. Liefert null, wenn nichts zu tun ist. */
 export async function suggestForMail(mailId: string): Promise<{ count: number; durationMs: number } | null> {
   const config = await readModelConfig();
-  if (!config.enabled || !config.localOnlyConfirmed || !config.model) return null;
+  // Das von update.bat fuer diesen Rechner gewaehlte Modell hat Vorrang (kleinere Variante bei wenig RAM).
+  const modelName = localOllamaModel() || config.model;
+  if (!config.enabled || !config.localOnlyConfirmed || !modelName) return null;
   const mail = await prisma.mail.findUnique({ where: { id: mailId }, select: mailSelect });
   if (!mail || !isOrderCustomerMail(mail)) return null;
   const full = getPlaintext(mail.text, mail.html);
@@ -132,17 +135,17 @@ export async function suggestForMail(mailId: string): Promise<{ count: number; d
   const examples = config.useExamples ? await loadExamples(mail.order!.type, mailId) : [];
   const started = Date.now();
   const annotations = await withOllamaLock(async () => {
-    const model = await assertLocalModel(config.baseUrl, config.model);
+    const model = await assertLocalModel(config.baseUrl, modelName);
     const schema = outputSchema(fields.map(f => f.key));
     const result = await localRequest(config.baseUrl, '/api/chat', {
-      model: config.model, stream: false, messages: buildSuggestionMessages({ fresh, fields, current, examples }),
+      model: modelName, stream: false, messages: buildSuggestionMessages({ fresh, fields, current, examples }),
       ...(model.thinking ? { think: false } : {}), format: z.toJSONSchema(schema),
       options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: 1500 }, keep_alive: '2m',
     }, 300_000);
     if (result.done !== true || result.done_reason === 'length' || typeof result.message?.content !== 'string') return null;
     let parsed: z.infer<typeof schema>;
     try { parsed = schema.parse(JSON.parse(result.message.content)); } catch { return null; }
-    return toSuggestionAnnotations(full, fresh, parsed.findings, fields, `${config.model}@${model.digest.slice(0, 12)}${examples.length ? '+ex' : ''}`);
+    return toSuggestionAnnotations(full, fresh, parsed.findings, fields, `${modelName}@${model.digest.slice(0, 12)}${examples.length ? '+ex' : ''}`);
   });
   if (!annotations) return null;
   await storeSuggestions(mailId, full, mail.orderId, annotations);

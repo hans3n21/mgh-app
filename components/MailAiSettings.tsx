@@ -62,6 +62,7 @@ export default function MailAiSettings() {
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [keySet, setKeySet] = useState(false);
+  const [keySource, setKeySource] = useState<'file' | 'stored' | 'none'>('none');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -72,7 +73,7 @@ export default function MailAiSettings() {
     fetch('/api/settings/mail-ai', { signal: controller.signal }).then(async r => {
       if (!r.ok) throw new Error('Einstellungen des Analysedienstes konnten nicht geladen werden.');
       return r.json();
-    }).then(c => { setIsAdmin(c.isAdmin); setEnabled(c.enabled); setBaseUrl(c.baseUrl || ''); setKeySet(!!c.apiKeySet); })
+    }).then(c => { setIsAdmin(c.isAdmin); setEnabled(c.enabled); setBaseUrl(c.baseUrl || ''); setKeySet(!!c.apiKeySet); setKeySource(c.apiKeySource || 'none'); })
       .catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, []);
@@ -120,7 +121,7 @@ export default function MailAiSettings() {
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm space-y-1 block"><span className="text-slate-300">Dienstadresse</span>
           <input className="w-full rounded border border-slate-600 bg-slate-950 px-2 py-1" value={baseUrl} placeholder="http://127.0.0.1:8766" onChange={e => setBaseUrl(e.target.value)} /></label>
-        <label className="text-sm space-y-1 block"><span className="text-slate-300">Zugriffsschlüssel {keySet && <span className="text-emerald-300">(gespeichert)</span>}</span>
+        <label className="text-sm space-y-1 block"><span className="text-slate-300">Zugriffsschlüssel {keySource === 'file' ? <span className="text-emerald-300">(automatisch aus dem Dienst auf diesem Rechner)</span> : keySet && <span className="text-emerald-300">(gespeichert)</span>}</span>
           <input type="password" autoComplete="off" className="w-full rounded border border-slate-600 bg-slate-950 px-2 py-1" value={apiKey}
             placeholder={keySet ? 'Nur zum Ändern eingeben' : 'aus services/mail-ai/data/access-token.txt'} onChange={e => setApiKey(e.target.value)} /></label>
       </div>
@@ -134,7 +135,7 @@ export default function MailAiSettings() {
     {error && <p role="alert" className="text-sm text-rose-300">{error}</p>}
     {result && <div role="status" className="text-sm text-slate-200 space-y-1">
       {result.status === 'ready'
-        ? <p>Dienst bereit{result.elapsedMs !== undefined && ` · Testtext in ${(result.elapsedMs / 1000).toFixed(1)} s geprüft`}{result.fields === false && ' · Feldmodell nicht geladen'}.</p>
+        ? <p>Dienst bereit{result.elapsedMs !== undefined && ` · Testtext in ${(result.elapsedMs / 1000).toFixed(1)} s geprüft`}.</p>
         : <p className="text-amber-200">Dienst meldet „{result.status}“ (Modelle laden noch oder Start fehlgeschlagen).</p>}
       {result.found.length > 0 && <p className="text-slate-400">Im erfundenen Testtext erkannt: {result.found.map(f => `${TYPE_LABELS[f.type] || f.type}: ${f.text}`).join(' · ')}</p>}
     </div>}

@@ -1,40 +1,65 @@
-# Lokale Mail-Analyse (GLiNER)
+# Lokale Mail-Analyse
 
-Kleiner Dienst, der auf demselben Rechner wie die MGH-App läuft und zwei lokale
-Modelle bereitstellt:
+Läuft auf jedem Rechner, auf dem die MGH-App läuft, und verarbeitet Mailtexte ausschließlich
+lokal:
 
-- `POST /pii`: Personenangaben mit Position (`fastino/gliner2-privacy-filter-PII-multi`)
-- `POST /fields`: Auftragsangaben mit Absicht (`fastino/gliner2.5-multi-v1`), vorbereitet für die Vorschläge
-- `GET /health`: Status (`loading`, `ready`, `failed`)
+- **Analysedienst** (dieser Ordner, Python): erkennt Personenangaben mit
+  `fastino/gliner2-privacy-filter-PII-multi`. Lauscht nur auf `127.0.0.1:8766`, braucht einen
+  Zugriffsschlüssel, protokolliert keine Mailinhalte und lädt im Betrieb nichts aus dem Internet.
+- **Ollama** mit einem Sprachmodell (`gemma4`) für die Auftragsvorschläge (Feld, Wert, Absicht).
+  Nur lokal, Cloud-Funktion aus (`OLLAMA_NO_CLOUD=1`, `OLLAMA_HOST=127.0.0.1:11434`).
 
-Alle Aufrufe brauchen `Authorization: Bearer <Schlüssel>`. Der Dienst lauscht nur auf
-`127.0.0.1`, protokolliert keine Mailinhalte und lädt im Betrieb nichts aus dem Internet
-(`HF_HUB_OFFLINE=1`). Das Paket `gliner2` enthält ohne Zusatz nur einen Cloud-API-Client;
-installiert und genutzt wird ausschließlich die lokale Ausführung (`gliner2[local]`).
+Das Paket `gliner2` enthält ohne Zusatz nur einen Cloud-API-Client; installiert und genutzt wird
+ausschließlich die lokale Ausführung (`gliner2[local]`).
 
-## Einrichten (einmalig, braucht Internet)
+## Einrichten und aktualisieren
+
+Macht `update.bat` (Schritt 6) über `Install-LocalAi.ps1`:
+
+1. Python-Umgebung und Modell des Analysedienstes, nur wenn noch nicht vorhanden oder
+   `requirements.txt` / `Start-MailAi.ps1` geändert (erster Lauf ca. 3 GB).
+2. Ollama bei Bedarf per `winget` (mit Rückfrage), auf „nur lokal“ stellen.
+3. Sprachmodell je Rechner nach `local-ai.json`: unter 24 GB Arbeitsspeicher die kleinere
+   Variante `gemma4:e4b-it-qat` (6 GB), sonst `gemma4:e4b` (10 GB). Die Wahl steht in
+   `data\ollama-model.txt`; die App nimmt sie vor der Auswahl unter KI-Training.
+
+`update.bat` läuft aus einer Kopie von sich selbst. Ein neu hinzugekommener Schritt greift deshalb
+erst beim nächsten Update-Lauf: **Beim ersten Mal update.bat zweimal ausführen**, oder direkt:
 
 ```powershell
-cd services\mail-ai
-.\Start-MailAi.ps1 -Install
+powershell -ExecutionPolicy Bypass -File services\mail-ai\Install-LocalAi.ps1
 ```
 
-Installiert Python-Pakete in `.venv` (CPU-PyTorch) und lädt beide Modelle mit festen
-Ständen nach `data\models` (zusammen ca. 2,3 GB). Danach ist kein Internet mehr nötig.
+Fehlt Python, gibt das Skript einen Hinweis (`winget install -e --id Python.Python.3.13`); die App
+läuft dann weiter mit den Regeln.
 
 ## Starten
 
+`start-mgh-app-production.bat` und `start-mgh-app.bat` starten den Analysedienst automatisch in
+einem minimierten Fenster, wenn er eingerichtet ist. Von Hand:
+
 ```powershell
-.\Start-MailAi.ps1            # beide Modelle, 2 Threads
-.\Start-MailAi.ps1 -NoFields  # nur Personenangaben, spart ca. 1 GB RAM
+.\Start-MailAi.ps1               # nur Personenerkennung (was die App nutzt)
+.\Start-MailAi.ps1 -WithFields   # zusätzlich /fields (GLiNER2.5), ca. 1 GB mehr RAM
 ```
 
-Den Schlüssel aus `data\access-token.txt` in der App unter Einstellungen → Lokale
-Mail-Analyse eintragen (Adresse `http://127.0.0.1:8766`), speichern, „Dienst testen“.
+Läuft der Dienst schon, beendet sich ein zweiter Start ohne Fehler.
 
-## Messwerte (28.09.2026, 12 erfundene Mails, nur CPU)
+## Schlüssel und Einstellungen
 
-- Personenangaben: 23 von 24 gefunden, rund 0,5 s je kurzer Mail, 8 s bei 8.000 Zeichen
-- Zusammen mit den Regeln werden auch zitierte Mailteile vor einem KI-Versand geschwärzt
+Alle Rechner teilen sich eine Datenbank, aber jeder hat seinen eigenen Dienst. Für die Adresse
+`http://127.0.0.1:8766` liest die App den Schlüssel deshalb direkt aus `data\access-token.txt`
+dieses Rechners; in den Einstellungen muss nur „Lokale Mail-Analyse verwenden“ an sein.
+
+## Messen
+
+```bash
+npx tsx scripts/bench-mail-ai.ts pii
+npx tsx scripts/bench-mail-ai.ts fields --model gemma4:e4b [--cpu] [--examples]
+```
+
+Testsatz: `lib/mail-ai/__fixtures__/order-cases.json` (12 erfundene Mails).
+Stand 29.09.2026: Personenangaben 24/24 (Regeln + Dienst, 0,7 s je Mail);
+Auftragsfelder `gemma4:e4b` 32/35, `gemma4:e4b-it-qat` 27/35.
 
 Tests ohne Modell: `python -m unittest test_server`

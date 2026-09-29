@@ -3,8 +3,11 @@ param(
     [int]$Port = 8766,
     [int]$Threads = 2,
     [switch]$Install,
-    [switch]$NoFields
+    [switch]$InstallOnly,
+    [switch]$WithFields
 )
+# -Install -InstallOnly: nur einrichten/aktualisieren, nicht starten (update.bat).
+# Ohne Schalter: starten; laeuft der Dienst schon, passiert nichts (Autostart).
 # Lokaler Analysedienst fuer Mails. Nur -Install braucht Internet (Pakete und
 # Modellgewichte); danach laeuft alles offline auf diesem Rechner.
 $ErrorActionPreference = 'Stop'
@@ -16,7 +19,13 @@ Set-Location -LiteralPath $PSScriptRoot
 function Invoke-Native([scriptblock]$Command, [string]$Failure) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    try { & $Command 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $previous }
+    try {
+        & $Command 2>&1 | ForEach-Object {
+            # stderr kommt als ErrorRecord; leere Zeilen erschienen sonst als "RemoteException".
+            $line = if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" }
+            if ($line.Trim()) { $line }
+        }
+    } finally { $ErrorActionPreference = $previous }
     if ($LASTEXITCODE -ne 0) { throw $Failure }
 }
 $python = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
@@ -27,9 +36,9 @@ if ($Install) {
     if (!(Test-Path -LiteralPath $python)) {
         Invoke-Native { & $PythonExe -3 -m venv .venv } 'Python 3.12 oder neuer installieren (py-Launcher) oder -PythonExe angeben.'
     }
-    Invoke-Native { & $python -m pip install --upgrade pip } 'pip konnte nicht aktualisiert werden.'
-    Invoke-Native { & $python -m pip install --index-url https://download.pytorch.org/whl/cpu 'torch==2.14.0' } 'CPU-PyTorch konnte nicht installiert werden.'
-    Invoke-Native { & $python -m pip install -r requirements.txt } 'Pakete konnten nicht installiert werden.'
+    Invoke-Native { & $python -m pip install -q --upgrade pip } 'pip konnte nicht aktualisiert werden.'
+    Invoke-Native { & $python -m pip install -q --index-url https://download.pytorch.org/whl/cpu 'torch==2.14.0' } 'CPU-PyTorch konnte nicht installiert werden.'
+    Invoke-Native { & $python -m pip install -q -r requirements.txt } 'Pakete konnten nicht installiert werden.'
     # Feste Modellstaende (Commit-Kennungen), in normale Ordner statt in den
     # Symlink-Cache: Windows-Konten ohne Symlink-Recht scheitern sonst.
     $download = @"
@@ -47,6 +56,8 @@ for repo, rev, target in [
 if (!(Test-Path -LiteralPath $python)) { throw 'Zuerst mit -Install einrichten.' }
 if (!(Test-Path -LiteralPath (Join-Path $models 'pii'))) { throw 'Modelle fehlen. Mit -Install einrichten.' }
 
+# Zugriffsschluessel dieses Rechners. Die App liest ihn fuer 127.0.0.1 direkt
+# aus dieser Datei (lib/mail-ai/client.ts), er muss nirgends eingetragen werden.
 New-Item -ItemType Directory -Path $dataPath -Force | Out-Null
 $tokenPath = Join-Path $dataPath 'access-token.txt'
 if (!(Test-Path -LiteralPath $tokenPath)) {
@@ -55,13 +66,20 @@ if (!(Test-Path -LiteralPath $tokenPath)) {
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
     [System.IO.File]::WriteAllText($tokenPath, [BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant())
 }
+if ($InstallOnly) { Write-Host 'Mail-Analyse eingerichtet.'; exit 0 }
+
+if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) {
+    Write-Host "Mail-Analyse laeuft bereits auf Port $Port."
+    exit 0
+}
 
 $env:MAIL_AI_TOKEN_FILE = $tokenPath
 $env:MAIL_AI_DATA = $dataPath
 $env:MAIL_AI_HOST = '127.0.0.1'
 $env:MAIL_AI_PORT = [string]$Port
 $env:MAIL_AI_THREADS = [string]$Threads
-$env:MAIL_AI_FIELDS = if ($NoFields) { '0' } else { '1' }
+# Die App nutzt nur /pii; das Feldmodell (GLiNER2.5, ~1 GB RAM) nur auf Wunsch laden.
+$env:MAIL_AI_FIELDS = if ($WithFields) { '1' } else { '0' }
 $env:HF_HUB_OFFLINE = '1'
 $env:TRANSFORMERS_OFFLINE = '1'
 # Sonst nutzt Python die alte Konsolen-Codepage und scheitert an Unicode-Ausgaben.

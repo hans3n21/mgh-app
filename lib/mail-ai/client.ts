@@ -1,9 +1,11 @@
 // Anbindung an den lokalen Analysedienst (services/mail-ai). Der Dienst laeuft
 // auf demselben Rechner bzw. im LAN; Mailtexte gehen nie an einen Cloud-Dienst.
 // Faellt er aus, arbeitet die App mit den Regeln weiter (kein Fehler nach aussen).
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { localOrigin } from '@/lib/local-ai/config';
+import { localOrigin } from '@/lib/mail-ai/local-origin';
 import { isWorkshopTerm } from '@/lib/mail/workshop-terms';
 import type { EntityType, ExtractedEntity } from '@/lib/mail/extraction';
 
@@ -11,7 +13,44 @@ export const MAIL_AI_KEY = 'mail-ai:service';
 export const DEFAULT_BASE_URL = 'http://127.0.0.1:8766';
 const MAX_TEXT = 60_000;
 
-export type MailAiConfig = { enabled: boolean; baseUrl: string; apiKey: string };
+export type MailAiConfig = { enabled: boolean; baseUrl: string; apiKey: string; apiKeySource?: 'file' | 'stored' | 'none' };
+
+// Alle Rechner teilen sich eine Datenbank und damit eine Einstellung, aber jeder
+// Rechner hat seinen eigenen Dienst mit eigenem Schluessel. Laeuft der Dienst auf
+// demselben Rechner (127.0.0.1), liest die App den Schluessel deshalb aus dessen
+// Datei. So muss kein Schluessel in der Datenbank stehen.
+export const LOCAL_TOKEN_FILE = join(process.cwd(), 'services', 'mail-ai', 'data', 'access-token.txt');
+const isLoopback = (url: string) => { try { return new URL(url).hostname === '127.0.0.1'; } catch { return false; } };
+/** Schluessel aus der Datei des Dienstes auf diesem Rechner, falls die Adresse lokal ist. */
+export function localKeyFor(baseUrl: string) {
+  return isLoopback(baseUrl) ? localToken() : '';
+}
+function localToken() {
+  try {
+    const token = readFileSync(LOCAL_TOKEN_FILE, 'utf8').trim();
+    return /^[A-Za-z0-9_-]{32,200}$/.test(token) ? token : '';
+  } catch { return ''; }
+}
+
+/**
+ * Sprachmodell, das update.bat fuer diesen Rechner ausgewaehlt hat (kleinere
+ * Variante bei wenig Arbeitsspeicher). Hat Vorrang vor der gemeinsamen
+ * Einstellung unter KI-Training, weil jeder Rechner nur sein eigenes Modell hat.
+ */
+export const LOCAL_MODEL_FILE = join(process.cwd(), 'services', 'mail-ai', 'data', 'ollama-model.txt');
+export function localOllamaModel() {
+  try {
+    const model = readFileSync(LOCAL_MODEL_FILE, 'utf8').trim();
+    return /^[A-Za-z0-9._:/-]{1,150}$/.test(model) ? model : '';
+  } catch { return ''; }
+}
+
+/** Nur das, was in der Datenbank steht (ohne Schluessel aus der lokalen Datei). */
+export async function readStoredMailAiConfig(): Promise<{ enabled: boolean; baseUrl: string; apiKey: string }> {
+  const row = await prisma.systemSetting.findUnique({ where: { key: MAIL_AI_KEY } });
+  const stored = row ? (JSON.parse(row.value) as Partial<MailAiConfig>) : {};
+  return { enabled: !!stored.enabled, baseUrl: stored.baseUrl || DEFAULT_BASE_URL, apiKey: stored.apiKey || '' };
+}
 
 export const ConfigSchema = z.object({
   enabled: z.boolean(),
@@ -26,9 +65,10 @@ const globalCache = globalThis as unknown as { __mailAiConfig?: { at: number; co
 export async function readMailAiConfig(fresh = false): Promise<MailAiConfig> {
   const cached = globalCache.__mailAiConfig;
   if (!fresh && cached && Date.now() - cached.at < 30_000) return cached.config;
-  const row = await prisma.systemSetting.findUnique({ where: { key: MAIL_AI_KEY } });
-  const stored = row ? (JSON.parse(row.value) as Partial<MailAiConfig>) : {};
-  const config: MailAiConfig = { enabled: !!stored.enabled, baseUrl: stored.baseUrl || DEFAULT_BASE_URL, apiKey: stored.apiKey || '' };
+  const stored = await readStoredMailAiConfig();
+  const fileKey = localKeyFor(stored.baseUrl);
+  const apiKey = fileKey || stored.apiKey;
+  const config: MailAiConfig = { ...stored, apiKey, apiKeySource: fileKey ? 'file' : apiKey ? 'stored' : 'none' };
   globalCache.__mailAiConfig = { at: Date.now(), config };
   return config;
 }

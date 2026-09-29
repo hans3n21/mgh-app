@@ -1,0 +1,6 @@
+{
+  "hinweis": "Sprachmodell fuer Auftragsvorschlaege, das update.bat (Install-LocalAi.ps1) je Rechner auswaehlt und per 'ollama pull' bereitstellt. Rechner mit weniger als smallBelowGB Arbeitsspeicher bekommen die kleinere Variante. Die Wahl steht in data/ollama-model.txt und hat Vorrang vor der Auswahl unter KI-Training (gemeinsame Datenbank).",
+  "ollamaModel": "gemma4:e4b",
+  "ollamaModelSmall": "gemma4:e4b-it-qat",
+  "smallBelowGB": 24
+}
