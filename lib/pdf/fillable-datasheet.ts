@@ -396,11 +396,14 @@ export async function generateFillableDatasheet(opts: FillableDatasheetOptions):
       if (f.kind === 'checkbox') {
         // Echtes Ankreuzkaestchen — wie die Checkbox im Auftragsdetail.
         const cb = form.createCheckBox(f.name);
-        if (isCheckedValue(prefill)) cb.check();
         cb.addToPage(page, {
           x: FIELD_X, y: y - CHECKBOX_SIZE - 2, width: CHECKBOX_SIZE, height: CHECKBOX_SIZE,
           borderColor: COLOR_LINE, borderWidth: 0.8, backgroundColor: FIELD_BG,
         });
+        // Erst nach addToPage: check() setzt den Anzeigezustand (/AS) am Widget,
+        // und das gibt es vorher noch nicht. Sonst steht nur /V auf "Ja" und
+        // Viewer (Firefox, Vorschau) zeigen das Kaestchen leer.
+        if (isCheckedValue(prefill)) cb.check();
         // Freitext aus dem Auftrag stehenlassen — ein Haekchen allein wuerde
         // Angaben wie "Batteriefach fraesen" unterschlagen.
         const detail = checkboxDetail(prefill);
