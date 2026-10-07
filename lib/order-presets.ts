@@ -29,8 +29,8 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
     categories: ["body","neck","finish"],
     fields: {
       body: ["body_shape","string_count","body_material","body_thickness","body_has_top","body_top","body_top_thickness","body_binding","body_shaping","neck_construction","bridge_type","pickups_routes","pickup_mount_direct","pickup_mount_frame","body_electronics_layout","pickguard","battery_compartment","body_extras","body_surface_treatment","finish_body_top","finish_body_back","body_notes"],
-      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","tuners","neck_binding","spokewheel","neck_extras","finish_neck","headstock_finish","neck_notes"],
-      finish: ["finish_body","finish_body_top","finish_body_back","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","electronics","pickups","pickups_style","elektronikparts","hardware_color","strap_pins","strings","tuning","notes"],
+      neck: ["headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","tuners","neck_binding","spokewheel","neck_carbon_rods","neck_extras","finish_neck","headstock_finish","neck_notes"],
+      finish: ["finish_body","finish_body_top","finish_body_back","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","electronics","pickups","pickups_style","elektronikparts","hardware_color","locking_tuners","strap_pins","strings","tuning","notes"],
       oberflaeche: [],
       repair: [],
       pickguard: [],
@@ -63,7 +63,7 @@ export const SPEC_PRESETS: Record<OrderType, Preset> = {
     categories: ["neck"],
     fields: {
       body: [],
-      neck: ["string_count","headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","tuners","neck_binding","spokewheel","neck_extras","neck_foot","customer_provides_body","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","neck_notes"],
+      neck: ["string_count","headstock_type","neck_wood","neck_shape","fretboard_scale","fretboard_radius","fretboard_material","inlays","frets","nut","side_dots","tuners","neck_binding","spokewheel","neck_carbon_rods","neck_extras","neck_foot","customer_provides_body","finish_neck","headstock_finish","headstock_logo","headstock_logo_notes","neck_notes"],
       finish: [],
       oberflaeche: [],
       repair: [],
@@ -190,6 +190,8 @@ export const FIELD_LABELS: Record<string, string> = {
   tuners: "Mechaniken",
   neck_binding: "Hals Binding",
   spokewheel: "Spokewheel",
+  // Feedback 02.10.2026 (ORD-2026-080)
+  neck_carbon_rods: "Carbonfaser-Stäbe",
   finish_neck: "Hals-Finish",
   headstock_finish: "Headstock-Finish",
   headstock_logo: "Headstock Logo",
@@ -211,6 +213,8 @@ export const FIELD_LABELS: Record<string, string> = {
   pickups_style: "Tonabnehmer Optik/Style",
   elektronikparts: "Elektronikparts",
   hardware_color: "Hardware-Farbe",
+  // Feedback 30.06.2026 (ORD-2026-056)
+  locking_tuners: "Lockingtuner",
   strap_pins: "Gurtpins",
   // Bewusst "Saitenstärke", nicht "Saiten": sonst kommen Markenwünsche zurück,
   // die wir nicht bedienen. Gefragt ist allein der Gauge.
@@ -298,6 +302,8 @@ export const CHECKBOX_FIELDS = new Set<string>([
   'pg_shielding',
   'pg_routing_add',
   'pg_routing_remove',
+  'neck_carbon_rods',
+  'locking_tuners',
 ]);
 
 /**

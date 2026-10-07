@@ -839,7 +839,7 @@ export default function InboxPreview({ message, actionsSlot, replyOpen = false, 
 													}
 												</span>
 												<time className="text-[10px] text-slate-500 flex-shrink-0">
-													{new Date(tm.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}
+													{new Date(tm.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
 													{' '}
 													{new Date(tm.date).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
 												</time>

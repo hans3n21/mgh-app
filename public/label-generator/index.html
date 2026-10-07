@@ -1846,6 +1846,9 @@
 
         item.addEventListener("click", () => selectLabel(label.id));
         item.addEventListener("keydown", (event) => {
+          // Nur Tasten auf dem Label selbst: Titel und Infozeile darin sind
+          // editierbar, dort darf die Leertaste nicht verschluckt werden.
+          if (event.target !== item) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             selectLabel(label.id);
