@@ -53,6 +53,18 @@ Alle Rechner teilen sich eine Datenbank, aber jeder hat seinen eigenen Dienst. F
 `http://127.0.0.1:8766` liest die App den Schlüssel deshalb direkt aus `data\access-token.txt`
 dieses Rechners; in den Einstellungen muss nur „Lokale Mail-Analyse verwenden“ an sein.
 
+## KI-Vorschläge an einem Rechner abschalten
+
+Die Schalter in den Einstellungen gelten für alle Rechner (gemeinsame Datenbank). Soll nur ein
+Rechner keine KI-Vorschläge aus Mails zeigen und berechnen, legt man dort die Datei
+`services\mail-ai\data\vorschlaege-aus.txt` an; Löschen schaltet sie wieder ein, Neustart nicht nötig.
+Die Personenerkennung läuft weiter, die Vorschläge aus PDF-Import und Mail-Extraktion ebenfalls.
+
+```powershell
+New-Item services\mail-ai\data\vorschlaege-aus.txt -ItemType File    # aus
+Remove-Item services\mail-ai\data\vorschlaege-aus.txt                # wieder an
+```
+
 ## Messen
 
 ```bash

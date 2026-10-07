@@ -8,7 +8,7 @@ vi.mock('@/lib/prisma', () => ({
       ({ id, folder: 'INBOX', orderId: 'ORD-2026-001', customerId: null, fromEmail: 'kunde@example.org' }))) } },
 }));
 vi.mock('@/lib/ai-training/ollama', () => ({ readModelConfig: async () => ({ enabled: true }) }));
-vi.mock('@/lib/mail-ai/client', () => ({ readMailAiConfig: async () => ({ enabled: false }), detectPiiStrict: vi.fn() }));
+vi.mock('@/lib/mail-ai/client', () => ({ readMailAiConfig: async () => ({ enabled: false }), detectPiiStrict: vi.fn(), localSuggestionsOff: () => false }));
 vi.mock('@/lib/mail-ai/order-suggestions', () => ({
   suggestForMail: vi.fn(async (id: string) => { mocks.calls.push(id); mocks.onSuggest?.(id); return null; }),
 }));

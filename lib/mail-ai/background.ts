@@ -7,7 +7,7 @@ import { getPlaintext, mergeModelEntities, type ExtractedEntity } from '@/lib/ma
 import { isSentFolderName } from '@/lib/mail/folders';
 import { stripQuotedContent } from '@/lib/mail/stripQuotedContent';
 import { readModelConfig } from '@/lib/ai-training/ollama';
-import { detectPiiStrict, readMailAiConfig } from './client';
+import { detectPiiStrict, localSuggestionsOff, readMailAiConfig } from './client';
 import { suggestForMail } from './order-suggestions';
 
 const LOOKBACK_MS = 24 * 60 * 60 * 1000;
@@ -71,7 +71,7 @@ async function run() {
     do {
       state.pending = false;
       let pii = (await readMailAiConfig(true)).enabled;
-      let suggest = (await readModelConfig()).enabled;
+      let suggest = (await readModelConfig()).enabled && !localSuggestionsOff();
       if (!pii && !suggest) { state.priority = []; return; }
       const priority = state.priority.slice();
       const candidates = await prisma.mail.findMany({

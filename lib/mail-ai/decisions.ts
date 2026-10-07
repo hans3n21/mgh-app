@@ -12,6 +12,7 @@ import { ReviewError, writeSuggestedValue } from '@/lib/mail-training/service';
 import { notesFieldFor, specValueFor } from '@/lib/spec-options/match';
 import type { Annotation, ReviewEvent } from '@/lib/mail-training/contracts';
 import { isAnalyzing } from './background';
+import { localSuggestionsOff } from './client';
 import { snippetAround } from './snippet';
 
 export type MailSuggestion = {
@@ -29,6 +30,8 @@ const pending = (a: Annotation) => a.kind === 'order' && a.origin === 'model' &&
 export type SuggestionList = { fields: { key: string; label: string }[]; current: Record<string, string>; items: MailSuggestion[]; analyzing: boolean };
 
 export async function listSuggestions(orderId: string): Promise<SuggestionList> {
+  // Auf diesem Rechner abgeschaltet: gar nicht erst die Datenbank fragen.
+  if (localSuggestionsOff()) return { fields: [], current: {}, items: [], analyzing: false };
   const order = await prisma.order.findUnique({ where: { id: orderId }, select: { type: true, deletedAt: true, specs: { select: { key: true, value: true } },
     mails: { where: { isDeleted: false }, select: { id: true } } } });
   if (!order || order.deletedAt) return { fields: [], current: {}, items: [], analyzing: false };

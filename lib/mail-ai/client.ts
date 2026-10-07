@@ -1,7 +1,7 @@
 // Anbindung an den lokalen Analysedienst (services/mail-ai). Der Dienst laeuft
 // auf demselben Rechner bzw. im LAN; Mailtexte gehen nie an einen Cloud-Dienst.
 // Faellt er aus, arbeitet die App mit den Regeln weiter (kein Fehler nach aussen).
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
@@ -43,6 +43,17 @@ export function localOllamaModel() {
     const model = readFileSync(LOCAL_MODEL_FILE, 'utf8').trim();
     return /^[A-Za-z0-9._:/-]{1,150}$/.test(model) ? model : '';
   } catch { return ''; }
+}
+
+/**
+ * KI-Vorschlaege aus Mails an diesem Rechner abgeschaltet? Die Einstellung in der
+ * Datenbank gilt fuer alle Rechner; diese Datei nur fuer den einen, auf dem sie liegt
+ * (z. B. der Hauptrechner, waehrend woanders weiter probiert wird). Anlegen
+ * schaltet ab, Loeschen schaltet wieder ein. Die Personenerkennung bleibt unberuehrt.
+ */
+export const SUGGESTIONS_OFF_FILE = join(process.cwd(), 'services', 'mail-ai', 'data', 'vorschlaege-aus.txt');
+export function localSuggestionsOff() {
+  return existsSync(SUGGESTIONS_OFF_FILE);
 }
 
 /** Nur das, was in der Datenbank steht (ohne Schluessel aus der lokalen Datei). */
