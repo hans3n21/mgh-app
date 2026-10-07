@@ -12,8 +12,13 @@ const headers = { 'Cache-Control': 'no-store' };
 export async function GET(_req: NextRequest, { params }: Context) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: 'Nicht eingeloggt' }, { status: 401 });
+  const started = Date.now();
   try {
-    return NextResponse.json(await listSuggestions((await params).id), { headers });
+    const list = await listSuggestions((await params).id);
+    // Messpunkt fuer "Auftragswechsel ist langsam": nur Dauer und Anzahl, keine Inhalte.
+    const ms = Date.now() - started;
+    if (ms > 1500) console.warn(`[mail-ai] Vorschlagsliste langsam: ${ms} ms (${list.items.length} Vorschläge)`);
+    return NextResponse.json(list, { headers });
   } catch (error) {
     console.error('mail-suggestions GET failed:', error instanceof Error ? error.message : 'unbekannt');
     return NextResponse.json({ error: 'Vorschläge konnten nicht geladen werden.' }, { status: 500 });

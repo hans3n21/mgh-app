@@ -36,17 +36,27 @@ export async function listSuggestions(orderId: string): Promise<SuggestionList> 
   const analyzing = isAnalyzing(order.mails.map(m => m.id));
   const fields = orderFields(order.type);
   const current = new Map(order.specs.map(s => [s.key, s.value || '']));
+  // Erst nur die Markierungen, ohne Mailtext: Text und HTML liegen im grossen
+  // Mail-Speicher (auf dem NAS) und sind beim ersten Aufruf eines Auftrags teuer.
   const reviews = await prisma.mailTrainingReview.findMany({
     where: { orderId, mail: { isDeleted: false, orderId } },
-    select: { mailId: true, revision: true, sourceHash: true, annotations: true,
-      mail: { select: { text: true, html: true, date: true, subject: true } } },
+    select: { mailId: true, revision: true, sourceHash: true, annotations: true },
   });
+  const withOpen = reviews
+    .map(review => ({ review, open: readAnnotations(review.annotations).filter(pending).filter(a => fields.some(f => f.key === a.field)) }))
+    .filter(entry => entry.open.length > 0);
+  // Mailtext nur fuer Mails mit offenen Vorschlaegen laden (Stand pruefen, Beleg anzeigen).
+  const mails = new Map<string, { text: string | null; html: string | null; date: Date; subject: string | null }>();
+  if (withOpen.length) {
+    const rows = await prisma.mail.findMany({ where: { id: { in: withOpen.map(e => e.review.mailId) } },
+      select: { id: true, text: true, html: true, date: true, subject: true } });
+    for (const row of rows) mails.set(row.id, row);
+  }
   const items: MailSuggestion[] = [];
-  for (const review of reviews) {
-    const open = readAnnotations(review.annotations).filter(pending);
-    if (!open.length) continue;
-    // Nur den Mailtext laden, wenn es ueberhaupt offene Vorschlaege gibt; Stand pruefen.
-    const text = getPlaintext(review.mail.text, review.mail.html);
+  for (const { review, open } of withOpen) {
+    const mail = mails.get(review.mailId);
+    if (!mail) continue;
+    const text = getPlaintext(mail.text, mail.html);
     if (sourceHash(text) !== review.sourceHash) continue;
     for (const a of open) {
       if (!fields.some(f => f.key === a.field)) continue;
@@ -56,7 +66,7 @@ export async function listSuggestions(orderId: string): Promise<SuggestionList> 
         field: a.field, value: a.value, intent: a.intent, currentValue: current.get(a.field) || '',
         ...(target && target.value !== a.value ? { target: target.value } : {}),
         ...(target?.note && notesFieldFor(order.type, a.field) ? { note: target.note } : {}),
-        snippet: snippetAround(text, a.start, a.end), mailDate: review.mail.date.toISOString(), mailSubject: review.mail.subject || '' });
+        snippet: snippetAround(text, a.start, a.end), mailDate: mail.date.toISOString(), mailSubject: mail.subject || '' });
     }
   }
   items.sort((a, b) => a.mailDate.localeCompare(b.mailDate));
