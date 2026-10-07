@@ -31,7 +31,10 @@ export default async function OrderDetailPage({ params }: PageProps) {
         items: { include: { priceItem: true } },
         images: true,
         messages: { include: { sender: true } },
-        mails: { include: { attachments: true } },
+        // HTML bewusst weglassen: Der Chat zeigt den Text und braucht das HTML nur
+        // als Ersatz, wenn der Text fehlt (siehe unten). Mit HTML wurden Seiten bis
+        // 27 MB gross; der erste Aufruf las das alles vom NAS (20 s).
+        mails: { omit: { html: true }, include: { attachments: true } },
       },
     }),
     prisma.user.findMany({
@@ -113,6 +116,15 @@ export default async function OrderDetailPage({ params }: PageProps) {
     );
   }
 
+  // HTML nur fuer Mails ohne Text nachladen (reine HTML-Mails), sonst bleibt es leer.
+  const textlessIds = order.mails.filter((m) => !m.text?.trim()).map((m) => m.id);
+  const htmlById = new Map<string, string | null>();
+  if (textlessIds.length > 0) {
+    const rows = await prisma.mail.findMany({ where: { id: { in: textlessIds } }, select: { id: true, html: true } });
+    for (const row of rows) htmlById.set(row.id, row.html);
+  }
+  const orderWithMails = { ...order, mails: order.mails.map((m) => ({ ...m, html: htmlById.get(m.id) ?? null })) };
+
   return (
     // Ohne eigenen Rahmen: der Reiter-Inhalt darunter bringt seinen eigenen
     // Kasten mit — zwei Rahmen desselben Stils ineinander schlossen dasselbe
@@ -129,7 +141,7 @@ export default async function OrderDetailPage({ params }: PageProps) {
       {/* Nur noch senkrecht polstern — waagerecht polstert der Reiter-Kasten. */}
       <div className="py-3 sm:py-4">
         <OrderDetailClient
-          order={order}
+          order={orderWithMails}
           users={users}
           currentUserId={session?.user?.id || ''}
           hasUnreadComm={hasUnreadComm}
